@@ -1,7 +1,10 @@
 using Corela15.Domain.Ahorros;
 using Corela15.Domain.Clientes;
+using Corela15.Domain.Colocacion;
 using Corela15.Domain.Contabilidad;
+using Corela15.Domain.Credito;
 using Corela15.Domain.General;
+using Corela15.Domain.Inversion;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +48,24 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<ItemSaldo> ItemsSaldo => Set<ItemSaldo>();
     public DbSet<TipoCuentaItemSaldo> TiposCuentaItemSaldo => Set<TipoCuentaItemSaldo>();
     public DbSet<CuentaItemSaldo> CuentasItemSaldo => Set<CuentaItemSaldo>();
+
+    // INVERSION (Plazo Fijo)
+    public DbSet<Deposito> Depositos => Set<Deposito>();
+    public DbSet<DepositoCliente> DepositosClientes => Set<DepositoCliente>();
+    public DbSet<DepositoRenovacion> DepositosRenovaciones => Set<DepositoRenovacion>();
+    public DbSet<ItemPlazoTasa> ItemsPlazoTasa => Set<ItemPlazoTasa>();
+
+    // CREDITO (originación)
+    public DbSet<TipoPrestamo> TiposPrestamo => Set<TipoPrestamo>();
+    public DbSet<SolicitudPrestamo> SolicitudesPrestamo => Set<SolicitudPrestamo>();
+
+    // COLOCACION (préstamo vivo)
+    public DbSet<Rubro> Rubros => Set<Rubro>();
+    public DbSet<TipoVencimiento> TiposVencimiento => Set<TipoVencimiento>();
+    public DbSet<ClasificacionCartera> ClasificacionesCartera => Set<ClasificacionCartera>();
+    public DbSet<Prestamo> Prestamos => Set<Prestamo>();
+    public DbSet<PrestamoCliente> PrestamosClientes => Set<PrestamoCliente>();
+    public DbSet<PrestamoRubro> PrestamosRubros => Set<PrestamoRubro>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -95,7 +95,7 @@ nombre:
 1. **Nivel 0** — Identidad de personas, seguridad/usuarios, catálogos ✅ **hecho**
 2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado + caso de uso de registro de comprobantes; falta UI)
 3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
-4. **Nivel 3** — Plazo Fijo + Crédito/Colocación
+4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA
 6. **Nivel 5** — Caja/Bóveda
 7. **Nivel 6** — Nómina propia
@@ -177,6 +177,55 @@ depósito/retiro (equivalente al `ComprobanteContableService` de Nivel 1,
 debería generar también el comprobante contable correspondiente vía
 `IComprobanteContableService` — la integración real entre Ahorros y
 Contabilidad), y pantallas en el frontend.
+
+**Nivel 3** — verificado columna por columna contra Softbank en vivo (solo
+lectura, ver metodología abajo), no solo contra el resumen de
+`02-arquitectura-datos-40-modulos.md`. Correcciones reales que salieron de
+esa verificación: `Deposito` NO tiene FK directa a cliente (es vía
+`DepositoCliente`, igual que `Ahorros.CuentaCliente`); `ClasificacionCartera`
+es una tabla de **reglas** (rango de días de mora → cuenta contable → balde
+de vencimiento), no un registro por préstamo — esa fue una hipótesis inicial
+equivocada, corregida antes de migrar.
+
+Esquemas `inversion` (`deposito` —versionado—, `deposito_cliente`,
+`deposito_renovacion`, `item_plazo_tasa`), `credito` (`tipo_prestamo`,
+`solicitud_prestamo`), `colocacion` (`prestamo` —versionado—,
+`prestamo_cliente`, `prestamo_rubro` —versionado—, `rubro`,
+`tipo_vencimiento`, `clasificacion_cartera`). Migración:
+`Nivel3_PlazoFijoYCredito`. Sembrado: 3 tipos de préstamo, 4 rubros, 3 tipos
+de vencimiento, 3 subcuentas de detalle reales del grupo CUC 14 (`1401`
+por vencer / `1425` NDI / `1449` vencida) y sus 3 reglas de clasificación.
+
+`Prestamo.DebitoSpi` es el campo real del incidente documentado en
+01-contexto-origen.md — confirmado que existe tal cual en Softbank. Sigue
+pendiente el caso de uso de auto-débito que cruce este campo con
+`ahorros.tipo_cuenta.permite_debito_prestamo` y
+`ahorros.cuenta_item_saldo.acredita_prestamo` como una sola fuente de
+verdad (ver nota en Nivel 2).
+
+### Metodología de verificación contra Softbank (usar para Niveles 4-8)
+
+`02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
+(columna por columna, contra la base real) pero los Niveles 5-8 quedaron
+**solo a nivel de inventario** (qué tablas existen, cuántas filas, para qué
+sirven a grandes rasgos — el propio documento lo dice explícitamente: "no
+es un diseño aspiracional"). Antes de diseñar cada nivel nuevo, verificar en
+vivo contra Softbank (nunca inventar estructura):
+
+```bash
+cd backend  # o cualquier carpeta temporal — es una herramienta de consulta,
+            # no vive en el repo permanentemente
+dotnet run --project <ruta-a-un-proyecto-console-con-Microsoft.Data.SqlClient> -- \
+    "SELECT s.name, t.name, p.rows FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id JOIN sys.partitions p ON p.object_id=t.object_id AND p.index_id IN (0,1) WHERE s.name='<ESQUEMA>' ORDER BY p.rows DESC" \
+    Softbank
+```
+
+Reglas: conexión con `siga_ro` (la de `.env`, `ApplicationIntent=ReadOnly`),
+**solo SELECT/WITH, nunca escribir nada** — es la misma regla de oro de
+siempre, ver arriba. Base real: `Softbank` (no `master`, que es solo el
+default de la cadena de conexión de SIGA). Verificar columnas con
+`sys.columns`/`sys.types` antes de dar por buena cualquier entidad nueva del
+core propio.
 
 ## Frontend — módulos visibles al usuario
 
