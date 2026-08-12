@@ -185,3 +185,19 @@ amigables para quien usa el sistema — la jerga interna de "Nivel 0/1/2..."
 vive solo en este documento y en los `.md` de arquitectura, nunca en la UI.
 Al completar un nivel, actualizar el `estado` del módulo correspondiente
 (`disponible` / `en-construccion` / `proximamente`).
+
+Pantallas reales ya construidas (tabla + búsqueda, estilo SIGA):
+`Socios`, `UsuariosRoles`, `Contabilidad` (plan de cuentas),
+`Ahorros` (productos + cuentas) — cada una consume un endpoint `GET` de
+solo lectura (`SociosController`, `UsuariosController`,
+`CuentasContablesController`, `AhorrosController`) que consulta
+`Corela15DbContext` directo desde el controller, sin pasar por
+`Application` — es la convención para lecturas simples sin lógica de
+negocio; los casos de uso que escriben sí van por Application (ver
+`ComprobanteContableService`). El resto de los slugs de `modules.ts` caen
+en `ModuloPagina`, la pantalla placeholder genérica.
+
+`Nivel0_SeedDatosPrueba` sembró 5 socios y 2 usuarios de **ejemplo**
+(nombres/cédulas ficticios) solo para que estas pantallas tengan contenido
+real en desarrollo local — no son datos de producción, no hay flujo de
+login todavía (`hash_contrasena` es un placeholder literal).
