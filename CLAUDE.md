@@ -97,7 +97,7 @@ nombre:
 3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (núcleo verificado y simplificado; falta UI y motor de scoring PLA)
-6. **Nivel 5** — Caja/Bóveda
+6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
 7. **Nivel 6** — Nómina propia
 8. **Nivel 7** — Tesorería y activos internos
 9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE)
@@ -215,6 +215,16 @@ transaccional PLA (`CALIFICACIONCLIENTE_TRANSACCION`/`_DETALLE`, 6.3M/4M
 filas en Softbank) queda fuera de alcance — se modeló solo el resumen de
 perfil (`calificacion_cliente`), a agregar cuando se construya ese motor.
 Migración: `Nivel4_CobranzasYCumplimiento`.
+
+**Nivel 5** — esquema `cajas` (`denominacion` —sembrado con billetes/monedas
+reales de USD—, `ventanilla` —sesión de caja por cajero/día—,
+`ventanilla_cuadre` —cuadre diario—). Fuera de alcance: `Boveda` (espejo de
+`Ventanilla` para la reserva detrás de las cajas — mismo patrón, se agrega
+cuando haga falta) y el detalle de movimientos de efectivo por denominación
+(`VENTANILLA_ITEMCAJA_MOVIMIENTOTRANSACCION_EFECTIVO`, 2,2M filas en
+Softbank, la tabla más grande del esquema) — eso se modela junto al caso de
+uso real de transacción de ventanilla, vinculado a
+`FINANCIERO.MOVIMIENTO_AFECTACION` de Nivel 1. Migración: `Nivel5_Caja`.
 
 ### Metodología de verificación contra Softbank (usar para Niveles 5-8)
 

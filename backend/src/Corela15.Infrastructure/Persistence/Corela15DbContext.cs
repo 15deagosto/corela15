@@ -1,4 +1,5 @@
 using Corela15.Domain.Ahorros;
+using Corela15.Domain.Cajas;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Cobranza;
 using Corela15.Domain.Colocacion;
@@ -76,6 +77,11 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
 
     // LAVADOACTIVOS
     public DbSet<CalificacionCliente> CalificacionesCliente => Set<CalificacionCliente>();
+
+    // CAJAS
+    public DbSet<Denominacion> Denominaciones => Set<Denominacion>();
+    public DbSet<Ventanilla> Ventanillas => Set<Ventanilla>();
+    public DbSet<VentanillaCuadre> VentanillasCuadre => Set<VentanillaCuadre>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
