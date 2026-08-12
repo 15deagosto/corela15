@@ -1,0 +1,6 @@
+@Corela15.Api_HostAddress = http://localhost:5042
+
+GET {{Corela15.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
