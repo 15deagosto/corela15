@@ -99,7 +99,7 @@ nombre:
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (núcleo verificado y simplificado; falta UI y motor de scoring PLA)
 6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
 7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
-8. **Nivel 7** — Tesorería y activos internos
+8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (núcleo de los 5 submódulos, verificado; detalle transaccional diferido)
 9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE)
 10. **Periféricos** — sin orden obligatorio entre ellos
 
@@ -233,7 +233,19 @@ provisión de vacaciones (obligatorios en Ecuador, `EMPLEADO_DECIMOTERCERO`/
 alcance inicial — se agregan cuando se construya el cálculo real de rol de
 pagos, no antes. Migración: `Nivel6_Nomina`.
 
-### Metodología de verificación contra Softbank (usar para Niveles 7-8)
+**Nivel 7** — cinco esquemas, cada uno con su tabla núcleo verificada contra
+Softbank: `obligacion` (`obligacion_financiera` — 0 filas en Softbank hoy,
+la coop no tiene deuda vigente, pero la estructura la exige el grupo CUC 26),
+`activofijo` (`activo`, grupo CUC 18), `cuentasporcobrar`
+(`cuenta_por_cobrar`/`cuenta_por_pagar`, grupos CUC 16/25),
+`proveeduria` (`articulo`), `portafolio` (`inversion_portafolio`, grupo CUC
+13 — inversión propia de la coop, no confundir con los DPF de los socios
+de Nivel 3). En los 5 casos se modeló solo la tabla cabecera/catálogo
+núcleo, no el detalle transaccional (depreciación, traslados, tabla de
+amortización, movimientos de bodega) — se agrega cuando se construya el
+caso de uso real de cada uno. Migración: `Nivel7_TesoreriaYActivos`.
+
+### Metodología de verificación contra Softbank (usar para Nivel 8)
 
 `02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
 (columna por columna, contra la base real) pero los Niveles 5-8 quedaron
