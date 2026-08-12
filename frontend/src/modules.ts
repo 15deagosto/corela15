@@ -12,6 +12,7 @@ export type EstadoModulo = 'disponible' | 'en-construccion' | 'proximamente'
 
 export interface Modulo {
   slug: string
+  path: string
   nombre: string
   descripcion: string
   icon: LucideIcon
@@ -24,6 +25,7 @@ export interface Modulo {
 export const modulos: Modulo[] = [
   {
     slug: 'socios',
+    path: '/socios',
     nombre: 'Socios',
     descripcion: 'Personas, identificación y vínculo con la cooperativa',
     icon: Users,
@@ -31,6 +33,7 @@ export const modulos: Modulo[] = [
   },
   {
     slug: 'usuarios-roles',
+    path: '/usuarios-roles',
     nombre: 'Usuarios y roles',
     descripcion: 'Accesos, permisos y seguridad del sistema',
     icon: ShieldCheck,
@@ -38,6 +41,7 @@ export const modulos: Modulo[] = [
   },
   {
     slug: 'contabilidad',
+    path: '/contabilidad',
     nombre: 'Contabilidad',
     descripcion: 'Plan de cuentas, asientos y saldos',
     icon: Calculator,
@@ -45,13 +49,15 @@ export const modulos: Modulo[] = [
   },
   {
     slug: 'ahorros',
+    path: '/ahorros',
     nombre: 'Ahorros',
     descripcion: 'Cuentas de ahorro y captación a la vista',
     icon: PiggyBank,
-    estado: 'proximamente',
+    estado: 'en-construccion',
   },
   {
     slug: 'creditos',
+    path: '/creditos',
     nombre: 'Créditos y Plazo Fijo',
     descripcion: 'Solicitudes, préstamos y certificados de depósito',
     icon: Landmark,
@@ -59,6 +65,7 @@ export const modulos: Modulo[] = [
   },
   {
     slug: 'cobranzas-cumplimiento',
+    path: '/cobranzas-cumplimiento',
     nombre: 'Cobranzas y Cumplimiento',
     descripcion: 'Gestión de mora y prevención de lavado de activos',
     icon: ShieldAlert,

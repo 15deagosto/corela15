@@ -18,13 +18,10 @@ html, body, #root {
 
 body {
   margin: 0;
-  /* Marfil corporativo con acentos dorados y un toque de azul petróleo */
-  background-color: #faf6ec;
-  background-image:
-    linear-gradient(135deg, #fbf8ef 0%, #f7f1e2 45%, #f0e9d6 100%),
-    radial-gradient(ellipse 75% 60% at 12% -10%, rgba(197, 164, 90, 0.14), transparent 60%),
-    radial-gradient(ellipse 70% 60% at 105% 105%, rgba(44, 86, 112, 0.10), transparent 65%);
-  background-attachment: fixed;
+  /* Fondo neutro y liviano — el dorado queda para acentos puntuales, no para
+     teñir toda la pantalla (el gradiente marfil anterior competía con el
+     contenido en vez de dejarlo respirar, como en las pantallas reales de SIGA). */
+  background-color: #f7f6f3;
   @apply text-graphite-100 antialiased selection:bg-gold-500/30 selection:text-gold-900;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }

@@ -39,7 +39,9 @@ backend/
     Corela15.Api/             # controllers, Program.cs
 frontend/
   src/
-    App.tsx, main.tsx, lib/api.ts
+    App.tsx, main.tsx, modules.ts, lib/api.ts
+    components/   # Sidebar, TopBar, Layout, PageHeader
+    pages/         # Home, ModuloPagina (placeholder genérico por módulo)
 docker-compose.yml            # Postgres local
 .env.core                     # credenciales del Postgres NUEVO (gitignored)
 ```
@@ -92,7 +94,7 @@ nombre:
 
 1. **Nivel 0** — Identidad de personas, seguridad/usuarios, catálogos ✅ **hecho**
 2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado + caso de uso de registro de comprobantes; falta UI)
-3. **Nivel 2** — Ahorros (captación a la vista)
+3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA
 6. **Nivel 5** — Caja/Bóveda
@@ -149,6 +151,32 @@ Nota: `Nivel0_SeedCatalogosGenerales` sembró país (Ecuador), moneda (USD),
 tipos de identificación y una `Empresa`/`Agencia` mínimas — el RUC de la
 empresa es un placeholder de desarrollo, actualizar antes de cualquier
 ambiente real.
+
+**Nivel 2** — esquema `ahorros`: `tipo_cuenta` (catálogo de productos,
+sembrado: Ahorro a la Vista/Ahorro Infantil/Certificados de Aportación,
+con `permite_debito_prestamo`/`saldo_minimo_con_prestamo`), `cuenta` (la
+cuenta de ahorros, **versionada** con `cuenta_historico` + trigger),
+`cuenta_cliente` (bridge cuenta↔socio con `principal` para no duplicar
+montos entre cotitulares), `item_saldo` (catálogo de "baldes" de saldo:
+Disponible/Encaje/Bloqueado/Interés), `tipo_cuenta_item_saldo` (qué ítems
+aplican a cada producto), `cuenta_item_saldo` (saldo real por cuenta×ítem,
+**también versionada**, con `acredita_prestamo`). Migración: `Nivel2_Ahorros`.
+
+Nota de diseño importante para cuando se construya Nivel 3 (Crédito): el
+campo `cuenta_item_saldo.acredita_prestamo` es una de tres configuraciones
+independientes del auto-débito de cuota por SPI (junto con
+`tipo_cuenta.permite_debito_prestamo` acá y `COLOCACION.PRESTAMO.DEBITOSPI`
+que vivirá en Nivel 3) — el hallazgo real de la investigación original en
+Softbank fue que un préstamo con `DEBITOSPI=false` igual se debitaba porque
+el proceso no cruzaba las tres tablas. Cuando se implemente el caso de uso
+de auto-débito, debe validar las tres como una sola fuente de verdad, no
+tratarlas como flags independientes.
+
+Pendiente dentro de Nivel 2: caso de uso de apertura de cuenta y de
+depósito/retiro (equivalente al `ComprobanteContableService` de Nivel 1,
+debería generar también el comprobante contable correspondiente vía
+`IComprobanteContableService` — la integración real entre Ahorros y
+Contabilidad), y pantallas en el frontend.
 
 ## Frontend — módulos visibles al usuario
 

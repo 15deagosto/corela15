@@ -1,3 +1,4 @@
+using Corela15.Domain.Ahorros;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Contabilidad;
 using Corela15.Domain.General;
@@ -36,6 +37,14 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<ComprobanteContable> ComprobantesContables => Set<ComprobanteContable>();
     public DbSet<MovimientoComprobanteContable> MovimientosComprobanteContable => Set<MovimientoComprobanteContable>();
     public DbSet<SaldoContable> SaldosContables => Set<SaldoContable>();
+
+    // AHORROS
+    public DbSet<TipoCuenta> TiposCuenta => Set<TipoCuenta>();
+    public DbSet<Cuenta> Cuentas => Set<Cuenta>();
+    public DbSet<CuentaCliente> CuentasClientes => Set<CuentaCliente>();
+    public DbSet<ItemSaldo> ItemsSaldo => Set<ItemSaldo>();
+    public DbSet<TipoCuentaItemSaldo> TiposCuentaItemSaldo => Set<TipoCuentaItemSaldo>();
+    public DbSet<CuentaItemSaldo> CuentasItemSaldo => Set<CuentaItemSaldo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
