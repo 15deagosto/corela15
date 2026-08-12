@@ -91,7 +91,7 @@ nombre:
 ## Orden de construcción (dependencias, no preferencia)
 
 1. **Nivel 0** — Identidad de personas, seguridad/usuarios, catálogos ✅ **hecho**
-2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado; falta UI y casos de uso de registro de asientos)
+2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado + caso de uso de registro de comprobantes; falta UI)
 3. **Nivel 2** — Ahorros (captación a la vista)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA
@@ -137,11 +137,18 @@ que necesite historial real (`CUENTA` en Nivel 2, `PRESTAMO` en Nivel 3,
 etc.) — no reinventarlo cada vez, copiar la estructura de
 `Nivel1_MotorContable.cs`.
 
-Pendiente dentro de Nivel 1: casos de uso en `Corela15.Application` para
-registrar comprobantes (validando que suma de débitos = suma de créditos
-antes de persistir — ese invariante no está en la base de datos, es
-responsabilidad de la capa de aplicación), actualización de `saldo_contable`
-al contabilizar, y pantallas en el frontend.
+Caso de uso implementado y probado end-to-end: `POST /api/contabilidad/comprobantes`
+(`Corela15.Application.Contabilidad.IComprobanteContableService`, implementado
+en `Corela15.Infrastructure.Services.ComprobanteContableService`) — valida
+suma de débitos = suma de créditos (ese invariante no está en la base de
+datos, solo el CHECK por línea lo está), valida que las cuentas existan y
+sean de detalle (`es_mayor`), numera el comprobante por talonario de tipo,
+y actualiza `saldo_contable` del período. Falta: pantallas en el frontend.
+
+Nota: `Nivel0_SeedCatalogosGenerales` sembró país (Ecuador), moneda (USD),
+tipos de identificación y una `Empresa`/`Agencia` mínimas — el RUC de la
+empresa es un placeholder de desarrollo, actualizar antes de cualquier
+ambiente real.
 
 ## Frontend — módulos visibles al usuario
 
