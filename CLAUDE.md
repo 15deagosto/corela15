@@ -96,7 +96,7 @@ nombre:
 2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado + caso de uso de registro de comprobantes; falta UI)
 3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
-5. **Nivel 4** — Cobranzas + Cumplimiento/PLA
+5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (núcleo verificado y simplificado; falta UI y motor de scoring PLA)
 6. **Nivel 5** — Caja/Bóveda
 7. **Nivel 6** — Nómina propia
 8. **Nivel 7** — Tesorería y activos internos
@@ -203,7 +203,20 @@ pendiente el caso de uso de auto-débito que cruce este campo con
 `ahorros.cuenta_item_saldo.acredita_prestamo` como una sola fuente de
 verdad (ver nota en Nivel 2).
 
-### Metodología de verificación contra Softbank (usar para Niveles 4-8)
+**Nivel 4** — esquema `cobranza` (`periodo_mora` —sembrado con los 5 tramos
+Preventiva→Judicial—, `accion_gestion`, `gestion_prestamo_cobranza`) y
+`lavadoactivos` (`calificacion_cliente`). Simplificación consciente:
+Softbank separa la gestión de cobranza en tablas de lote/asignación de
+trabajo (`PRESTAMO_GESTIONAR` + `_DETALLE`) antes de llegar al registro de
+contacto — acá `gestion_prestamo_cobranza` referencia el préstamo
+directamente, sin heredar esa capa de asignación de trabajo (es mecanismo
+de UI de Softbank, no estructura de dominio esencial). El motor de scoring
+transaccional PLA (`CALIFICACIONCLIENTE_TRANSACCION`/`_DETALLE`, 6.3M/4M
+filas en Softbank) queda fuera de alcance — se modeló solo el resumen de
+perfil (`calificacion_cliente`), a agregar cuando se construya ese motor.
+Migración: `Nivel4_CobranzasYCumplimiento`.
+
+### Metodología de verificación contra Softbank (usar para Niveles 5-8)
 
 `02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
 (columna por columna, contra la base real) pero los Niveles 5-8 quedaron

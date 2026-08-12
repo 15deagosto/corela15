@@ -1,10 +1,12 @@
 using Corela15.Domain.Ahorros;
 using Corela15.Domain.Clientes;
+using Corela15.Domain.Cobranza;
 using Corela15.Domain.Colocacion;
 using Corela15.Domain.Contabilidad;
 using Corela15.Domain.Credito;
 using Corela15.Domain.General;
 using Corela15.Domain.Inversion;
+using Corela15.Domain.LavadoActivos;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
 using Microsoft.EntityFrameworkCore;
@@ -66,6 +68,14 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Prestamo> Prestamos => Set<Prestamo>();
     public DbSet<PrestamoCliente> PrestamosClientes => Set<PrestamoCliente>();
     public DbSet<PrestamoRubro> PrestamosRubros => Set<PrestamoRubro>();
+
+    // COBRANZA
+    public DbSet<PeriodoMora> PeriodosMora => Set<PeriodoMora>();
+    public DbSet<AccionGestion> AccionesGestion => Set<AccionGestion>();
+    public DbSet<GestionPrestamoCobranza> GestionesPrestamoCobranza => Set<GestionPrestamoCobranza>();
+
+    // LAVADOACTIVOS
+    public DbSet<CalificacionCliente> CalificacionesCliente => Set<CalificacionCliente>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
