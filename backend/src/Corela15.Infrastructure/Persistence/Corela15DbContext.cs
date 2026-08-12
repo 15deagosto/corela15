@@ -1,4 +1,5 @@
 using Corela15.Domain.Clientes;
+using Corela15.Domain.Contabilidad;
 using Corela15.Domain.General;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
@@ -28,6 +29,13 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Rol> Roles => Set<Rol>();
     public DbSet<UsuarioRol> UsuarioRoles => Set<UsuarioRol>();
     public DbSet<AccionIngresoUsuario> AccionesIngresoUsuario => Set<AccionIngresoUsuario>();
+
+    // CONTABILIDAD
+    public DbSet<CuentaContable> CuentasContables => Set<CuentaContable>();
+    public DbSet<TipoComprobanteContable> TiposComprobanteContable => Set<TipoComprobanteContable>();
+    public DbSet<ComprobanteContable> ComprobantesContables => Set<ComprobanteContable>();
+    public DbSet<MovimientoComprobanteContable> MovimientosComprobanteContable => Set<MovimientoComprobanteContable>();
+    public DbSet<SaldoContable> SaldosContables => Set<SaldoContable>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

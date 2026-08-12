@@ -1,18 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
-
-@theme {
-  --color-brand-50: #f5f3ff;
-  --color-brand-100: #ede9fe;
-  --color-brand-500: #7c3aed;
-  --color-brand-600: #6d28d9;
-  --color-brand-700: #5b21b6;
-}
+@config "../tailwind.config.js";
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  /* Curva "spring" para transiciones con física más natural (botones, cards). */
+  --ease-spring: linear(
+    0, 0.006, 0.025 3.6%, 0.101 7.9%, 0.539 20.1%, 0.721 25.3%, 0.849 29.8%,
+    0.958 34.9%, 0.985 38.1%, 1.005 41.6%, 1.015 45.7%, 1.017 50.4%,
+    1.013 55.9%, 1.001 65.3%, 0.996 71.5%, 0.996 84.9%, 1 100%
+  );
+}
+
+html, body, #root {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Marfil corporativo con acentos dorados y un toque de azul petróleo */
+  background-color: #faf6ec;
+  background-image:
+    linear-gradient(135deg, #fbf8ef 0%, #f7f1e2 45%, #f0e9d6 100%),
+    radial-gradient(ellipse 75% 60% at 12% -10%, rgba(197, 164, 90, 0.14), transparent 60%),
+    radial-gradient(ellipse 70% 60% at 105% 105%, rgba(44, 86, 112, 0.10), transparent 65%);
+  background-attachment: fixed;
+  @apply text-graphite-100 antialiased selection:bg-gold-500/30 selection:text-gold-900;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Scrollbar discreto, a tono con la paleta */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ddd3bd; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #b58e4a; }
+
+@layer utilities {
+  /* Glassmorphism: paneles translúcidos con borde dorado sobre el marfil */
+  .glass {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(130, 100, 44, 0.18);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(130, 100, 44, 0.24);
+  }
+
+  .glass-panel {
+    @apply bg-graphite-950/70 backdrop-blur-xl border border-black/[0.06] shadow-xl shadow-black/10;
+  }
+
+  .glass-card {
+    @apply bg-gradient-to-b from-white/80 to-graphite-950/60 backdrop-blur-md border border-black/[0.06] hover:border-gold-500/40 transition-all duration-300;
+  }
+
+  .transition-spring {
+    transition-timing-function: var(--ease-spring);
+  }
+
+  /* Botones/enlaces con hover fluido: leve elevación + resplandor dorado */
+  .btn-hover {
+    transition-property: transform, box-shadow, background-color, border-color, color;
+    transition-duration: 280ms;
+    transition-timing-function: var(--ease-spring);
+  }
+  .btn-hover:hover {
+    transform: translateY(-1px) scale(1.015);
+  }
+  .btn-hover:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .hover-zoom {
+    transition: transform 320ms var(--ease-spring);
+  }
+  .hover-zoom:hover {
+    transform: scale(1.06);
+  }
+
+  /* Resplandores ambientales corporativos */
+  .glow-petrol {
+    box-shadow: 0 0 35px -5px rgba(44, 86, 112, 0.25);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 30px -5px rgba(161, 125, 58, 0.2);
+  }
 }
