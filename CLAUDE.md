@@ -98,7 +98,7 @@ nombre:
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (núcleo verificado y simplificado; falta UI y motor de scoring PLA)
 6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
-7. **Nivel 6** — Nómina propia
+7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
 8. **Nivel 7** — Tesorería y activos internos
 9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE)
 10. **Periféricos** — sin orden obligatorio entre ellos
@@ -226,7 +226,14 @@ Softbank, la tabla más grande del esquema) — eso se modela junto al caso de
 uso real de transacción de ventanilla, vinculado a
 `FINANCIERO.MOVIMIENTO_AFECTACION` de Nivel 1. Migración: `Nivel5_Caja`.
 
-### Metodología de verificación contra Softbank (usar para Niveles 5-8)
+**Nivel 6** — esquema `nomina` (`empleado`, `rol_pagos`, `rol_pagos_empleado`)
+— verificado contra Softbank. Décimo tercero/cuarto, fondos de reserva y
+provisión de vacaciones (obligatorios en Ecuador, `EMPLEADO_DECIMOTERCERO`/
+`_DECIMOCUARTO`/`_FONDOSRESERVA`/`_PROVISION_VACACION`) quedan fuera de
+alcance inicial — se agregan cuando se construya el cálculo real de rol de
+pagos, no antes. Migración: `Nivel6_Nomina`.
+
+### Metodología de verificación contra Softbank (usar para Niveles 7-8)
 
 `02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
 (columna por columna, contra la base real) pero los Niveles 5-8 quedaron

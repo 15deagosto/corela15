@@ -8,6 +8,7 @@ using Corela15.Domain.Credito;
 using Corela15.Domain.General;
 using Corela15.Domain.Inversion;
 using Corela15.Domain.LavadoActivos;
+using Corela15.Domain.Nomina;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
 using Microsoft.EntityFrameworkCore;
@@ -82,6 +83,11 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Denominacion> Denominaciones => Set<Denominacion>();
     public DbSet<Ventanilla> Ventanillas => Set<Ventanilla>();
     public DbSet<VentanillaCuadre> VentanillasCuadre => Set<VentanillaCuadre>();
+
+    // NOMINA
+    public DbSet<Empleado> Empleados => Set<Empleado>();
+    public DbSet<RolPagos> RolesPagos => Set<RolPagos>();
+    public DbSet<RolPagosEmpleado> RolesPagosEmpleado => Set<RolPagosEmpleado>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
