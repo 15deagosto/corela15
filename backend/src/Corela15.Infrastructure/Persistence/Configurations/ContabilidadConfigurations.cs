@@ -79,6 +79,27 @@ public class MovimientoComprobanteContableConfiguration : IEntityTypeConfigurati
     }
 }
 
+public class TipoTransaccionConfiguration : IEntityTypeConfiguration<TipoTransaccion>
+{
+    public void Configure(EntityTypeBuilder<TipoTransaccion> b)
+    {
+        b.ToTable("tipo_transaccion", "contabilidad", t => t.HasCheckConstraint(
+            "ck_tipo_transaccion_signo", "signo_saldo_cuenta IN (-1, 1)"));
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Codigo).HasMaxLength(20).IsRequired();
+        b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
+
+        b.HasOne(x => x.CuentaContableDebito).WithMany().HasForeignKey(x => x.IdCuentaContableDebito)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.CuentaContableCredito).WithMany().HasForeignKey(x => x.IdCuentaContableCredito)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.TipoComprobante).WithMany().HasForeignKey(x => x.IdTipoComprobante)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.Codigo).IsUnique();
+    }
+}
+
 public class SaldoContableConfiguration : IEntityTypeConfiguration<SaldoContable>
 {
     public void Configure(EntityTypeBuilder<SaldoContable> b)

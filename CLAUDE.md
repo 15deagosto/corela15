@@ -186,8 +186,29 @@ transacciones separadas (el servicio de comprobantes abre la suya propia)
 — si el comprobante falla, la cuenta queda creada sin su asiento; aceptable
 por ahora sin saga/outbox, revisar si se vuelve un problema real.
 
-Pendiente dentro de Nivel 2: casos de uso de depósito/retiro sobre una
-cuenta ya abierta.
+Casos de uso de depósito/retiro implementados, con un **motor contable
+configurable** que corrige una falencia real de Softbank: en vez de las
+tres tablas cruzadas y opacas (`FINANCIERO.TRANSACCION` →
+`CONTABILIDAD.GENERADOR_CONTABLE` → `CONTABILIDAD.CAUSAL`, que la propia
+investigación original documentó como difíciles de entender sin cruzar a
+mano), acá `contabilidad.tipo_transaccion` es **una sola fila configurable**
+por tipo de transacción: qué cuenta debita, qué cuenta acredita, qué tipo
+de comprobante usa, y si suma o resta al saldo de la cuenta afectada
+(`signo_saldo_cuenta`, explícito, no inferido). Sembrado: `DEP-EFEC`
+(depósito en efectivo) y `RET-EFEC` (retiro en efectivo). Para agregar un
+nuevo tipo de movimiento (transferencia, pago de servicio...) no hace falta
+código nuevo — se inserta una fila.
+
+`POST /api/ahorros/cuentas/{id}/movimientos`
+(`ICuentaAhorroService.RegistrarMovimientoAsync`) valida saldo mínimo del
+producto (`ahorros.tipo_cuenta.saldo_minimo` — falencia corregida: Softbank
+solo valida mínimo si hay préstamo asociado, acá se valida siempre),
+actualiza `cuenta_item_saldo`, genera el asiento vía
+`IComprobanteContableService`, y deja constancia en
+`ahorros.cuenta_movimiento` (bitácora con referencia directa al comprobante,
+para auditar un movimiento sin cruzar tablas). Probado end-to-end: depósito,
+retiro, y rechazo correcto de un retiro que dejaría el saldo bajo el
+mínimo. Pantalla real en el frontend (botón "Movimiento" por cuenta).
 
 **Nivel 3** — verificado columna por columna contra Softbank en vivo (solo
 lectura, ver metodología abajo), no solo contra el resumen de

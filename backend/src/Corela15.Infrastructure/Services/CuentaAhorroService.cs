@@ -118,4 +118,75 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
 
         return new CuentaAhorroAbiertaResult(cuenta.Id, numero, idComprobante);
     }
+
+    public async Task<MovimientoCuentaRegistradoResult> RegistrarMovimientoAsync(
+        RegistrarMovimientoCuentaRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Monto <= 0)
+        {
+            throw new ArgumentException("El monto del movimiento debe ser mayor a cero.");
+        }
+
+        var cuenta = await db.Cuentas.Include(c => c.TipoCuenta)
+            .FirstOrDefaultAsync(c => c.Id == request.IdCuenta, cancellationToken);
+        if (cuenta is null || cuenta.Estado != EstadoCuenta.Activa)
+        {
+            throw new CuentaInvalidaException(request.IdCuenta);
+        }
+
+        var tipoTransaccion = await db.TiposTransaccion
+            .FirstOrDefaultAsync(t => t.Codigo == request.CodigoTipoTransaccion, cancellationToken);
+        if (tipoTransaccion is null || !tipoTransaccion.Activo)
+        {
+            throw new TipoTransaccionInvalidoException(request.CodigoTipoTransaccion);
+        }
+
+        var itemDisponible = await db.CuentasItemSaldo
+            .Include(x => x.ItemSaldo)
+            .FirstOrDefaultAsync(x => x.IdCuenta == cuenta.Id && x.ItemSaldo.Codigo == "DISP", cancellationToken);
+        if (itemDisponible is null)
+        {
+            throw new InvalidOperationException($"La cuenta {cuenta.Numero} no tiene ítem de saldo 'Disponible'.");
+        }
+
+        var saldoNuevo = itemDisponible.Saldo + request.Monto * tipoTransaccion.SignoSaldoCuenta;
+        if (saldoNuevo < cuenta.TipoCuenta.SaldoMinimo)
+        {
+            throw new SaldoInsuficienteException(itemDisponible.Saldo, cuenta.TipoCuenta.SaldoMinimo, request.Monto);
+        }
+
+        itemDisponible.Saldo = saldoNuevo;
+        itemDisponible.ModificadoEn = DateTimeOffset.UtcNow;
+        itemDisponible.ModificadoPor = request.RegistradoPor;
+        await db.SaveChangesAsync(cancellationToken);
+
+        var resultadoComprobante = await comprobantes.RegistrarAsync(
+            new RegistrarComprobanteContableRequest(
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                tipoTransaccion.IdTipoComprobante,
+                cuenta.IdAgencia,
+                $"{tipoTransaccion.Nombre} - cuenta {cuenta.Numero}",
+                request.RegistradoPor,
+                [
+                    new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableDebito, request.Monto, 0, tipoTransaccion.Nombre),
+                    new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableCredito, 0, request.Monto, tipoTransaccion.Nombre),
+                ]),
+            cancellationToken);
+
+        var movimiento = new CuentaMovimiento
+        {
+            Id = Guid.NewGuid(),
+            IdCuenta = cuenta.Id,
+            Tipo = tipoTransaccion.SignoSaldoCuenta > 0 ? TipoMovimientoCuenta.Deposito : TipoMovimientoCuenta.Retiro,
+            Monto = request.Monto,
+            SaldoResultante = saldoNuevo,
+            IdComprobanteContable = resultadoComprobante.Id,
+            FechaHora = DateTimeOffset.UtcNow,
+            RegistradoPor = request.RegistradoPor,
+        };
+        db.CuentasMovimientos.Add(movimiento);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new MovimientoCuentaRegistradoResult(movimiento.Id, saldoNuevo, resultadoComprobante.Id);
+    }
 }

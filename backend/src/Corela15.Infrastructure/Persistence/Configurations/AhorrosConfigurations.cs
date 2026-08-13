@@ -12,6 +12,7 @@ public class TipoCuentaConfiguration : IEntityTypeConfiguration<TipoCuenta>
         b.HasKey(x => x.Id);
         b.Property(x => x.Codigo).HasMaxLength(10).IsRequired();
         b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+        b.Property(x => x.SaldoMinimo).HasColumnType("numeric(18,2)");
         b.Property(x => x.SaldoMinimoConPrestamo).HasColumnType("numeric(18,2)");
         b.HasIndex(x => x.Codigo).IsUnique();
     }
@@ -85,5 +86,24 @@ public class CuentaItemSaldoConfiguration : IEntityTypeConfiguration<CuentaItemS
         b.HasOne(x => x.ItemSaldo).WithMany().HasForeignKey(x => x.IdItemSaldo).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdCuenta, x.IdItemSaldo }).IsUnique();
+    }
+}
+
+public class CuentaMovimientoConfiguration : IEntityTypeConfiguration<CuentaMovimiento>
+{
+    public void Configure(EntityTypeBuilder<CuentaMovimiento> b)
+    {
+        b.ToTable("cuenta_movimiento", "ahorros");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Tipo).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Monto).HasColumnType("numeric(18,2)");
+        b.Property(x => x.SaldoResultante).HasColumnType("numeric(18,2)");
+        b.Property(x => x.RegistradoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Cuenta).WithMany().HasForeignKey(x => x.IdCuenta).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.ComprobanteContable).WithMany().HasForeignKey(x => x.IdComprobanteContable)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => new { x.IdCuenta, x.FechaHora });
     }
 }
