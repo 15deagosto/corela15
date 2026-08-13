@@ -69,6 +69,6 @@ export const modulos: Modulo[] = [
     nombre: 'Cobranzas y Cumplimiento',
     descripcion: 'Gestión de mora y prevención de lavado de activos',
     icon: ShieldAlert,
-    estado: 'proximamente',
+    estado: 'en-construccion',
   },
 ]

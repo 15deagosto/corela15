@@ -103,7 +103,7 @@ nombre:
 2. **Nivel 1** — Motor contable (plan de cuentas SEPS, asientos, saldos) ✅ **hecho** (estructura + versionado + caso de uso de registro de comprobantes; falta UI)
 3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
-5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (núcleo verificado y simplificado; falta UI y motor de scoring PLA)
+5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (registro de gestión de cobranza con UI real; falta motor de scoring PLA y cálculo de mora)
 6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
 7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
 8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (núcleo de los 5 submódulos, verificado; detalle transaccional diferido)
@@ -359,6 +359,22 @@ SEPS/BCE" antes de diseñar el `CABECERA_*`/`DETALLE_*` real de cada uno —
 verificar la estructura de tablas de Softbank NO sustituye verificar la
 norma oficial. No implementar el detalle de ningún reporte sin esa
 verificación regulatoria explícita primero.
+
+**Registro de gestión de cobranza implementado y probado end-to-end**
+(`Corela15.Application.Cobranza.IGestionCobranzaService`): `POST /api/
+cobranzas/gestiones` valida que el préstamo, el cliente y la acción de
+gestión existan y estén activos, y registra el contacto (llamada, visita,
+acuerdo de pago...) con `TieneCompromisoPago` y observación libre — sin
+asiento contable, es un registro de seguimiento, no un movimiento de
+dinero. Pantalla real (`CobranzasCumplimiento.tsx`, reemplaza el placeholder
+"Próximamente"): selector de préstamo vigente + acción, tabla de
+gestiones registradas.
+
+Pendiente dentro de Nivel 4: `PrestamoConsolidado`/días de mora reales
+(hoy no hay cálculo de mora automático — el selector de préstamos para
+cobranza muestra todos los vigentes, no solo los vencidos, porque ese
+cálculo no existe todavía), motor de scoring PLA (`CalificacionCliente`
+tiene la entidad pero no el caso de uso de cálculo).
 
 **Periféricos con núcleo modelado** (`Perifericos_Auditoria_CallCenter_Marketing_Planificacion_Rural`):
 - `auditoria` (`area_auditoria`, `seguimiento`) — **reusa `riesgo.nivel_riesgo` de Nivel 8** en vez de duplicar el catálogo de impacto/probabilidad que Softbank sí duplica entre `AUDITORIA` y `RIESGOOPERATIVO` (mismo patrón matriz, declarado una sola vez acá).

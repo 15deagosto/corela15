@@ -6,6 +6,7 @@ import { UsuariosRoles } from './pages/UsuariosRoles'
 import { Contabilidad } from './pages/Contabilidad'
 import { Ahorros } from './pages/Ahorros'
 import { Creditos } from './pages/Creditos'
+import { CobranzasCumplimiento } from './pages/CobranzasCumplimiento'
 import { ModuloPagina } from './pages/ModuloPagina'
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
         <Route path="/contabilidad" element={<Contabilidad />} />
         <Route path="/ahorros" element={<Ahorros />} />
         <Route path="/creditos" element={<Creditos />} />
+        <Route path="/cobranzas-cumplimiento" element={<CobranzasCumplimiento />} />
         <Route path="/:slug" element={<ModuloPagina />} />
       </Route>
     </Routes>
