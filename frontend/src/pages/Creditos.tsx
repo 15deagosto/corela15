@@ -209,6 +209,18 @@ export function Creditos() {
     },
   })
 
+  const pagarCuota = useMutation({
+    mutationFn: async (idPrestamo: string) =>
+      (
+        await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, {
+          registradoPor: 'front:creditos',
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+    },
+  })
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -285,6 +297,7 @@ export function Creditos() {
             <Th>Saldo</Th>
             <Th>Tasa</Th>
             <Th>Estado</Th>
+            <Th>Acciones</Th>
           </tr>
         </thead>
         <tbody>
@@ -300,10 +313,28 @@ export function Creditos() {
               <Td>
                 <Badge variant={estadoVariant(p.estado)}>{p.estado}</Badge>
               </Td>
+              <Td>
+                {p.estado === 'Vigente' && (
+                  <button
+                    type="button"
+                    disabled={pagarCuota.isPending}
+                    onClick={() => pagarCuota.mutate(p.id)}
+                    className="text-sm font-medium text-gold-400 hover:underline disabled:opacity-50"
+                  >
+                    Pagar cuota
+                  </button>
+                )}
+              </Td>
             </tr>
           ))}
         </tbody>
       </TableContainer>
+      {pagarCuota.isError && (
+        <p className="mt-2 text-sm text-red-700">
+          {(pagarCuota.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+            'No se pudo registrar el pago.'}
+        </p>
+      )}
     </div>
   )
 }

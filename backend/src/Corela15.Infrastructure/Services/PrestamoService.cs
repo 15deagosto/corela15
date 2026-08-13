@@ -12,6 +12,10 @@ namespace Corela15.Infrastructure.Services;
 public class PrestamoService(Corela15DbContext db, IComprobanteContableService comprobantes) : IPrestamoService
 {
     private const string CodigoTipoTransaccionDesembolso = "DESEMB-EFEC";
+    private const string CodigoCuentaCaja = "1101";
+    private const string CodigoCuentaCartera = "1401";
+    private const string CodigoCuentaInteresesGanados = "5101";
+    private const int IdTipoComprobanteDiario = 3; // 'DIA'
 
     public async Task<SolicitudPrestamoCreadaResult> SolicitarAsync(
         SolicitarPrestamoRequest request, CancellationToken cancellationToken = default)
@@ -165,6 +169,97 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
         await transaccion.CommitAsync(cancellationToken);
 
         return new PrestamoDesembolsadoResult(prestamo.Id, numero, resultadoComprobante.Id);
+    }
+
+    public async Task<PagoCuotaRegistradoResult> PagarCuotaAsync(
+        PagarCuotaRequest request, CancellationToken cancellationToken = default)
+    {
+        var prestamo = await db.Prestamos.FirstOrDefaultAsync(p => p.Id == request.IdPrestamo, cancellationToken);
+        if (prestamo is null || prestamo.Estado != EstadoPrestamo.Vigente)
+        {
+            throw new PrestamoInvalidoException(request.IdPrestamo);
+        }
+
+        var rubrosCuota = await db.PrestamosRubros
+            .Include(r => r.Rubro)
+            .Where(r => r.IdPrestamo == prestamo.Id && r.Estado == "Pendiente")
+            .OrderBy(r => r.NumeroCuota)
+            .ToListAsync(cancellationToken);
+
+        var proximoNumeroCuota = rubrosCuota.Select(r => r.NumeroCuota).DefaultIfEmpty(0).Min();
+        var rubrosDeLaCuota = rubrosCuota.Where(r => r.NumeroCuota == proximoNumeroCuota).ToList();
+        if (rubrosDeLaCuota.Count == 0)
+        {
+            throw new PrestamoSinCuotasPendientesException(request.IdPrestamo);
+        }
+
+        var rubroCapital = rubrosDeLaCuota.First(r => r.Rubro.Codigo == "CAP");
+        var rubroInteres = rubrosDeLaCuota.First(r => r.Rubro.Codigo == "INT");
+
+        var idCuentaCaja = await db.CuentasContables
+            .Where(c => c.Codigo == CodigoCuentaCaja).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+        var idCuentaCartera = await db.CuentasContables
+            .Where(c => c.Codigo == CodigoCuentaCartera).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+        var idCuentaIntereses = await db.CuentasContables
+            .Where(c => c.Codigo == CodigoCuentaInteresesGanados).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+
+        if (idCuentaCaja is null || idCuentaCartera is null || idCuentaIntereses is null)
+        {
+            throw new InvalidOperationException(
+                $"Faltan cuentas contables {CodigoCuentaCaja}/{CodigoCuentaCartera}/{CodigoCuentaInteresesGanados}.");
+        }
+
+        // Una sola transacción: rubros pagados, saldo del préstamo (y su
+        // posible cancelación) y asiento contable, todo junto o nada.
+        await using var transaccion = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        rubroCapital.Cobrado = rubroCapital.Proyectado;
+        rubroCapital.Estado = "Pagado";
+        rubroInteres.Cobrado = rubroInteres.Proyectado;
+        rubroInteres.Estado = "Pagado";
+
+        prestamo.Saldo -= rubroCapital.Proyectado;
+        var quedanCuotasPendientes = await db.PrestamosRubros
+            .AnyAsync(r => r.IdPrestamo == prestamo.Id && r.Estado == "Pendiente" && r.NumeroCuota != proximoNumeroCuota,
+                cancellationToken);
+        if (!quedanCuotasPendientes)
+        {
+            prestamo.Estado = EstadoPrestamo.Cancelado;
+        }
+        prestamo.ModificadoEn = DateTimeOffset.UtcNow;
+        prestamo.ModificadoPor = request.RegistradoPor;
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        var montoTotal = rubroCapital.Proyectado + rubroInteres.Proyectado;
+        var lineas = new List<LineaMovimientoRequest>
+        {
+            new(idCuentaCaja.Value, montoTotal, 0, $"Pago cuota {proximoNumeroCuota} préstamo {prestamo.Numero}"),
+        };
+        if (rubroCapital.Proyectado > 0)
+        {
+            lineas.Add(new LineaMovimientoRequest(idCuentaCartera.Value, 0, rubroCapital.Proyectado, "Abono a capital"));
+        }
+        if (rubroInteres.Proyectado > 0)
+        {
+            lineas.Add(new LineaMovimientoRequest(idCuentaIntereses.Value, 0, rubroInteres.Proyectado, "Interés cobrado"));
+        }
+
+        var resultadoComprobante = await comprobantes.RegistrarAsync(
+            new RegistrarComprobanteContableRequest(
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                IdTipoComprobanteDiario,
+                prestamo.IdAgencia,
+                $"Pago cuota {proximoNumeroCuota} préstamo {prestamo.Numero}",
+                request.RegistradoPor,
+                lineas),
+            cancellationToken);
+
+        await transaccion.CommitAsync(cancellationToken);
+
+        return new PagoCuotaRegistradoResult(
+            proximoNumeroCuota, rubroCapital.Proyectado, rubroInteres.Proyectado, prestamo.Saldo,
+            prestamo.Estado == EstadoPrestamo.Cancelado, resultadoComprobante.Id);
     }
 
     private record CuotaAmortizacion(int NumeroCuota, DateOnly FechaInicio, DateOnly FechaFin, decimal Capital, decimal Interes);

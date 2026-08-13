@@ -17,6 +17,17 @@ public interface IPrestamoService
     /// </summary>
     Task<PrestamoDesembolsadoResult> DesembolsarAsync(
         DesembolsarPrestamoRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paga la próxima cuota pendiente (la de menor número aún no pagada):
+    /// marca capital e interés de esa cuota como cobrados, reduce
+    /// Prestamo.Saldo, y registra el asiento (débito Caja / crédito Cartera
+    /// de créditos por el capital / crédito Intereses ganados por el
+    /// interés — tres líneas en un solo comprobante). Si era la última
+    /// cuota, el préstamo pasa a Cancelado. Todo en una sola transacción.
+    /// </summary>
+    Task<PagoCuotaRegistradoResult> PagarCuotaAsync(
+        PagarCuotaRequest request, CancellationToken cancellationToken = default);
 }
 
 public class SolicitudPrestamoInvalidaException(Guid idSolicitud)
@@ -28,3 +39,9 @@ public class TipoPrestamoInvalidoException(int idTipoPrestamo)
 public class MontoFueraDeRangoException(decimal monto, decimal montoMinimo, decimal montoMaximo)
     : ReglaDeNegocioException(
         $"El monto {monto:0.00} está fuera del rango permitido para el producto ({montoMinimo:0.00} - {montoMaximo:0.00})");
+
+public class PrestamoInvalidoException(Guid idPrestamo)
+    : ReglaDeNegocioException($"El préstamo {idPrestamo} no existe o no está vigente");
+
+public class PrestamoSinCuotasPendientesException(Guid idPrestamo)
+    : ReglaDeNegocioException($"El préstamo {idPrestamo} no tiene cuotas pendientes de pago");

@@ -256,8 +256,24 @@ Cartera de créditos / crédito `1101` Caja) vía `DESEMB-EFEC` — mismo motor
 transacción atómica (mismo patrón de la sección de infraestructura
 transversal). `TipoPrestamo.TasaAnual` sembrada con tasas reales de
 referencia (Consumo 17.20%, Microcrédito 20.50%, Productivo 10.90%).
+**Pago de cuota implementado y probado end-to-end**
+(`IPrestamoService.PagarCuotaAsync`): paga la próxima cuota pendiente (la de
+menor número aún no pagada), separa capital e interés, actualiza
+`Prestamo.Saldo`, y registra un asiento de **tres líneas** (débito Caja /
+crédito Cartera de créditos por el capital / crédito `5101` Intereses
+ganados por el interés — sembrada para esto) — la primera vez que un
+comprobante en el proyecto usa más de 2 líneas, confirmando que
+`IComprobanteContableService` ya soportaba N líneas desde el diseño
+original de Nivel 1, sin cambios. Si era la última cuota, el préstamo pasa
+a `Cancelado` automáticamente. Probado un ciclo de vida completo real:
+solicitud → desembolso → 3 pagos de cuota → saldo exacto en `$0.00` →
+préstamo cancelado → un 4º intento de pago rechazado correctamente (422,
+`PrestamoInvalidoException`) porque ya no está vigente. Verificado en la
+base que `1401` Cartera queda neteada en cero y `5101` Intereses ganados
+acumula exactamente el interés total esperado.
+
 Pantalla real en el frontend (`Creditos.tsx`: solicitar, listar, botón
-"Desembolsar", cartera de préstamos).
+"Desembolsar", cartera de préstamos con botón "Pagar cuota").
 
 **Nivel 4** — esquema `cobranza` (`periodo_mora` —sembrado con los 5 tramos
 Preventiva→Judicial—, `accion_gestion`, `gestion_prestamo_cobranza`) y

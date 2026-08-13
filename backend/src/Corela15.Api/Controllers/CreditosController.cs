@@ -73,6 +73,15 @@ public class CreditosController(Corela15DbContext db, IPrestamoService prestamoS
             new DesembolsarPrestamoRequest(idSolicitud, body.RegistradoPor), cancellationToken);
         return Ok(resultado);
     }
+
+    [HttpPost("prestamos/{idPrestamo:guid}/pagos")]
+    public async Task<ActionResult<PagoCuotaRegistradoResult>> PagarCuota(
+        Guid idPrestamo, [FromBody] DesembolsarBody body, CancellationToken cancellationToken)
+    {
+        var resultado = await prestamoService.PagarCuotaAsync(
+            new PagarCuotaRequest(idPrestamo, body.RegistradoPor), cancellationToken);
+        return Ok(resultado);
+    }
 }
 
 public record DesembolsarBody(string RegistradoPor);
