@@ -275,6 +275,30 @@ acumula exactamente el interés total esperado.
 Pantalla real en el frontend (`Creditos.tsx`: solicitar, listar, botón
 "Desembolsar", cartera de préstamos con botón "Pagar cuota").
 
+**Apertura y cancelación de DPF implementadas y probadas end-to-end**
+(`Corela15.Application.Inversion.IDepositoService`, `DepositoService`):
+`POST /api/plazofijo/depositos` busca la tasa vigente en el tablero
+(`inversion.item_plazo_tasa`, sembrado con 4 rangos reales por plazo:
+30-89d 5.5%, 90-179d 7%, 180-359d 8.5%, 360-720d 10%) por
+monto/plazo/tipo de persona — nunca hardcodeada — y registra el asiento
+(débito Caja / crédito `2103` Depósitos a plazo fijo, sembrada para esto)
+vía `APER-DPF`. `POST /api/plazofijo/depositos/{id}/cancelar` revierte el
+asiento vía `CANC-DPF` y marca el depósito `Cancelado`. Probado: apertura
+con tasa correcta según el tablero (180 días → 8.50% exacto), cancelación,
+doble cancelación rechazada, y verificado en la base que `1101`/`2103`
+netean en cero tras el ciclo completo. Pantalla real integrada en
+`Creditos.tsx` (mismo módulo que Crédito, ya que `modules.ts` los agrupa
+como "Créditos y Plazo Fijo").
+
+Pendiente dentro de Nivel 3: renovación automática de DPF
+(`DepositoRenovacion` ya modelada, sin caso de uso — debe leer la tasa
+vigente al momento de renovar, no la original, ver aprendizaje documentado
+en `Deposito.cs`), cálculo de interés devengado proporcional en
+cancelación anticipada (hoy devuelve solo el capital nominal), motor de
+scoring de `SolicitudPrestamo` (`SOLICITUD_PRESTAMO_CALIFICACION` en
+Softbank, fuera de alcance), y el auto-débito de cuota por SPI ya
+documentado arriba.
+
 **Nivel 4** — esquema `cobranza` (`periodo_mora` —sembrado con los 5 tramos
 Preventiva→Judicial—, `accion_gestion`, `gestion_prestamo_cobranza`) y
 `lavadoactivos` (`calificacion_cliente`). Simplificación consciente:

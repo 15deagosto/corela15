@@ -43,6 +43,18 @@ interface Socio {
   nombre: string
 }
 
+interface Deposito {
+  id: string
+  codigo: string
+  socio: string
+  monto: number
+  tasa: number
+  plazoDias: number
+  fechaCreacion: string
+  fechaVencimiento: string
+  estado: string
+}
+
 function formatoUsd(monto: number) {
   return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
 }
@@ -171,6 +183,114 @@ function SolicitarForm({ productos, onClose }: { productos: Producto[]; onClose:
   )
 }
 
+function AbrirDpfForm({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [idCliente, setIdCliente] = useState('')
+  const [monto, setMonto] = useState('500')
+  const [plazoDias, setPlazoDias] = useState('180')
+
+  const { data: socios } = useQuery<Socio[]>({
+    queryKey: ['socios', ''],
+    queryFn: async () => (await api.get('/api/socios')).data,
+  })
+
+  const abrir = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post('/api/plazofijo/depositos', {
+          idCliente,
+          idAgencia: 1,
+          monto: Number(monto) || 0,
+          plazoDias: Number(plazoDias) || 0,
+          esPersonaJuridica: false,
+          registradoPor: 'front:creditos',
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="glass-card animate-zoom-in mb-6 rounded-xl p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-medium text-graphite-100">Abrir depósito a plazo fijo</h3>
+        <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+          <X size={18} />
+        </button>
+      </div>
+
+      <form
+        className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!idCliente) return
+          abrir.mutate()
+        }}
+      >
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-graphite-600">Socio</span>
+          <select
+            required
+            value={idCliente}
+            onChange={(e) => setIdCliente(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+          >
+            <option value="">Seleccionar…</option>
+            {socios?.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.numero} — {s.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-graphite-600">Monto (USD)</span>
+          <input
+            type="number"
+            min="50"
+            step="0.01"
+            value={monto}
+            onChange={(e) => setMonto(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-graphite-600">Plazo (días)</span>
+          <input
+            type="number"
+            min="30"
+            max="720"
+            value={plazoDias}
+            onChange={(e) => setPlazoDias(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+          />
+        </label>
+
+        <div className="flex items-end gap-2 sm:col-span-3">
+          <button
+            type="submit"
+            disabled={abrir.isPending}
+            className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {abrir.isPending ? 'Abriendo…' : 'Abrir DPF'}
+          </button>
+        </div>
+
+        {abrir.isError && (
+          <p className="sm:col-span-3 text-sm text-red-700">
+            {(abrir.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+              'No se pudo abrir el depósito.'}
+          </p>
+        )}
+      </form>
+    </div>
+  )
+}
+
 function estadoVariant(estado: string) {
   if (estado === 'Desembolsada' || estado === 'Vigente') return 'exito' as const
   if (estado === 'Rechazada') return 'peligro' as const
@@ -179,6 +299,7 @@ function estadoVariant(estado: string) {
 
 export function Creditos() {
   const [mostrarForm, setMostrarForm] = useState(false)
+  const [mostrarFormDpf, setMostrarFormDpf] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: productos } = useQuery<Producto[]>({
@@ -218,6 +339,23 @@ export function Creditos() {
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+    },
+  })
+
+  const { data: depositos, isLoading: cargandoDepositos } = useQuery<Deposito[]>({
+    queryKey: ['plazofijo-depositos'],
+    queryFn: async () => (await api.get('/api/plazofijo/depositos')).data,
+  })
+
+  const cancelarDpf = useMutation({
+    mutationFn: async (idDeposito: string) =>
+      (
+        await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, {
+          registradoPor: 'front:creditos',
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
     },
   })
 
@@ -335,6 +473,65 @@ export function Creditos() {
             'No se pudo registrar el pago.'}
         </p>
       )}
+
+      <div className="mb-2 mt-8 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Plazo fijo</h2>
+        {!mostrarFormDpf && (
+          <button
+            type="button"
+            onClick={() => setMostrarFormDpf(true)}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-1.5 text-xs font-medium text-white"
+          >
+            <Plus size={14} /> Abrir DPF
+          </button>
+        )}
+      </div>
+
+      {mostrarFormDpf && <AbrirDpfForm onClose={() => setMostrarFormDpf(false)} />}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código</Th>
+            <Th>Socio</Th>
+            <Th>Monto</Th>
+            <Th>Tasa</Th>
+            <Th>Plazo</Th>
+            <Th>Vencimiento</Th>
+            <Th>Estado</Th>
+            <Th>Acciones</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {cargandoDepositos && <EmptyState>Cargando…</EmptyState>}
+          {!cargandoDepositos && (depositos?.length ?? 0) === 0 && <EmptyState>Todavía no hay depósitos a plazo fijo</EmptyState>}
+          {depositos?.map((d) => (
+            <tr key={d.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{d.codigo}</Td>
+              <Td>{d.socio}</Td>
+              <Td className="tabular-nums">{formatoUsd(d.monto)}</Td>
+              <Td>{(d.tasa * 100).toFixed(2)}%</Td>
+              <Td>{d.plazoDias} días</Td>
+              <Td>{d.fechaVencimiento}</Td>
+              <Td>
+                <Badge variant={estadoVariant(d.estado)}>{d.estado}</Badge>
+              </Td>
+              <Td>
+                {d.estado === 'Vigente' && (
+                  <button
+                    type="button"
+                    disabled={cancelarDpf.isPending}
+                    onClick={() => cancelarDpf.mutate(d.id)}
+                    className="text-sm font-medium text-gold-400 hover:underline disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
     </div>
   )
 }
