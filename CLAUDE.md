@@ -172,11 +172,22 @@ el proceso no cruzaba las tres tablas. Cuando se implemente el caso de uso
 de auto-débito, debe validar las tres como una sola fuente de verdad, no
 tratarlas como flags independientes.
 
-Pendiente dentro de Nivel 2: caso de uso de apertura de cuenta y de
-depósito/retiro (equivalente al `ComprobanteContableService` de Nivel 1,
-debería generar también el comprobante contable correspondiente vía
-`IComprobanteContableService` — la integración real entre Ahorros y
-Contabilidad), y pantallas en el frontend.
+Caso de uso implementado y probado end-to-end: `POST /api/ahorros/cuentas`
+(`Corela15.Application.Ahorros.ICuentaAhorroService`, implementado en
+`Corela15.Infrastructure.Services.CuentaAhorroService`) — abre la cuenta,
+crea sus `cuenta_item_saldo` según el producto, y si hay depósito inicial
+**registra el comprobante contable correspondiente** vía
+`IComprobanteContableService` (débito `1101` Caja / crédito `2101`
+Depósitos a la vista, sembradas en `Contabilidad_SeedCuentasCajaYDepositos`)
+— la integración real entre Ahorros y Contabilidad, probada de punta a
+punta. Pantalla real en el frontend (`Ahorros.tsx`, formulario "Abrir
+cuenta"). Nota de diseño pendiente: apertura y comprobante son dos
+transacciones separadas (el servicio de comprobantes abre la suya propia)
+— si el comprobante falla, la cuenta queda creada sin su asiento; aceptable
+por ahora sin saga/outbox, revisar si se vuelve un problema real.
+
+Pendiente dentro de Nivel 2: casos de uso de depósito/retiro sobre una
+cuenta ya abierta.
 
 **Nivel 3** — verificado columna por columna contra Softbank en vivo (solo
 lectura, ver metodología abajo), no solo contra el resumen de

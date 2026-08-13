@@ -1,3 +1,4 @@
+using Corela15.Application.Ahorros;
 using Corela15.Application.Contabilidad;
 using Corela15.Infrastructure.Persistence;
 using Corela15.Infrastructure.Services;
@@ -30,6 +31,7 @@ builder.Services.AddDbContext<Corela15DbContext>(options =>
     options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 builder.Services.AddScoped<IComprobanteContableService, ComprobanteContableService>();
+builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

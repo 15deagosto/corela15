@@ -1,3 +1,4 @@
+using Corela15.Application.Ahorros;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,7 @@ public record CuentaAhorroListItem(
 
 [ApiController]
 [Route("api/ahorros")]
-public class AhorrosController(Corela15DbContext db) : ControllerBase
+public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuentaAhorroService) : ControllerBase
 {
     [HttpGet("productos")]
     public async Task<ActionResult<IReadOnlyList<ProductoAhorroListItem>>> Productos(
@@ -44,5 +45,24 @@ public class AhorrosController(Corela15DbContext db) : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
+    }
+
+    [HttpPost("cuentas")]
+    public async Task<ActionResult<CuentaAhorroAbiertaResult>> AbrirCuenta(
+        [FromBody] AbrirCuentaAhorroRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resultado = await cuentaAhorroService.AbrirAsync(request, cancellationToken);
+            return Created($"/api/ahorros/cuentas/{resultado.IdCuenta}", resultado);
+        }
+        catch (TipoCuentaInvalidoException ex)
+        {
+            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        catch (ClienteInvalidoException ex)
+        {
+            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
     }
 }
