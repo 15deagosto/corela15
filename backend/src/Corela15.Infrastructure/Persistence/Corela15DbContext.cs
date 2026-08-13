@@ -1,6 +1,8 @@
 using Corela15.Domain.ActivoFijo;
 using Corela15.Domain.Ahorros;
+using Corela15.Domain.Auditoria;
 using Corela15.Domain.Cajas;
+using Corela15.Domain.CallCenter;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Cobranza;
 using Corela15.Domain.Colocacion;
@@ -8,10 +10,13 @@ using Corela15.Domain.Contabilidad;
 using Corela15.Domain.Credito;
 using Corela15.Domain.CuentasPorCobrar;
 using Corela15.Domain.General;
+using Corela15.Domain.HerramientaRural;
 using Corela15.Domain.Inversion;
 using Corela15.Domain.LavadoActivos;
+using Corela15.Domain.Marketing;
 using Corela15.Domain.Nomina;
 using Corela15.Domain.Obligacion;
+using Corela15.Domain.Planificacion;
 using Corela15.Domain.Portafolio;
 using Corela15.Domain.Proveeduria;
 using Corela15.Domain.ReporteControl;
@@ -112,6 +117,17 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<NivelRiesgo> NivelesRiesgo => Set<NivelRiesgo>();
     public DbSet<EventoRiesgo> EventosRiesgo => Set<EventoRiesgo>();
     public DbSet<ReporteRegulatorio> ReportesRegulatorios => Set<ReporteRegulatorio>();
+
+    // Periféricos
+    public DbSet<AreaAuditoria> AreasAuditoria => Set<AreaAuditoria>();
+    public DbSet<Seguimiento> Seguimientos => Set<Seguimiento>();
+    public DbSet<TipoComentario> TiposComentario => Set<TipoComentario>();
+    public DbSet<Comentario> Comentarios => Set<Comentario>();
+    public DbSet<Rifa> Rifas => Set<Rifa>();
+    public DbSet<RifaPremio> RifasPremios => Set<RifaPremio>();
+    public DbSet<Indicador> Indicadores => Set<Indicador>();
+    public DbSet<PlanificacionAnual> PlanificacionesAnuales => Set<PlanificacionAnual>();
+    public DbSet<TipoProductoAgrario> TiposProductoAgrario => Set<TipoProductoAgrario>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

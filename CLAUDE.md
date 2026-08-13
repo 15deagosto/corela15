@@ -101,7 +101,7 @@ nombre:
 7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
 8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (núcleo de los 5 submódulos, verificado; detalle transaccional diferido)
 9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE) ✅ **hecho** (marco de riesgo genérico + índice de reportes; estructura de cada reporte pendiente de verificación regulatoria real, ver nota abajo)
-10. **Periféricos** — sin orden obligatorio entre ellos, **sin empezar**
+10. **Periféricos** — sin orden obligatorio entre ellos ⚠️ **parcial**: `Auditoria`/`CallCenter`/`Marketing`/`Planificacion`/`HerramientaRural` tienen núcleo verificado; `Coactiva`/`Enlinea`/`SbkMovil` sin empezar (ver nota abajo)
 
 Un nivel nunca depende de tablas/módulos de un nivel posterior. Si algo lo
 necesita, está mal clasificado — revisar antes de seguir.
@@ -264,7 +264,20 @@ verificar la estructura de tablas de Softbank NO sustituye verificar la
 norma oficial. No implementar el detalle de ningún reporte sin esa
 verificación regulatoria explícita primero.
 
-### Metodología de verificación contra Softbank (usar para Periféricos, si se retoman)
+**Periféricos con núcleo modelado** (`Perifericos_Auditoria_CallCenter_Marketing_Planificacion_Rural`):
+- `auditoria` (`area_auditoria`, `seguimiento`) — **reusa `riesgo.nivel_riesgo` de Nivel 8** en vez de duplicar el catálogo de impacto/probabilidad que Softbank sí duplica entre `AUDITORIA` y `RIESGOOPERATIVO` (mismo patrón matriz, declarado una sola vez acá).
+- `callcenter` (`tipo_comentario`, `comentario`)
+- `marketing` (`rifa`, `rifa_premio`)
+- `planificacion` (`indicador`, `planificacion_anual` — sin el detalle por asesor/mensual)
+- `herramientarural` (`tipo_producto_agrario` — solo el catálogo, sin el motor de cálculo)
+
+**Periféricos NO modelados, a propósito**: `Coactiva` (cobro coactivo, 0 filas reales en Softbank hoy — apéndice de Cobranzas, esperar a tener un caso real), `Enlinea` (banca en línea — necesita infraestructura de autenticación/sesión de socios que este proyecto todavía no tiene, construir cuando exista ese login), `SbkMovil` (configuración de app móvil, prácticamente vacía en Softbank — 0 filas en casi todas sus tablas). `CS_CAT`/`CS_CE` (facturación electrónica SRI) tampoco se tocaron: es un subsistema de cumplimiento tributario aparte, con su propia complejidad regulatoria, fuera del alcance de "core financiero" hasta que haga falta.
+
+### Nota operativa: incidente real en el servidor de Softbank (2026-08-13)
+
+El servicio de SQL Server del servidor de Softbank (`192.168.0.68`, instancia `MSSQLSERVER`, SQL Server 2019) dejó de arrancar tras un reinicio por Windows Update — `master` no podía completar un script de actualización interna pendiente (`msdb110_upgrade.sql`, conflicto de collation). Se resolvió arrancando con el trace flag **`-T902`** (salta el script de actualización), que quedó configurado de forma **permanente** en SQL Server Configuration Manager → Startup Parameters. Se tomó backup de `master`, `msdb` y `Softbank` en ese momento (no existía ninguno antes). Si en el futuro Softbank no responde, revisar primero si el servicio está corriendo antes de asumir que es un problema de red/firewall.
+
+### Metodología de verificación contra Softbank (usar para Coactiva/Enlinea/SbkMovil/CS_CAT/CS_CE, si se retoman)
 
 `02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
 (columna por columna, contra la base real) pero los Niveles 5-8 quedaron
