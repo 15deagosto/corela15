@@ -1,5 +1,6 @@
 using Corela15.Api.ExceptionHandling;
 using Corela15.Application.Ahorros;
+using Corela15.Application.Cajas;
 using Corela15.Application.Cobranza;
 using Corela15.Application.Colocacion;
 using Corela15.Application.Contabilidad;
@@ -39,6 +40,7 @@ builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 builder.Services.AddScoped<IDepositoService, DepositoService>();
 builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();
+builder.Services.AddScoped<IVentanillaService, VentanillaService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();

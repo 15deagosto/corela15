@@ -322,6 +322,25 @@ Softbank, la tabla más grande del esquema) — eso se modela junto al caso de
 uso real de transacción de ventanilla, vinculado a
 `FINANCIERO.MOVIMIENTO_AFECTACION` de Nivel 1. Migración: `Nivel5_Caja`.
 
+**Apertura/cierre de ventanilla implementado y probado end-to-end**
+(`Corela15.Application.Cajas.IVentanillaService`): `POST /api/cajas/
+ventanillas` abre la sesión de caja del día para un cajero (rechaza si ya
+tiene una abierta hoy — `VentanillaYaAbiertaException`, 422). `POST /api/
+cajas/ventanillas/{id}/cerrar` cierra la ventanilla y registra el cuadre
+(`VentanillaCuadre`) con el efectivo/cheque contado por el cajero (rechaza
+si ya está cerrada — `VentanillaInvalidaException`, 422). **Limitación real,
+documentada explícitamente en la interfaz, no oculta**: el cuadre no compara
+contra un monto esperado calculado — registra el conteo declarado como
+"cuadrado" por definición, porque el detalle de movimientos de efectivo por
+transacción vinculado a una ventanilla (ver arriba) todavía no existe; la
+reconciliación automática real requiere construir antes ese vínculo.
+Probado vía curl contra Postgres: apertura, doble apertura del mismo cajero
+en el mismo día rechazada (422), cierre, doble cierre rechazado (422),
+listado refleja `cerrada`/`cuadrada` correctamente. Pantalla real
+(`Cajas.tsx`, reemplaza el placeholder "Próximamente"): formulario de
+apertura por cajero, tabla de ventanillas con acción "Cerrar" por fila que
+abre un formulario de cuadre (efectivo + cheques).
+
 **Nivel 6** — esquema `nomina` (`empleado`, `rol_pagos`, `rol_pagos_empleado`)
 — verificado contra Softbank. Décimo tercero/cuarto, fondos de reserva y
 provisión de vacaciones (obligatorios en Ecuador, `EMPLEADO_DECIMOTERCERO`/

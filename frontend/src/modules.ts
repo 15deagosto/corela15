@@ -5,6 +5,7 @@ import {
   PiggyBank,
   Landmark,
   ShieldAlert,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -69,6 +70,14 @@ export const modulos: Modulo[] = [
     nombre: 'Cobranzas y Cumplimiento',
     descripcion: 'Gestión de mora y prevención de lavado de activos',
     icon: ShieldAlert,
+    estado: 'en-construccion',
+  },
+  {
+    slug: 'cajas',
+    path: '/cajas',
+    nombre: 'Cajas',
+    descripcion: 'Apertura, transacciones y cuadre diario de ventanillas',
+    icon: Wallet,
     estado: 'en-construccion',
   },
 ]
