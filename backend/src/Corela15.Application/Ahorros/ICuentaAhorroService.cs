@@ -1,3 +1,5 @@
+using Corela15.Application.Common;
+
 namespace Corela15.Application.Ahorros;
 
 public interface ICuentaAhorroService
@@ -24,17 +26,20 @@ public interface ICuentaAhorroService
 }
 
 public class CuentaInvalidaException(Guid idCuenta)
-    : Exception($"La cuenta {idCuenta} no existe o no está activa");
+    : ReglaDeNegocioException($"La cuenta {idCuenta} no existe o no está activa");
 
 public class TipoTransaccionInvalidoException(string codigo)
-    : Exception($"El tipo de transacción '{codigo}' no existe o está inactivo");
+    : ReglaDeNegocioException($"El tipo de transacción '{codigo}' no existe o está inactivo");
 
 public class SaldoInsuficienteException(decimal saldoActual, decimal saldoMinimo, decimal montoSolicitado)
-    : Exception(
+    : ReglaDeNegocioException(
         $"Saldo insuficiente: disponible {saldoActual:0.00}, mínimo exigido {saldoMinimo:0.00}, se pidió retirar {montoSolicitado:0.00}");
 
 public class TipoCuentaInvalidoException(int idTipoCuenta)
-    : Exception($"El tipo de cuenta {idTipoCuenta} no existe o está inactivo");
+    : ReglaDeNegocioException($"El tipo de cuenta {idTipoCuenta} no existe o está inactivo");
 
 public class ClienteInvalidoException(Guid idCliente)
-    : Exception($"El cliente {idCliente} no existe o no está activo");
+    : ReglaDeNegocioException($"El cliente {idCliente} no existe o no está activo");
+
+public class MontoInvalidoException(decimal monto)
+    : SolicitudInvalidaException($"El monto debe ser mayor a cero (se recibió {monto:0.00})");

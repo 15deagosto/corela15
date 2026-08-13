@@ -68,48 +68,18 @@ public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuenta
     public async Task<ActionResult<CuentaAhorroAbiertaResult>> AbrirCuenta(
         [FromBody] AbrirCuentaAhorroRequest request, CancellationToken cancellationToken)
     {
-        try
-        {
-            var resultado = await cuentaAhorroService.AbrirAsync(request, cancellationToken);
-            return Created($"/api/ahorros/cuentas/{resultado.IdCuenta}", resultado);
-        }
-        catch (TipoCuentaInvalidoException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (ClienteInvalidoException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
+        var resultado = await cuentaAhorroService.AbrirAsync(request, cancellationToken);
+        return Created($"/api/ahorros/cuentas/{resultado.IdCuenta}", resultado);
     }
 
     [HttpPost("cuentas/{idCuenta:guid}/movimientos")]
     public async Task<ActionResult<MovimientoCuentaRegistradoResult>> RegistrarMovimiento(
         Guid idCuenta, [FromBody] RegistrarMovimientoBody body, CancellationToken cancellationToken)
     {
-        try
-        {
-            var resultado = await cuentaAhorroService.RegistrarMovimientoAsync(
-                new RegistrarMovimientoCuentaRequest(idCuenta, body.CodigoTipoTransaccion, body.Monto, body.RegistradoPor),
-                cancellationToken);
-            return Ok(resultado);
-        }
-        catch (CuentaInvalidaException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (TipoTransaccionInvalidoException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (SaldoInsuficienteException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (ArgumentException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
-        }
+        var resultado = await cuentaAhorroService.RegistrarMovimientoAsync(
+            new RegistrarMovimientoCuentaRequest(idCuenta, body.CodigoTipoTransaccion, body.Monto, body.RegistradoPor),
+            cancellationToken);
+        return Ok(resultado);
     }
 }
 

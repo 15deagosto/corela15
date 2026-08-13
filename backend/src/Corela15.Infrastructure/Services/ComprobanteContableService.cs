@@ -12,7 +12,7 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
     {
         if (request.Lineas.Count < 2)
         {
-            throw new ArgumentException("Un comprobante necesita al menos dos líneas (débito y crédito).");
+            throw new ComprobanteLineasInsuficientesException();
         }
 
         var totalDebitos = request.Lineas.Sum(l => l.Debito);
@@ -35,7 +35,17 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
             }
         }
 
-        await using var transaccion = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Atomicidad real con el que llama: si ya hay una transacción ambiente
+        // (ej. CuentaAhorroService abriendo una cuenta con depósito inicial),
+        // este método NO abre la suya propia — se suma a la del caller, así
+        // que si el comprobante falla, la operación de dominio también se
+        // revierte. Si se llama de forma standalone (ej. el endpoint
+        // POST /api/contabilidad/comprobantes), sí gestiona su propia
+        // transacción como antes.
+        var transaccionPropia = db.Database.CurrentTransaction is null;
+        var transaccion = transaccionPropia
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         // Numeración por tipo de comprobante (talonario propio por tipo, ver
         // ContabilidadConfigurations.cs). Bajo concurrencia alta esto podría
@@ -79,7 +89,12 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
         await ActualizarSaldosAsync(request, cuentas, cancellationToken);
 
         await db.SaveChangesAsync(cancellationToken);
-        await transaccion.CommitAsync(cancellationToken);
+
+        if (transaccion is not null)
+        {
+            await transaccion.CommitAsync(cancellationToken);
+            await transaccion.DisposeAsync();
+        }
 
         return new ComprobanteContableRegistradoResult(comprobante.Id, comprobante.Numero);
     }

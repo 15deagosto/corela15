@@ -333,6 +333,29 @@ default de la cadena de conexión de SIGA). Verificar columnas con
 `sys.columns`/`sys.types` antes de dar por buena cualquier entidad nueva del
 core propio.
 
+## Infraestructura transversal (arquitectura, no un nivel)
+
+**Atomicidad real entre módulos.** `ComprobanteContableService.RegistrarAsync`
+detecta si ya hay una transacción ambiente en el `DbContext`
+(`db.Database.CurrentTransaction`) y, si la hay, no abre la suya propia —
+se suma a la del caller. Todo caso de uso que necesite hacer un cambio de
+dominio + un asiento contable en la misma operación (como
+`CuentaAhorroService.AbrirAsync`/`RegistrarMovimientoAsync`) abre **una
+sola transacción** que envuelve ambas partes. Probado explícitamente:
+forzar el fallo del comprobante (desactivando una cuenta contable) confirma
+que la operación de dominio tampoco queda persistida. Replicar este mismo
+patrón en desembolso de préstamo y cualquier caso de uso futuro que cruce
+dos módulos — nunca dos `SaveChanges`/transacciones sueltas para una sola
+operación de negocio.
+
+**Manejo de errores centralizado.** `Corela15.Application.Common.DomainException`
+(con `ReglaDeNegocioException` → HTTP 422 y `SolicitudInvalidaException` →
+HTTP 400) es la base de toda excepción de caso de uso. `Corela15.Api.
+ExceptionHandling.DomainExceptionHandler` (`IExceptionHandler` de .NET 8,
+registrado en `Program.cs`) las traduce a `ProblemDetails` automáticamente
+— los controllers **no** llevan `try/catch` por excepción; un caso de uso
+nuevo hereda el manejo correcto solo con heredar de la base adecuada.
+
 ## Frontend — módulos visibles al usuario
 
 `frontend/src/modules.ts` define los módulos con nombre/ícono/estado

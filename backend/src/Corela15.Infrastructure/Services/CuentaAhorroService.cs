@@ -29,6 +29,10 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
             throw new ClienteInvalidoException(request.IdCliente);
         }
 
+        // Una sola transacción para toda la operación (apertura + asiento
+        // contable): si el comprobante falla, la cuenta tampoco queda creada.
+        // ComprobanteContableService detecta esta transacción ambiente y no
+        // abre la suya propia (ver ComprobanteContableService.RegistrarAsync).
         await using var transaccion = await db.Database.BeginTransactionAsync(cancellationToken);
 
         var ultimoNumero = await db.Cuentas.CountAsync(cancellationToken);
@@ -79,13 +83,7 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await transaccion.CommitAsync(cancellationToken);
 
-        // Nota: la apertura de cuenta y el registro contable son dos
-        // transacciones separadas (ComprobanteContableService abre la suya
-        // propia) — si el comprobante falla acá, la cuenta ya quedó creada
-        // sin su asiento. Aceptable por ahora (no hay saga/outbox todavía);
-        // revisar si esto se vuelve un problema real en producción.
         Guid? idComprobante = null;
         if (request.MontoInicial > 0)
         {
@@ -116,6 +114,8 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
             idComprobante = resultadoComprobante.Id;
         }
 
+        await transaccion.CommitAsync(cancellationToken);
+
         return new CuentaAhorroAbiertaResult(cuenta.Id, numero, idComprobante);
     }
 
@@ -124,7 +124,7 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
     {
         if (request.Monto <= 0)
         {
-            throw new ArgumentException("El monto del movimiento debe ser mayor a cero.");
+            throw new MontoInvalidoException(request.Monto);
         }
 
         var cuenta = await db.Cuentas.Include(c => c.TipoCuenta)
@@ -154,6 +154,10 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
         {
             throw new SaldoInsuficienteException(itemDisponible.Saldo, cuenta.TipoCuenta.SaldoMinimo, request.Monto);
         }
+
+        // Una sola transacción: saldo, asiento contable y bitácora se
+        // confirman juntos o no se confirma ninguno.
+        await using var transaccion = await db.Database.BeginTransactionAsync(cancellationToken);
 
         itemDisponible.Saldo = saldoNuevo;
         itemDisponible.ModificadoEn = DateTimeOffset.UtcNow;
@@ -186,6 +190,8 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
         };
         db.CuentasMovimientos.Add(movimiento);
         await db.SaveChangesAsync(cancellationToken);
+
+        await transaccion.CommitAsync(cancellationToken);
 
         return new MovimientoCuentaRegistradoResult(movimiento.Id, saldoNuevo, resultadoComprobante.Id);
     }

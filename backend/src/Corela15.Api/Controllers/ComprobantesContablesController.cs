@@ -11,22 +11,10 @@ public class ComprobantesContablesController(IComprobanteContableService service
     public async Task<ActionResult<ComprobanteContableRegistradoResult>> Registrar(
         [FromBody] RegistrarComprobanteContableRequest request, CancellationToken cancellationToken)
     {
-        try
-        {
-            var resultado = await service.RegistrarAsync(request, cancellationToken);
-            return Created($"/api/contabilidad/comprobantes/{resultado.Id}", resultado);
-        }
-        catch (ComprobanteDesbalanceadoException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (CuentaContableInvalidaException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (ArgumentException ex)
-        {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
-        }
+        // Errores de negocio (comprobante desbalanceado, cuenta inválida...)
+        // los traduce DomainExceptionHandler de forma centralizada — ver
+        // Corela15.Api/ExceptionHandling/DomainExceptionHandler.cs.
+        var resultado = await service.RegistrarAsync(request, cancellationToken);
+        return Created($"/api/contabilidad/comprobantes/{resultado.Id}", resultado);
     }
 }

@@ -1,3 +1,5 @@
+using Corela15.Application.Common;
+
 namespace Corela15.Application.Contabilidad;
 
 public interface IComprobanteContableService
@@ -17,14 +19,17 @@ public interface IComprobanteContableService
 }
 
 public class ComprobanteDesbalanceadoException(decimal totalDebitos, decimal totalCreditos)
-    : Exception($"El comprobante no cuadra: débitos {totalDebitos:0.00} != créditos {totalCreditos:0.00}")
+    : ReglaDeNegocioException($"El comprobante no cuadra: débitos {totalDebitos:0.00} != créditos {totalCreditos:0.00}")
 {
     public decimal TotalDebitos { get; } = totalDebitos;
     public decimal TotalCreditos { get; } = totalCreditos;
 }
 
 public class CuentaContableInvalidaException(Guid idCuentaContable)
-    : Exception($"La cuenta contable {idCuentaContable} no existe, está inactiva, o no es de detalle (es_mayor)")
+    : ReglaDeNegocioException($"La cuenta contable {idCuentaContable} no existe, está inactiva, o no es de detalle (es_mayor)")
 {
     public Guid IdCuentaContable { get; } = idCuentaContable;
 }
+
+public class ComprobanteLineasInsuficientesException()
+    : SolicitudInvalidaException("Un comprobante necesita al menos dos líneas (débito y crédito).");
