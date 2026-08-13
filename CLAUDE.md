@@ -235,6 +235,23 @@ pendiente el caso de uso de auto-débito que cruce este campo con
 `ahorros.cuenta_item_saldo.acredita_prestamo` como una sola fuente de
 verdad (ver nota en Nivel 2).
 
+**Solicitud y desembolso implementados y probados end-to-end**
+(`Corela15.Application.Colocacion.IPrestamoService`, `PrestamoService`):
+`POST /api/creditos/solicitudes` valida rango de monto contra el producto
+(`tipo_prestamo.monto_minimo/monto_maximo`); `POST /api/creditos/
+solicitudes/{id}/desembolsar` crea el `Prestamo`, genera la tabla de
+amortización completa por **sistema francés** (cuota fija, capital
+creciente/interés decreciente, redondeo del último período para que la
+suma de capital cuadre exacto con el monto — verificado: $1000 a 12 cuotas
+sumó exacto) en `PrestamoRubro`, y registra el asiento (débito `1401`
+Cartera de créditos / crédito `1101` Caja) vía `DESEMB-EFEC` — mismo motor
+`TipoTransaccion` de Ahorros, reusado sin cambios. Todo en una sola
+transacción atómica (mismo patrón de la sección de infraestructura
+transversal). `TipoPrestamo.TasaAnual` sembrada con tasas reales de
+referencia (Consumo 17.20%, Microcrédito 20.50%, Productivo 10.90%).
+Pantalla real en el frontend (`Creditos.tsx`: solicitar, listar, botón
+"Desembolsar", cartera de préstamos).
+
 **Nivel 4** — esquema `cobranza` (`periodo_mora` —sembrado con los 5 tramos
 Preventiva→Judicial—, `accion_gestion`, `gestion_prestamo_cobranza`) y
 `lavadoactivos` (`calificacion_cliente`). Simplificación consciente:

@@ -1,5 +1,6 @@
 using Corela15.Api.ExceptionHandling;
 using Corela15.Application.Ahorros;
+using Corela15.Application.Colocacion;
 using Corela15.Application.Contabilidad;
 using Corela15.Infrastructure.Persistence;
 using Corela15.Infrastructure.Services;
@@ -33,6 +34,7 @@ builder.Services.AddDbContext<Corela15DbContext>(options =>
 
 builder.Services.AddScoped<IComprobanteContableService, ComprobanteContableService>();
 builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
+builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();

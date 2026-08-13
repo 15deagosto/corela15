@@ -61,7 +61,7 @@ export const modulos: Modulo[] = [
     nombre: 'Créditos y Plazo Fijo',
     descripcion: 'Solicitudes, préstamos y certificados de depósito',
     icon: Landmark,
-    estado: 'proximamente',
+    estado: 'en-construccion',
   },
   {
     slug: 'cobranzas-cumplimiento',

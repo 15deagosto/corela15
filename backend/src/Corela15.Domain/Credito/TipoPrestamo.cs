@@ -15,5 +15,13 @@ public class TipoPrestamo
     public decimal MontoMaximo { get; set; }
     public int PlazoMinimoDias { get; set; }
     public int PlazoMaximoDias { get; set; }
+
+    /// <summary>Tasa nominal anual del producto — no verificada como columna
+    /// directa en TIPO_PRESTAMO (Softbank la maneja vía tablero de tasas
+    /// aparte), pero un producto de crédito real de cooperativa siempre
+    /// tiene una tasa base configurada, no la inventa cada oficial al
+    /// desembolsar. Necesaria para calcular la tabla de amortización.</summary>
+    public decimal TasaAnual { get; set; }
+
     public bool Activo { get; set; } = true;
 }
