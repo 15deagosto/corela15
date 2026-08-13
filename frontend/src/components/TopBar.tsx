@@ -11,7 +11,7 @@ export function TopBar() {
   })
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/[0.06] bg-white/70 px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/[0.06] bg-white px-6">
       <p className="text-sm font-medium text-graphite-600">Core financiero — Cooperativa 15 de Agosto</p>
       <div className="flex items-center gap-2 text-sm text-graphite-600">
         <span

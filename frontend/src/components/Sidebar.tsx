@@ -18,7 +18,7 @@ function itemClase(activo: boolean, habilitado: boolean) {
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-black/[0.06] bg-white/70">
+    <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-black/[0.06] bg-white">
       <div className="flex items-center gap-3 px-5 py-5">
         <img
           src="/logo.png"
