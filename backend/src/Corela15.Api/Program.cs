@@ -43,12 +43,29 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var corsOrigins = builder.Configuration.GetSection("Corela15:CorsOrigins").Get<string[]>()
-    ?? ["http://localhost:5173"];
+// En desarrollo aceptamos cualquier puerto de localhost/127.0.0.1: Vite salta
+// de puerto según qué otras apps (propias, de la cooperativa) estén corriendo
+// en la misma máquina — fijar un solo puerto acá era frágil y rompía cada vez
+// que cambiaba. En producción sí se restringe a los orígenes configurados
+// explícitamente (Corela15:CorsOrigins).
+var corsOriginsConfigurados = builder.Configuration.GetSection("Corela15:CorsOrigins").Get<string[]>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod());
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(origin =>
+                Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+                (uri.Host is "localhost" or "127.0.0.1"));
+        }
+        else
+        {
+            policy.WithOrigins(corsOriginsConfigurados ?? []);
+        }
+
+        policy.AllowAnyHeader().AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();

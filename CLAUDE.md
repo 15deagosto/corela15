@@ -52,15 +52,22 @@ docker-compose.yml            # Postgres local
 # 1. Postgres
 docker compose --env-file .env.core up -d
 
-# 2. Backend (desde backend/src/Corela15.Api)
+# 2. Backend (desde backend/src/Corela15.Api) — ASPNETCORE_ENVIRONMENT=Development
+# es necesario: sin eso corre en modo Production (Swagger apagado, y aunque el
+# CORS de dev igual detecta el ambiente por builder.Environment, dejarlo
+# explícito evita sorpresas).
 CORELA15_CONNECTION="Host=localhost;Port=5432;Database=corela15_core;Username=corela15_admin;Password=<ver .env.core>" \
 ASPNETCORE_URLS="http://localhost:5080" \
+ASPNETCORE_ENVIRONMENT="Development" \
 dotnet run
 
 # 3. Frontend (desde frontend/)
-npm run dev   # http://localhost:5173 — si ya hay otro Vite corriendo (ej. SIGA
-               # en la misma máquina), Vite salta automáticamente al próximo
-               # puerto libre (5174, 5175...); revisar el log de `npm run dev`.
+npm run dev   # http://localhost:5173 — si ya hay otro Vite corriendo (SIGA,
+               # otras apps propias en la misma máquina), Vite salta al
+               # próximo puerto libre (5174, 5175...); revisar el log de
+               # `npm run dev`. El backend en Development acepta CUALQUIER
+               # puerto de localhost/127.0.0.1 (ver CORS en Program.cs) —
+               # no hace falta tocar nada cuando cambia el puerto.
 ```
 
 Migraciones (desde `backend/`):
