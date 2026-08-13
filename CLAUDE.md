@@ -100,8 +100,8 @@ nombre:
 6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
 7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
 8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (núcleo de los 5 submódulos, verificado; detalle transaccional diferido)
-9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE)
-10. **Periféricos** — sin orden obligatorio entre ellos
+9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE) ✅ **hecho** (marco de riesgo genérico + índice de reportes; estructura de cada reporte pendiente de verificación regulatoria real, ver nota abajo)
+10. **Periféricos** — sin orden obligatorio entre ellos, **sin empezar**
 
 Un nivel nunca depende de tablas/módulos de un nivel posterior. Si algo lo
 necesita, está mal clasificado — revisar antes de seguir.
@@ -245,7 +245,26 @@ núcleo, no el detalle transaccional (depreciación, traslados, tabla de
 amortización, movimientos de bodega) — se agrega cuando se construya el
 caso de uso real de cada uno. Migración: `Nivel7_TesoreriaYActivos`.
 
-### Metodología de verificación contra Softbank (usar para Nivel 8)
+**Nivel 8** — esquema `riesgo` (`macroproceso` → `proceso`, `nivel_impacto`,
+`nivel_probabilidad`, `nivel_riesgo` —sembrados con escalas 1-5 y matriz de
+rangos—, `evento_riesgo`): patrón genérico de gestión de riesgo verificado
+contra RIESGOOPERATIVO, confirmado reutilizable para cualquier tipo de
+riesgo (operativo, liquidez), no solo operativo. Esquema `reportecontrol`
+(`reporte_regulatorio`): sembrado con 13 códigos de reportes reales
+confirmados activos en Softbank hoy (B13, D01, BCE01/02, S01, L01/L02,
+IG01, TIN, UAF, RFD, ROTEF, CRS). Migración: `Nivel8_RiesgoYReporteria`.
+
+**Advertencia explícita, no un detalle menor**: `reporte_regulatorio` es
+solo un **índice** de qué reportes existen — NO se modeló la estructura de
+datos de ningún reporte individual (qué campos exige, con qué fórmula, en
+qué periodicidad). El propio `02-arquitectura-datos-40-modulos.md` ya
+advertía esto: hay que ir "formulario por formulario contra la web de la
+SEPS/BCE" antes de diseñar el `CABECERA_*`/`DETALLE_*` real de cada uno —
+verificar la estructura de tablas de Softbank NO sustituye verificar la
+norma oficial. No implementar el detalle de ningún reporte sin esa
+verificación regulatoria explícita primero.
+
+### Metodología de verificación contra Softbank (usar para Periféricos, si se retoman)
 
 `02-arquitectura-datos-40-modulos.md` documenta a fondo los Niveles 0-4
 (columna por columna, contra la base real) pero los Niveles 5-8 quedaron

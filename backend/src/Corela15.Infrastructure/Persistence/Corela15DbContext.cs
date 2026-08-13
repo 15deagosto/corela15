@@ -14,6 +14,8 @@ using Corela15.Domain.Nomina;
 using Corela15.Domain.Obligacion;
 using Corela15.Domain.Portafolio;
 using Corela15.Domain.Proveeduria;
+using Corela15.Domain.ReporteControl;
+using Corela15.Domain.Riesgo;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
 using Microsoft.EntityFrameworkCore;
@@ -101,6 +103,15 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<CuentaPorPagar> CuentasPorPagar => Set<CuentaPorPagar>();
     public DbSet<Articulo> Articulos => Set<Articulo>();
     public DbSet<InversionPortafolio> InversionesPortafolio => Set<InversionPortafolio>();
+
+    // RIESGOOPERATIVO / REPORTECONTROL (Nivel 8)
+    public DbSet<MacroProceso> MacroProcesos => Set<MacroProceso>();
+    public DbSet<Proceso> Procesos => Set<Proceso>();
+    public DbSet<NivelImpacto> NivelesImpacto => Set<NivelImpacto>();
+    public DbSet<NivelProbabilidad> NivelesProbabilidad => Set<NivelProbabilidad>();
+    public DbSet<NivelRiesgo> NivelesRiesgo => Set<NivelRiesgo>();
+    public DbSet<EventoRiesgo> EventosRiesgo => Set<EventoRiesgo>();
+    public DbSet<ReporteRegulatorio> ReportesRegulatorios => Set<ReporteRegulatorio>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
