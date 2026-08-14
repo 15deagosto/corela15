@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   Wallet,
   Briefcase,
+  Building2,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -87,6 +88,14 @@ export const modulos: Modulo[] = [
     nombre: 'Nómina',
     descripcion: 'Empleados y roles de pago',
     icon: Briefcase,
+    estado: 'en-construccion',
+  },
+  {
+    slug: 'tesoreria',
+    path: '/tesoreria',
+    nombre: 'Tesorería',
+    descripcion: 'Cuentas por cobrar internas de la cooperativa',
+    icon: Building2,
     estado: 'en-construccion',
   },
 ]

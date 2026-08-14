@@ -4,6 +4,7 @@ using Corela15.Application.Cajas;
 using Corela15.Application.Cobranza;
 using Corela15.Application.Colocacion;
 using Corela15.Application.Contabilidad;
+using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
 using Corela15.Application.Nomina;
 using Corela15.Infrastructure.Persistence;
@@ -43,6 +44,7 @@ builder.Services.AddScoped<IDepositoService, DepositoService>();
 builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();
 builder.Services.AddScoped<IVentanillaService, VentanillaService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
+builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();

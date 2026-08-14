@@ -9,6 +9,7 @@ import { Creditos } from './pages/Creditos'
 import { CobranzasCumplimiento } from './pages/CobranzasCumplimiento'
 import { Cajas } from './pages/Cajas'
 import { Nomina } from './pages/Nomina'
+import { Tesoreria } from './pages/Tesoreria'
 import { ModuloPagina } from './pages/ModuloPagina'
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         <Route path="/cobranzas-cumplimiento" element={<CobranzasCumplimiento />} />
         <Route path="/cajas" element={<Cajas />} />
         <Route path="/nomina" element={<Nomina />} />
+        <Route path="/tesoreria" element={<Tesoreria />} />
         <Route path="/:slug" element={<ModuloPagina />} />
       </Route>
     </Routes>

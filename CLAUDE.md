@@ -389,6 +389,29 @@ núcleo, no el detalle transaccional (depreciación, traslados, tabla de
 amortización, movimientos de bodega) — se agrega cuando se construya el
 caso de uso real de cada uno. Migración: `Nivel7_TesoreriaYActivos`.
 
+**Registro y abono de cuenta por cobrar implementado y probado
+end-to-end** (`Corela15.Application.CuentasPorCobrar.ICuentaPorCobrarService`):
+`Contabilidad_SeedCuentaPorCobrar` agregó las subcuentas de detalle reales
+`1601` Cuentas por cobrar varias (bajo el grupo 16) y `5601` Otros ingresos
+varios (bajo el grupo 56), y el motor configurable `REG-CXC`/`ABONO-CXC`
+— mismo patrón que `DEP-EFEC`/`APER-DPF`. `POST /api/tesoreria/
+cuentas-por-cobrar` registra la cuenta (débito `1601` / crédito `5601`) y
+rechaza monto ≤ 0 (400). `POST /api/tesoreria/cuentas-por-cobrar/{id}/
+abonos` registra el abono (débito Caja / crédito `1601`), rechaza un abono
+que exceda el saldo pendiente (`AbonoExcedeSaldoException`, 422), y marca
+la cuenta `Cancelada` automáticamente cuando el saldo llega exacto a cero
+— mismo patrón que el cierre de préstamo (Nivel 3). Un abono a una cuenta
+ya cancelada se rechaza (`CuentaPorCobrarInvalidaException`, 422). Probado
+vía curl: registro de $150.00, abono parcial de $50.00, abono que excede
+saldo rechazado, abono final de $100.00 que cancela la cuenta, abono
+posterior rechazado, y verificado en la base que `1601` netea en cero
+mientras `5601` mantiene el ingreso reconocido ($150.00 en crédito, como
+corresponde). Pantalla real (`Tesoreria.tsx`, reemplaza el placeholder
+"Próximamente"): formulario de registro, tabla de cuentas por cobrar con
+acción "Abonar" por fila mientras estén vigentes. `CuentaPorPagar` queda
+modelada (misma estructura, grupo CUC 25) pero sin caso de uso todavía —
+se agrega cuando haga falta un flujo real de pago a terceros.
+
 **Nivel 8** — esquema `riesgo` (`macroproceso` → `proceso`, `nivel_impacto`,
 `nivel_probabilidad`, `nivel_riesgo` —sembrados con escalas 1-5 y matriz de
 rangos—, `evento_riesgo`): patrón genérico de gestión de riesgo verificado
