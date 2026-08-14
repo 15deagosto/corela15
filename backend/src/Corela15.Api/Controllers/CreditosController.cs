@@ -19,7 +19,8 @@ public record PrestamoListItem(
 [ApiController]
 [Route("api/creditos")]
 [Authorize(Policy = "Menu:creditos")]
-public class CreditosController(Corela15DbContext db, IPrestamoService prestamoService) : ControllerBase
+public class CreditosController(
+    Corela15DbContext db, IPrestamoService prestamoService, IProvisionCarteraService provisionCarteraService) : ControllerBase
 {
     [HttpGet("productos")]
     public async Task<ActionResult<IReadOnlyList<TipoPrestamoListItem>>> Productos(CancellationToken cancellationToken)
@@ -87,6 +88,13 @@ public class CreditosController(Corela15DbContext db, IPrestamoService prestamoS
     {
         var resultado = await prestamoService.PagarCuotaAsync(
             new PagarCuotaRequest(idPrestamo, User.Identity!.Name!), cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("provision-cartera/calcular")]
+    public async Task<ActionResult<ProvisionCarteraCalculadaResult>> CalcularProvisionCartera(CancellationToken cancellationToken)
+    {
+        var resultado = await provisionCarteraService.EjecutarCalculoAsync(User.Identity!.Name!, cancellationToken);
         return Ok(resultado);
     }
 }

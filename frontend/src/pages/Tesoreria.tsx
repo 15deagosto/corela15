@@ -160,9 +160,11 @@ function AbonarForm({ cuenta, onClose }: { cuenta: CuentaPorCobrar; onClose: () 
   const abonar = useMutation({
     mutationFn: async () =>
       (
-        await api.post(`/api/tesoreria/cuentas-por-cobrar/${cuenta.id}/abonos`, {
-          monto: Number(monto),
-        })
+        await api.post(
+          `/api/tesoreria/cuentas-por-cobrar/${cuenta.id}/abonos`,
+          { monto: Number(monto) },
+          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        )
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tesoreria-cxc'] })

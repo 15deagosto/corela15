@@ -85,6 +85,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Rubro> Rubros => Set<Rubro>();
     public DbSet<TipoVencimiento> TiposVencimiento => Set<TipoVencimiento>();
     public DbSet<ClasificacionCartera> ClasificacionesCartera => Set<ClasificacionCartera>();
+    public DbSet<CategoriaRiesgoCartera> CategoriasRiesgoCartera => Set<CategoriaRiesgoCartera>();
     public DbSet<Prestamo> Prestamos => Set<Prestamo>();
     public DbSet<PrestamoCliente> PrestamosClientes => Set<PrestamoCliente>();
     public DbSet<PrestamoRubro> PrestamosRubros => Set<PrestamoRubro>();

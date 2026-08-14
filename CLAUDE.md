@@ -317,6 +317,70 @@ podría dejar pasar dos ejecuciones reales del caso de uso. Caso de
 probabilidad muy baja (indica un bug del cliente, no un timeout/reintento
 normal) — no se resolvió con un lock explícito, documentado a propósito.
 
+**Bug real encontrado después de marcar los endpoints con
+`[RequireIdempotencyKey]`**: el frontend nunca mandaba el header —
+`Ahorros.tsx`, `Creditos.tsx` (desembolsar, pago de cuota, abrir/cancelar
+DPF) y `Tesoreria.tsx` (abonar) hubieran quedado rotos en producción con
+400 en cada intento. Corregido agregando `Idempotency-Key: crypto.
+randomUUID()` a cada mutación afectada — una clave nueva por cada
+`mutate()` (una acción real del usuario), no por render del componente,
+así que un reintento interno de la misma llamada reutiliza la clave
+correcta pero una acción nueva del usuario siempre genera una operación
+nueva. Verificado end-to-end contra la API real después del fix.
+
+## Motor de provisiones de cartera
+
+Segundo punto del tier regulatorio (Art. 44, Norma para la Gestión del
+Riesgo de Crédito en las COAC): toda cartera de crédito vigente debe
+tener una provisión (reserva para incobrables) calculada según cuántos
+días de mora tiene, no un valor fijo. `colocacion.categoria_riesgo_cartera`
+(`Corela15.Domain.Colocacion.CategoriaRiesgoCartera`) es la matriz real de
+9 categorías (A1-A3 riesgo normal, B1-B2 potencial, C1-C2 deficiente, D
+dudoso recaudo, E pérdida) — **distinta de `ClasificacionCartera`** (esa
+clasifica el balde de presentación del balance — por vencer/NDI/vencida —
+no el % de provisión regulatorio; son dos clasificaciones relacionadas
+pero no la misma cosa en la norma real, confusión fácil de cometer).
+Porcentajes de provisión verificados por búsqueda (piso de cada rango
+oficial: A1 1%, A2 2%, A3 3%, B1 6%, B2 10%, C1 20%, C2 40%, D 60%, E
+100%). **Advertencia explícita**: los rangos de días de mora sembrados
+(A2 1-8, A3 9-15, B1 16-30, B2 31-45, C1 46-70, C2 71-90, D 91-120, E
+121+) son la convención estándar SEPS/Superbancos para Consumo/
+Microcrédito — el PDF oficial (`Calificacion-activos-riesgo.pdf` y el
+Manual Técnico de Operaciones de Cartera de SEPS) no se pudo extraer
+programáticamente (streams binarios comprimidos) para verificar el rango
+exacto columna por columna como se hizo con Softbank en Niveles 0-4;
+verificar contra el PDF oficial antes de usar esto para un reporte
+regulatorio real, no solo para uso interno.
+
+Cuentas reales agregadas: `1499` Provisión para créditos incobrables
+(contra-activo bajo el grupo 14, naturaleza Acreedora aunque vive bajo
+Activo — así es como el CUC real trata las provisiones) y `4402`
+Provisión para cartera de crédito (bajo el grupo 44 Provisiones, ya
+sembrado desde Nivel 1). Motor `PROV-CART` (débito 4402 / crédito 1499),
+mismo patrón que el resto.
+
+**`IProvisionCarteraService.EjecutarCalculoAsync`** (`POST /api/creditos/
+provision-cartera/calcular`): para cada préstamo vigente, calcula días de
+mora reales (hoy − fecha de vencimiento de la cuota de capital impaga más
+antigua, usando `PrestamoRubro.FechaFin` — la falta de este cálculo
+estaba documentada como pendiente desde Nivel 4, ahora existe acá),
+clasifica en su categoría, y aplica el % sobre el saldo. Solo registra el
+asiento cuando la provisión requerida total **supera** la ya acumulada
+(consulta `saldo_contable` de la cuenta `1499` del período) — un
+incremento real. Si diera menor, **no reversa automáticamente**: una
+reducción de provisión es una decisión que requiere revisión humana, no
+algo que un batch deba decidir solo — limitación documentada a propósito,
+no un olvido. Diseñado para correrse periódicamente (mensual como
+mínimo), no por préstamo individual — de ahí que no lleve
+`[RequireIdempotencyKey]`: correrlo dos veces el mismo día es seguro por
+diseño (la segunda vez ve que ya no hace falta incremento), no necesita
+protección adicional contra reintentos.
+
+Probado end-to-end: cartera vacía → provisión $0; préstamo real de $1,000
+con la cuota 1 forzada a 50 días de mora → clasificado correctamente en
+C1 (20%), provisión de $200 registrada, `1499`/`4402` verificados en
+$200 exactos; segunda corrida el mismo día → incremento $0 (no duplica).
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

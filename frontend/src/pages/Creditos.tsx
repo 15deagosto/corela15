@@ -196,13 +196,11 @@ function AbrirDpfForm({ onClose }: { onClose: () => void }) {
   const abrir = useMutation({
     mutationFn: async () =>
       (
-        await api.post('/api/plazofijo/depositos', {
-          idCliente,
-          idAgencia: 1,
-          monto: Number(monto) || 0,
-          plazoDias: Number(plazoDias) || 0,
-          esPersonaJuridica: false,
-        })
+        await api.post(
+          '/api/plazofijo/depositos',
+          { idCliente, idAgencia: 1, monto: Number(monto) || 0, plazoDias: Number(plazoDias) || 0, esPersonaJuridica: false },
+          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        )
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
@@ -317,7 +315,11 @@ export function Creditos() {
 
   const desembolsar = useMutation({
     mutationFn: async (idSolicitud: string) =>
-      (await api.post(`/api/creditos/solicitudes/${idSolicitud}/desembolsar`)).data,
+      (
+        await api.post(`/api/creditos/solicitudes/${idSolicitud}/desembolsar`, undefined, {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        })
+      ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-solicitudes'] })
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
@@ -325,7 +327,12 @@ export function Creditos() {
   })
 
   const pagarCuota = useMutation({
-    mutationFn: async (idPrestamo: string) => (await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`)).data,
+    mutationFn: async (idPrestamo: string) =>
+      (
+        await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, undefined, {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        })
+      ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
     },
@@ -337,7 +344,12 @@ export function Creditos() {
   })
 
   const cancelarDpf = useMutation({
-    mutationFn: async (idDeposito: string) => (await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`)).data,
+    mutationFn: async (idDeposito: string) =>
+      (
+        await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, undefined, {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        })
+      ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
     },

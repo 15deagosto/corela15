@@ -43,6 +43,20 @@ public class ClasificacionCarteraConfiguration : IEntityTypeConfiguration<Clasif
     }
 }
 
+public class CategoriaRiesgoCarteraConfiguration : IEntityTypeConfiguration<CategoriaRiesgoCartera>
+{
+    public void Configure(EntityTypeBuilder<CategoriaRiesgoCartera> b)
+    {
+        b.ToTable("categoria_riesgo_cartera", "colocacion", t => t.HasCheckConstraint(
+            "ck_categoria_riesgo_cartera_rango", "dias_mora_fin >= dias_mora_inicio"));
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Codigo).HasMaxLength(5).IsRequired();
+        b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+        b.Property(x => x.PorcentajeProvision).HasColumnType("numeric(9,4)");
+        b.HasIndex(x => x.Codigo).IsUnique();
+    }
+}
+
 public class PrestamoConfiguration : IEntityTypeConfiguration<Prestamo>
 {
     public void Configure(EntityTypeBuilder<Prestamo> b)

@@ -166,10 +166,11 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
   const registrar = useMutation({
     mutationFn: async () =>
       (
-        await api.post(`/api/ahorros/cuentas/${cuenta.id}/movimientos`, {
-          codigoTipoTransaccion,
-          monto: Number(monto) || 0,
-        })
+        await api.post(
+          `/api/ahorros/cuentas/${cuenta.id}/movimientos`,
+          { codigoTipoTransaccion, monto: Number(monto) || 0 },
+          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        )
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
