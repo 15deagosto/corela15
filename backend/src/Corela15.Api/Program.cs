@@ -7,6 +7,7 @@ using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
 using Corela15.Application.Nomina;
+using Corela15.Application.Riesgo;
 using Corela15.Infrastructure.Persistence;
 using Corela15.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +46,7 @@ builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();
 builder.Services.AddScoped<IVentanillaService, VentanillaService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
+builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();

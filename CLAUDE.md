@@ -104,10 +104,10 @@ nombre:
 3. **Nivel 2** — Ahorros (captación a la vista) ✅ **hecho** (estructura + versionado; falta caso de uso de apertura/movimientos y UI)
 4. **Nivel 3** — Plazo Fijo + Crédito/Colocación ✅ **hecho** (estructura + versionado, verificado contra Softbank; falta UI y casos de uso)
 5. **Nivel 4** — Cobranzas + Cumplimiento/PLA ✅ **hecho** (registro de gestión de cobranza con UI real; falta motor de scoring PLA y cálculo de mora)
-6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (núcleo de Ventanilla; Bóveda y detalle de movimientos por denominación diferidos)
-7. **Nivel 6** — Nómina propia ✅ **hecho** (núcleo: empleado, rol de pagos; décimos/fondos de reserva diferidos)
-8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (núcleo de los 5 submódulos, verificado; detalle transaccional diferido)
-9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE) ✅ **hecho** (marco de riesgo genérico + índice de reportes; estructura de cada reporte pendiente de verificación regulatoria real, ver nota abajo)
+6. **Nivel 5** — Caja/Bóveda ✅ **hecho** (apertura/cierre de ventanilla con UI real; Bóveda y detalle de movimientos por denominación diferidos)
+7. **Nivel 6** — Nómina propia ✅ **hecho** (generación de rol de pagos con UI real; décimos/fondos de reserva diferidos)
+8. **Nivel 7** — Tesorería y activos internos ✅ **hecho** (registro/abono de cuentas por cobrar con UI real; detalle transaccional de los otros 4 submódulos diferido)
+9. **Nivel 8** — Riesgo y reportería regulatoria (SEPS/BCE) ✅ **hecho** (registro de evento de riesgo con UI real; índice de reportes sin estructura de detalle, ver nota abajo)
 10. **Periféricos** — sin orden obligatorio entre ellos ⚠️ **parcial**: `Auditoria`/`CallCenter`/`Marketing`/`Planificacion`/`HerramientaRural` tienen núcleo verificado; `Coactiva`/`Enlinea`/`SbkMovil` sin empezar (ver nota abajo)
 
 Un nivel nunca depende de tablas/módulos de un nivel posterior. Si algo lo
@@ -420,6 +420,29 @@ riesgo (operativo, liquidez), no solo operativo. Esquema `reportecontrol`
 (`reporte_regulatorio`): sembrado con 13 códigos de reportes reales
 confirmados activos en Softbank hoy (B13, D01, BCE01/02, S01, L01/L02,
 IG01, TIN, UAF, RFD, ROTEF, CRS). Migración: `Nivel8_RiesgoYReporteria`.
+`Nivel8_SeedProcesos` sembró 3 macroprocesos y 4 procesos de **ejemplo**
+para que el registro de evento de riesgo tenga sobre qué aplicarse.
+
+**Registro de evento de riesgo implementado y probado end-to-end**
+(`Corela15.Application.Riesgo.IEventoRiesgoService`): `POST /api/riesgo/
+eventos` recibe proceso + descripción + nivel de impacto + nivel de
+probabilidad, calcula el puntaje como `NivelImpacto.Nivel ×
+NivelProbabilidad.Nivel` (rango 1-25) y ubica automáticamente el
+`NivelRiesgo` correspondiente según el rango sembrado (Bajo 1-6, Moderado
+7-12, Alto 13-19, Extremo 20-25) — el operador nunca elige el nivel a
+mano, se deriva de la matriz, siguiendo el mismo patrón verificado en
+RIESGOOPERATIVO. Valida que el proceso, el nivel de impacto y el nivel de
+probabilidad existan y estén activos (422). Sin asiento contable: es un
+registro de identificación de riesgo, no un movimiento financiero. Probado
+vía curl con los 4 extremos de la matriz (1×1=1→Bajo, 3×3=9→Moderado,
+4×4=16→Alto, 5×5=25→Extremo, cada uno cae exacto en su rango) y proceso
+inexistente rechazado (422). Pantalla real (`Riesgo.tsx`, reemplaza el
+placeholder "Próximamente"): formulario de registro con selección de
+proceso/impacto/probabilidad, tabla de eventos con el nivel de riesgo
+resultante coloreado según `NivelRiesgo.Color`. Los planes de acción y
+etapas de avance (`EVENTO_PLANACCION` en Softbank) quedan fuera de
+alcance — se agregan cuando se construya el caso de uso real de
+seguimiento, esto modela solo el registro base del evento.
 
 **Advertencia explícita, no un detalle menor**: `reporte_regulatorio` es
 solo un **índice** de qué reportes existen — NO se modeló la estructura de

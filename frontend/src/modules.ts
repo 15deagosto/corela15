@@ -8,6 +8,7 @@ import {
   Wallet,
   Briefcase,
   Building2,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -96,6 +97,14 @@ export const modulos: Modulo[] = [
     nombre: 'Tesorería',
     descripcion: 'Cuentas por cobrar internas de la cooperativa',
     icon: Building2,
+    estado: 'en-construccion',
+  },
+  {
+    slug: 'riesgo',
+    path: '/riesgo',
+    nombre: 'Riesgo',
+    descripcion: 'Registro de eventos de riesgo (matriz impacto × probabilidad)',
+    icon: AlertTriangle,
     estado: 'en-construccion',
   },
 ]
