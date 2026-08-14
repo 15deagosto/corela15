@@ -739,6 +739,62 @@ la elegibilidad de cuenta usa la primera cuenta activa con
 `PermiteDebitoPrestamo=true` encontrada, sin priorización explícita entre
 varias cuentas elegibles del mismo socio (caso poco común, no probado).
 
+## Renovación de DPF con tasa vigente
+
+Segundo de los tres incidentes reales que originaron el proyecto (ver
+[01-contexto-origen.md](01-contexto-origen.md), hallazgo #2): "la tasa
+aplicada al renovar un certificado a menudo no coincidía con el tablero
+de tasas vigente". El aprendizaje ya estaba documentado desde Nivel 3 en
+`Deposito.cs`: la renovación debe leer la tasa vigente de
+`ItemPlazoTasa` **en el momento de renovar**, nunca copiar la tasa del
+depósito origen.
+
+**`IDepositoService.RenovarAsync`** (`POST /api/plazofijo/depositos/{id}/
+renovar`): cierra el depósito origen con `Estado=Renovado` (nunca
+`Cancelado` — sigue siendo capital del socio, no una redención), y abre
+un depósito nuevo (mismo código consecutivo `DPFxxxxxxxxx` que
+`AbrirAsync`) leyendo la tasa vigente del tablero con el mismo criterio
+de `AbrirAsync` (plazo/monto/tipo de persona), nunca la tasa que tenía el
+origen. Copia los titulares (`DepositoCliente`) del origen al destino.
+Admite **incremento de capital** opcional — si el socio aporta más dinero
+al renovar, se registra el asiento de la diferencia (débito Caja /
+crédito `2103` Depósitos a plazo fijo); si no hay incremento, no genera
+comprobante porque el saldo de la subcuenta contable no cambia, solo se
+re-papela bajo un código de DPF nuevo. `inversion.deposito_renovacion`
+(ya modelada desde Nivel 3, sin caso de uso hasta ahora) registra la
+cadena origen→destino con el valor total y el incremento, para
+trazabilidad completa de cuántas veces se renovó un certificado y a qué
+tasa cada vez — la auditoría que el incidente original no tenía sin
+cruzar el historial temporal de SQL Server a mano.
+
+Probado end-to-end contra Postgres real, reproduciendo el incidente
+original a propósito: se abrió un DPF de $1,000 a 180 días con la tasa
+vigente (8.50%), luego se insertó una fila nueva en el tablero
+(`item_plazo_tasa`) con una tasa distinta (9.20%) para el mismo rango de
+plazo — simulando que la Junta/el consejo cambió el tablero después de
+la apertura original, el escenario real del incidente. Un segundo DPF
+abierto tras el cambio confirmó que `AbrirAsync` ya toma la tasa nueva
+correctamente (9.20%); renovado ese segundo DPF con un incremento de
+capital de $200 → nuevo DPF de $1,200 a la tasa vigente (9.20%, NO la
+tasa original), origen marcado `Renovado`, asiento del incremento
+verificado ($200 exactos), y el balance de comprobación del período
+cuadrado ($2,200 = $2,200 incluyendo el resto de la prueba). Datos de
+prueba limpiados después (depósitos, renovaciones, fila de tasa de
+prueba, comprobantes, saldo_contable).
+
+Pantalla real: botón "Renovar" por DPF vigente en `Creditos.tsx` (junto
+a "Cancelar", inline en la misma fila — sin cambiar de pantalla), abre un
+modal (`RenovarDpfModal`) con plazo nuevo, incremento de capital opcional
+y tipo de persona, muestra el resultado (código nuevo, monto, tasa
+aplicada, vencimiento) en el mismo modal sin recargar. Sección
+"Renovaciones de DPF" debajo de la cartera de plazo fijo con el
+historial completo origen→destino.
+
+Pendiente, no bloqueante (ya documentado desde Nivel 3, sigue igual):
+cálculo de interés devengado proporcional en cancelación anticipada
+(tanto del depósito origen al renovar como de una cancelación normal —
+sigue devolviendo solo el capital nominal).
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,
@@ -944,13 +1000,12 @@ mantenerlas (pendiente, mismo patrón que el resto de catálogos), actualizar
 con una fila nueva (nunca editar la existente, se conserva el historial de
 vigencia) cuando el BCE publique una circular nueva.**
 
-Pendiente dentro de Nivel 3: renovación automática de DPF
-(`DepositoRenovacion` ya modelada, sin caso de uso — debe leer la tasa
-vigente al momento de renovar, no la original, ver aprendizaje documentado
-en `Deposito.cs`), cálculo de interés devengado proporcional en
-cancelación anticipada (hoy devuelve solo el capital nominal), motor de
-scoring de `SolicitudPrestamo` (`SOLICITUD_PRESTAMO_CALIFICACION` en
-Softbank, fuera de alcance), microsegmentación real de Microcrédito (hoy
+Pendiente dentro de Nivel 3: renovación de DPF con tasa vigente ✅ **hecho**
+(ver sección "Renovación de DPF con tasa vigente" más abajo), cálculo de
+interés devengado proporcional en cancelación anticipada (hoy devuelve
+solo el capital nominal), motor de scoring de `SolicitudPrestamo`
+(`SOLICITUD_PRESTAMO_CALIFICACION` en Softbank, fuera de alcance),
+microsegmentación real de Microcrédito (hoy
 un solo producto/segmento, sin distinguir Minorista/Acum. Simple/Acum.
 Ampliada), y el auto-débito de cuota por SPI ya documentado arriba.
 

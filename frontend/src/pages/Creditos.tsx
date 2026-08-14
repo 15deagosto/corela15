@@ -87,6 +87,24 @@ interface Deposito {
   estado: string
 }
 
+interface DepositoRenovado {
+  idDepositoDestino: string
+  codigoDestino: string
+  montoNuevo: number
+  tasaAplicada: number
+  fechaVencimiento: string
+  idComprobanteContable: string | null
+}
+
+interface DepositoRenovacionHistorial {
+  codigoOrigen: string
+  codigoDestino: string
+  valor: number
+  valorIncremento: number
+  tasaAplicada: number
+  fechaRenovacion: string
+}
+
 function formatoUsd(monto: number) {
   return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
 }
@@ -411,6 +429,159 @@ function AbrirDpfForm({ onClose }: { onClose: () => void }) {
   )
 }
 
+function RenovarDpfModal({ deposito, onClose }: { deposito: Deposito; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [plazoDias, setPlazoDias] = useState(String(deposito.plazoDias))
+  const [incrementoCapital, setIncrementoCapital] = useState('0')
+  const [esPersonaJuridica, setEsPersonaJuridica] = useState(false)
+
+  const renovar = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post(
+          `/api/plazofijo/depositos/${deposito.id}/renovar`,
+          { plazoDias: Number(plazoDias) || 0, incrementoCapital: Number(incrementoCapital) || 0, esPersonaJuridica },
+          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        )
+      ).data as DepositoRenovado,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
+      queryClient.invalidateQueries({ queryKey: ['plazofijo-renovaciones'] })
+    },
+  })
+
+  const mensajeError = (renovar.error as { response?: { data?: { detail?: string } } } | undefined)?.response?.data
+    ?.detail
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
+      <div className="glass-strong animate-zoom-in w-full max-w-sm rounded-xl p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-graphite-100">Renovar DPF {deposito.codigo}</h3>
+            <p className="text-xs text-graphite-600">
+              Capital actual: {formatoUsd(deposito.monto)} — tasa original {(deposito.tasa * 100).toFixed(2)}%
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        {renovar.isSuccess ? (
+          <div className="flex flex-col gap-3">
+            <p className="rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+              Renovado como <strong>{renovar.data.codigoDestino}</strong> por {formatoUsd(renovar.data.montoNuevo)} a la
+              tasa vigente <strong>{(renovar.data.tasaAplicada * 100).toFixed(2)}%</strong> (venc.{' '}
+              {renovar.data.fechaVencimiento}).
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white"
+            >
+              Cerrar
+            </button>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              renovar.mutate()
+            }}
+          >
+            <p className="text-xs text-graphite-600">
+              La tasa se toma del tablero vigente en este momento, no la tasa original del depósito.
+            </p>
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-graphite-600">Nuevo plazo (días)</span>
+              <input
+                type="number"
+                min="30"
+                max="720"
+                value={plazoDias}
+                onChange={(e) => setPlazoDias(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-graphite-600">Incremento de capital (USD, opcional)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={incrementoCapital}
+                onChange={(e) => setIncrementoCapital(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-graphite-600">
+              <input
+                type="checkbox"
+                checked={esPersonaJuridica}
+                onChange={(e) => setEsPersonaJuridica(e.target.checked)}
+              />
+              El titular es persona jurídica
+            </label>
+
+            <button
+              type="submit"
+              disabled={renovar.isPending}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {renovar.isPending ? 'Renovando…' : 'Confirmar renovación'}
+            </button>
+
+            {renovar.isError && <p className="text-sm text-red-700">{mensajeError ?? 'No se pudo renovar el depósito.'}</p>}
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SeccionRenovacionesDpf() {
+  const { data: renovaciones } = useQuery<DepositoRenovacionHistorial[]>({
+    queryKey: ['plazofijo-renovaciones'],
+    queryFn: async () => (await api.get('/api/plazofijo/renovaciones')).data,
+  })
+
+  return (
+    <div className="mt-8">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-graphite-600">Renovaciones de DPF</h2>
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Origen</Th>
+            <Th>Destino</Th>
+            <Th>Valor renovado</Th>
+            <Th>Incremento</Th>
+            <Th>Tasa aplicada</Th>
+            <Th>Fecha</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {(renovaciones?.length ?? 0) === 0 && <EmptyState>Todavía no se ha renovado ningún DPF</EmptyState>}
+          {renovaciones?.map((r, i) => (
+            <tr key={i} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{r.codigoOrigen}</Td>
+              <Td>{r.codigoDestino}</Td>
+              <Td className="tabular-nums">{formatoUsd(r.valor)}</Td>
+              <Td className="tabular-nums">{r.valorIncremento > 0 ? formatoUsd(r.valorIncremento) : '—'}</Td>
+              <Td>{(r.tasaAplicada * 100).toFixed(2)}%</Td>
+              <Td>{r.fechaRenovacion}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
 function estadoVariant(estado: string) {
   if (estado === 'Desembolsada' || estado === 'Vigente') return 'exito' as const
   if (estado === 'Rechazada') return 'peligro' as const
@@ -495,6 +666,7 @@ function SeccionAutoDebitoSpi() {
 export function Creditos() {
   const [mostrarForm, setMostrarForm] = useState(false)
   const [mostrarFormDpf, setMostrarFormDpf] = useState(false)
+  const [depositoARenovar, setDepositoARenovar] = useState<Deposito | null>(null)
   const queryClient = useQueryClient()
 
   const { data: productos } = useQuery<Producto[]>({
@@ -709,6 +881,9 @@ export function Creditos() {
       </div>
 
       {mostrarFormDpf && <AbrirDpfForm onClose={() => setMostrarFormDpf(false)} />}
+      {depositoARenovar && (
+        <RenovarDpfModal deposito={depositoARenovar} onClose={() => setDepositoARenovar(null)} />
+      )}
 
       <TableContainer>
         <thead>
@@ -739,20 +914,31 @@ export function Creditos() {
               </Td>
               <Td>
                 {d.estado === 'Vigente' && (
-                  <button
-                    type="button"
-                    disabled={cancelarDpf.isPending}
-                    onClick={() => cancelarDpf.mutate(d.id)}
-                    className="text-sm font-medium text-gold-400 hover:underline disabled:opacity-50"
-                  >
-                    Cancelar
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDepositoARenovar(d)}
+                      className="text-sm font-medium text-gold-400 hover:underline"
+                    >
+                      Renovar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={cancelarDpf.isPending}
+                      onClick={() => cancelarDpf.mutate(d.id)}
+                      className="text-sm font-medium text-graphite-600 hover:underline disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 )}
               </Td>
             </tr>
           ))}
         </tbody>
       </TableContainer>
+
+      <SeccionRenovacionesDpf />
     </div>
   )
 }

@@ -53,6 +53,35 @@ public class PlazoFijoController(Corela15DbContext db, IDepositoService deposito
             new CancelarDepositoRequest(idDeposito, User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
+
+    [HttpPost("depositos/{idDeposito:guid}/renovar")]
+    [RequireIdempotencyKey]
+    public async Task<ActionResult<DepositoRenovadoResult>> Renovar(
+        Guid idDeposito, [FromBody] RenovarDepositoBody body, CancellationToken cancellationToken)
+    {
+        var resultado = await depositoService.RenovarAsync(
+            new RenovarDepositoRequest(idDeposito, body.PlazoDias, body.IncrementoCapital, body.EsPersonaJuridica, User.Identity!.Name!),
+            cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpGet("renovaciones")]
+    public async Task<ActionResult<IReadOnlyList<DepositoRenovacionListItem>>> Renovaciones(CancellationToken cancellationToken)
+    {
+        var resultado = await db.DepositosRenovaciones
+            .OrderByDescending(r => r.FechaRenovacion)
+            .Select(r => new DepositoRenovacionListItem(
+                r.DepositoOrigen.Codigo, r.DepositoDestino.Codigo, r.Valor, r.ValorIncremento,
+                r.DepositoDestino.Tasa, r.FechaRenovacion))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
 }
 
 public record AbrirDepositoBody(Guid IdCliente, int IdAgencia, decimal Monto, int PlazoDias, bool EsPersonaJuridica);
+
+public record RenovarDepositoBody(int PlazoDias, decimal IncrementoCapital, bool EsPersonaJuridica);
+
+public record DepositoRenovacionListItem(
+    string CodigoOrigen, string CodigoDestino, decimal Valor, decimal ValorIncremento, decimal TasaAplicada, DateOnly FechaRenovacion);
