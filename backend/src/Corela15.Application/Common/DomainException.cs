@@ -20,6 +20,9 @@ public abstract class ReglaDeNegocioException(string message) : DomainException(
 /// <summary>Datos de entrada inválidos por forma, no por regla de negocio — HTTP 400.</summary>
 public abstract class SolicitudInvalidaException(string message) : DomainException(message, 400);
 
+/// <summary>Variante concreta de SolicitudInvalidaException para casos puntuales que no ameritan un tipo dedicado.</summary>
+public class SolicitudInvalidaExceptionGenerica(string message) : SolicitudInvalidaException(message);
+
 /// <summary>Credenciales inválidas o sesión no autenticada — HTTP 401.</summary>
 public abstract class NoAutenticadoException(string message) : DomainException(message, 401);
 

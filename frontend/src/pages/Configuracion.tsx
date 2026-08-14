@@ -762,6 +762,233 @@ function TabEmpresa() {
   )
 }
 
+// ---------- Plan de cuentas (Nivel 1) ----------
+
+interface CuentaContablePlan {
+  id: string
+  codigo: string
+  nombre: string
+  grupo: string
+  naturaleza: string
+  esMayor: boolean
+  activa: boolean
+  codigoPadre: string | null
+}
+
+function TabPlanCuentas() {
+  const queryClient = useQueryClient()
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [editando, setEditando] = useState<CuentaContablePlan | null>(null)
+  const [codigo, setCodigo] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [grupo, setGrupo] = useState('Activo')
+  const [naturaleza, setNaturaleza] = useState('Deudora')
+  const [idCuentaPadre, setIdCuentaPadre] = useState('')
+  const [esMayor, setEsMayor] = useState(true)
+  const [activa, setActiva] = useState(true)
+
+  const { data, isLoading } = useQuery<CuentaContablePlan[]>({
+    queryKey: ['config-plan-cuentas'],
+    queryFn: async () => (await api.get('/api/configuracion/plan-cuentas')).data,
+  })
+
+  const grupos = data?.filter((c) => !c.esMayor) ?? []
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      editando
+        ? (await api.put(`/api/configuracion/plan-cuentas/${editando.id}`, { nombre, activa })).data
+        : (
+            await api.post('/api/configuracion/plan-cuentas', {
+              codigo,
+              nombre,
+              grupo,
+              naturaleza,
+              idCuentaPadre: idCuentaPadre || null,
+              esMayor,
+            })
+          ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-plan-cuentas'] })
+      cerrar()
+    },
+  })
+
+  const abrirNuevo = () => {
+    setEditando(null)
+    setCodigo('')
+    setNombre('')
+    setGrupo('Activo')
+    setNaturaleza('Deudora')
+    setIdCuentaPadre('')
+    setEsMayor(true)
+    setActiva(true)
+    setMostrarForm(true)
+  }
+
+  const abrirEditar = (item: CuentaContablePlan) => {
+    setEditando(item)
+    setNombre(item.nombre)
+    setActiva(item.activa)
+    setMostrarForm(true)
+  }
+
+  const cerrar = () => {
+    setMostrarForm(false)
+    setEditando(null)
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-graphite-600">Plan de cuentas</h3>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={abrirNuevo}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-1.5 text-xs font-medium text-white"
+          >
+            <Plus size={14} /> Nueva subcuenta
+          </button>
+        )}
+      </div>
+
+      {mostrarForm && (
+        <div className="glass-card animate-zoom-in mb-4 rounded-xl p-4">
+          <form
+            className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!nombre || (!editando && !codigo)) return
+              guardar.mutate()
+            }}
+          >
+            <input
+              required
+              disabled={!!editando}
+              placeholder="Código"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50 disabled:opacity-60"
+            />
+            <input
+              required
+              placeholder="Nombre"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50 sm:col-span-2"
+            />
+
+            {!editando && (
+              <>
+                <select
+                  value={grupo}
+                  onChange={(e) => setGrupo(e.target.value)}
+                  className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+                >
+                  {['Activo', 'Pasivo', 'Patrimonio', 'Gastos', 'Ingresos', 'CuentasContingentes', 'CuentasDeOrden'].map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={naturaleza}
+                  onChange={(e) => setNaturaleza(e.target.value)}
+                  className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+                >
+                  <option value="Deudora">Deudora</option>
+                  <option value="Acreedora">Acreedora</option>
+                </select>
+                <select
+                  value={idCuentaPadre}
+                  onChange={(e) => setIdCuentaPadre(e.target.value)}
+                  className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+                >
+                  <option value="">Sin padre (grupo raíz)</option>
+                  {grupos.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.codigo} — {g.nombre}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={esMayor} onChange={(e) => setEsMayor(e.target.checked)} className="h-4 w-4 rounded accent-[#b58e4a]" />
+                  <span className="text-graphite-600">Cuenta de detalle (recibe movimientos)</span>
+                </label>
+              </>
+            )}
+
+            {editando && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={activa} onChange={(e) => setActiva(e.target.checked)} className="h-4 w-4 rounded accent-[#b58e4a]" />
+                <span className="text-graphite-600">Activa</span>
+              </label>
+            )}
+
+            <div className="flex items-center gap-2 sm:col-span-3">
+              <button
+                type="submit"
+                disabled={guardar.isPending}
+                className="btn-hover rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {guardar.isPending ? 'Guardando…' : editando ? 'Actualizar' : 'Crear'}
+              </button>
+              <button type="button" onClick={cerrar} className="text-graphite-600 hover:text-graphite-100">
+                <X size={18} />
+              </button>
+            </div>
+            {guardar.isError && (
+              <p className="sm:col-span-3 text-sm text-red-700">{mensajeError(guardar.error, 'No se pudo guardar la cuenta.')}</p>
+            )}
+          </form>
+        </div>
+      )}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código</Th>
+            <Th>Nombre</Th>
+            <Th>Grupo</Th>
+            <Th>Naturaleza</Th>
+            <Th>Tipo</Th>
+            <Th>Estado</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (data?.length ?? 0) === 0 && <EmptyState>Sin registros</EmptyState>}
+          {data?.map((item) => (
+            <tr key={item.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{item.codigo}</Td>
+              <Td>{item.nombre}</Td>
+              <Td>{item.grupo}</Td>
+              <Td>{item.naturaleza}</Td>
+              <Td>
+                <Badge variant={item.esMayor ? 'exito' : 'neutral'}>{item.esMayor ? 'Detalle' : 'Grupo'}</Badge>
+              </Td>
+              <Td>
+                <Badge variant={item.activa ? 'exito' : 'peligro'}>{item.activa ? 'Activa' : 'Inactiva'}</Badge>
+              </Td>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => abrirEditar(item)}
+                  className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
+                >
+                  <Pencil size={13} /> Editar
+                </button>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
 // ---------- Página principal ----------
 
 const TABS = [
@@ -771,6 +998,8 @@ const TABS = [
   { id: 'paises', label: 'Países' },
   { id: 'monedas', label: 'Monedas' },
   { id: 'tipos-identificacion', label: 'Tipos de identificación' },
+  { id: 'plan-cuentas', label: 'Plan de cuentas' },
+  { id: 'tipos-comprobante', label: 'Tipos de comprobante' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -817,6 +1046,15 @@ export function Configuracion() {
           queryKey="config-tipos-identificacion"
           endpoint="/api/configuracion/tipos-identificacion"
           labelEntidad="el tipo de identificación"
+        />
+      )}
+      {tab === 'plan-cuentas' && <TabPlanCuentas />}
+      {tab === 'tipos-comprobante' && (
+        <TabCatalogoCodigoNombre
+          titulo="Tipos de comprobante"
+          queryKey="config-tipos-comprobante"
+          endpoint="/api/configuracion/tipos-comprobante"
+          labelEntidad="el tipo de comprobante"
         />
       )}
     </div>

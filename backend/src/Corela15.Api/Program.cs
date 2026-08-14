@@ -44,6 +44,7 @@ builder.Services.AddDbContext<Corela15DbContext>(options =>
     options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 builder.Services.AddScoped<IComprobanteContableService, ComprobanteContableService>();
+builder.Services.AddScoped<ICuentaContableAdminService, CuentaContableAdminService>();
 builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 builder.Services.AddScoped<IProvisionCarteraService, ProvisionCarteraService>();

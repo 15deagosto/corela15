@@ -1,4 +1,5 @@
 using Corela15.Application.Common;
+using Corela15.Application.Contabilidad;
 using Corela15.Domain.General;
 using Corela15.Domain.Seguridad;
 using Corela15.Infrastructure.Persistence;
@@ -35,10 +36,20 @@ public record RolDto(int Id, string Nombre, int Nivel);
 public record CrearRolRequest(string Nombre, int Nivel);
 public record ActualizarRolRequest(string Nombre, int Nivel);
 
+public record CuentaContablePlanDto(
+    Guid Id, string Codigo, string Nombre, string Grupo, string Naturaleza,
+    bool EsMayor, bool Activa, string? CodigoPadre);
+public record CrearCuentaContablePlanRequest(
+    string Codigo, string Nombre, string Grupo, string Naturaleza, Guid? IdCuentaPadre, bool EsMayor);
+public record ActualizarCuentaContablePlanRequest(string Nombre, bool Activa);
+
+public record TipoComprobanteContableDto(int Id, string Codigo, string Nombre);
+public record CrearTipoComprobanteContableRequest(string Codigo, string Nombre);
+
 [ApiController]
 [Route("api/configuracion")]
 [Authorize(Policy = "Menu:configuracion")]
-public class ConfiguracionController(Corela15DbContext db) : ControllerBase
+public class ConfiguracionController(Corela15DbContext db, ICuentaContableAdminService cuentaContableAdmin) : ControllerBase
 {
     // ---- Países ----
 
@@ -274,5 +285,96 @@ public class ConfiguracionController(Corela15DbContext db) : ControllerBase
         rol.Nivel = request.Nivel;
         await db.SaveChangesAsync(ct);
         return Ok(new RolDto(rol.Id, rol.Nombre, rol.Nivel));
+    }
+
+    // ---- Plan de cuentas (Nivel 1) ----
+    // A diferencia de los catálogos de arriba, sí tiene invariantes reales
+    // (versionado por trigger, jerarquía, no se puede desactivar una cuenta
+    // con saldo o en uso) — por eso pasa por Application
+    // (ICuentaContableAdminService), no directo contra el DbContext.
+
+    [HttpGet("plan-cuentas")]
+    public async Task<ActionResult<IReadOnlyList<CuentaContablePlanDto>>> PlanCuentas(CancellationToken ct)
+    {
+        var resultado = await db.CuentasContables
+            .Include(c => c.CuentaPadre)
+            .OrderBy(c => c.Codigo)
+            .Select(c => new CuentaContablePlanDto(
+                c.Id, c.Codigo, c.Nombre, c.Grupo.ToString(), c.Naturaleza.ToString(),
+                c.EsMayor, c.Activa, c.CuentaPadre != null ? c.CuentaPadre.Codigo : null))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("plan-cuentas")]
+    public async Task<ActionResult<CuentaContableCreadaResult>> CrearCuentaContable(
+        [FromBody] CrearCuentaContablePlanRequest request, CancellationToken ct)
+    {
+        var resultado = await cuentaContableAdmin.CrearAsync(
+            new CrearCuentaContableRequest(
+                request.Codigo, request.Nombre, request.Grupo, request.Naturaleza,
+                request.IdCuentaPadre, request.EsMayor, User.Identity!.Name!),
+            ct);
+        return Created($"/api/configuracion/plan-cuentas/{resultado.Id}", resultado);
+    }
+
+    [HttpPut("plan-cuentas/{id:guid}")]
+    public async Task<ActionResult> ActualizarCuentaContable(
+        Guid id, [FromBody] ActualizarCuentaContablePlanRequest request, CancellationToken ct)
+    {
+        await cuentaContableAdmin.ActualizarAsync(
+            new ActualizarCuentaContableRequest(id, request.Nombre, request.Activa, User.Identity!.Name!), ct);
+        return NoContent();
+    }
+
+    // ---- Tipos de comprobante contable ----
+
+    [HttpGet("tipos-comprobante")]
+    public async Task<ActionResult<IReadOnlyList<TipoComprobanteContableDto>>> TiposComprobante(CancellationToken ct)
+    {
+        var resultado = await db.TiposComprobanteContable
+            .OrderBy(t => t.Nombre)
+            .Select(t => new TipoComprobanteContableDto(t.Id, t.Codigo, t.Nombre))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("tipos-comprobante")]
+    public async Task<ActionResult<TipoComprobanteContableDto>> CrearTipoComprobante(
+        [FromBody] CrearTipoComprobanteContableRequest request, CancellationToken ct)
+    {
+        if (await db.TiposComprobanteContable.AnyAsync(t => t.Codigo == request.Codigo, ct))
+        {
+            throw new CodigoDuplicadoException("un tipo de comprobante", request.Codigo);
+        }
+
+        var tipo = new Corela15.Domain.Contabilidad.TipoComprobanteContable
+        {
+            Codigo = request.Codigo,
+            Nombre = request.Nombre,
+        };
+        db.TiposComprobanteContable.Add(tipo);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/tipos-comprobante/{tipo.Id}", new TipoComprobanteContableDto(tipo.Id, tipo.Codigo, tipo.Nombre));
+    }
+
+    [HttpPut("tipos-comprobante/{id:int}")]
+    public async Task<ActionResult<TipoComprobanteContableDto>> ActualizarTipoComprobante(
+        int id, [FromBody] CrearTipoComprobanteContableRequest request, CancellationToken ct)
+    {
+        var tipo = await db.TiposComprobanteContable.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tipo is null) return NotFound();
+
+        if (await db.TiposComprobanteContable.AnyAsync(t => t.Codigo == request.Codigo && t.Id != id, ct))
+        {
+            throw new CodigoDuplicadoException("un tipo de comprobante", request.Codigo);
+        }
+
+        tipo.Codigo = request.Codigo;
+        tipo.Nombre = request.Nombre;
+        await db.SaveChangesAsync(ct);
+        return Ok(new TipoComprobanteContableDto(tipo.Id, tipo.Codigo, tipo.Nombre));
     }
 }

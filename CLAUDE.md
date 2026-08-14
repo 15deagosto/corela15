@@ -150,9 +150,27 @@ duplicado de código rechazado (422), actualización. Pantalla real
 es un componente genérico reutilizado por Países y Tipos de identificación
 (mismo shape código+nombre), evitando duplicar el formulario dos veces;
 Monedas/Agencias/Roles/Empresa tienen su propia pestaña por tener campos
-distintos. Pendiente: Nivel 1 en adelante (plan de cuentas editable,
-`tipo_comprobante_contable`, y luego los catálogos de cada nivel
-siguiente) — continuar en el mismo orden.
+distintos. **Nivel 1 — hecho**: `plan-cuentas` y `tipos-comprobante`
+agregados a `Configuracion.tsx`. A diferencia de los catálogos de Nivel 0,
+el plan de cuentas sí tiene invariantes reales (versionado por trigger,
+jerarquía padre/hijo, no se puede desactivar una cuenta con saldo
+distinto de cero o en uso por un tipo de transacción activo) — por eso
+`ICuentaContableAdminService`/`CuentaContableAdminService` pasan por
+`Application`, rompiendo a propósito el patrón "directo contra el
+DbContext" que sí aplica a los catálogos simples (documentado en el
+propio código como la razón del quiebre de convención). `POST /api/
+configuracion/plan-cuentas` crea una subcuenta nueva (código único,
+grupo/naturaleza/es_mayor fijos desde la creación — cambiarlos después
+rompería la integridad de asientos ya registrados); `PUT` solo permite
+tocar nombre y estado activo. Probado end-to-end: creación de subcuenta
+bajo un grupo válido, rechazo de padre inválido (una cuenta de detalle no
+puede tener subcuentas), desactivación de una cuenta sin saldo (éxito),
+desactivación de `1101` Caja rechazada (422, está en uso por
+`DEP-EFEC`/`RET-EFEC`/etc). `tipo_comprobante_contable` sí es un catálogo
+simple (Ingreso/Egreso/Diario/Apertura/Cierre, sin invariante más allá de
+código único) — CRUD directo en `ConfiguracionController`, mismo patrón
+que Países/Monedas. Pendiente: catálogos de Nivel 2 en adelante — seguir
+en el mismo orden.
 
 ## Autenticación real (JWT + roles + menús)
 
