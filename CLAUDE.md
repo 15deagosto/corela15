@@ -399,6 +399,71 @@ con la cuota 1 forzada a 50 días de mora → clasificado correctamente en
 C1 (20%), provisión de $200 registrada, `1499`/`4402` verificados en
 $200 exactos; segunda corrida el mismo día → incremento $0 (no duplica).
 
+## Devengo de interés y cierre de período contable
+
+Últimos dos puntos del motor bancario real que faltaba: hasta acá todo se
+calculaba solo en el momento de la transacción — un ahorro no ganaba
+interés día a día como en un banco real, y se podía contabilizar
+retroactivo sobre un mes ya cerrado y reportado sin que nada lo impidiera.
+
+**Devengo de interés sobre ahorros** (`Corela15.Application.Ahorros.
+IDevengoInteresService` / `DevengoInteresService`, `POST /api/ahorros/
+devengo-interes/ejecutar`): `TipoCuenta.TasaInteresAnual` (nueva) — Ahorro
+a la Vista sembrado con 2% nominal anual (tasa pasiva de referencia real
+para una COAC Segmento 2, no una tasa techo regulatoria como la de
+créditos, así que no exige la misma verificación exacta contra circular
+oficial); Ahorro Infantil y Certificados de Aportación quedan en 0% por
+decisión de producto (Certificados es capital social, no captación
+remunerada en este diseño). Para cada cuenta activa con tasa > 0, calcula
+`interés_día = saldo disponible × (tasa_anual / 365)` y lo acredita al
+balde de saldo **"Interés por pagar"** (`item_saldo` código `INT`) — este
+balde ya existía en el catálogo desde Nivel 2 (sembrado desde el
+principio, sin usar hasta ahora), confirmando que el diseño original ya
+había previsto este mecanismo. Un asiento consolidado por corrida
+(débito `4101` Intereses causados en depósitos / crédito `2503`
+Intereses por pagar sobre depósitos — ambas subcuentas nuevas, bajo los
+grupos `41`/`25` ya sembrados desde Nivel 1), no uno por cuenta.
+`ahorros.devengo_interes_log` (único por Fecha+Cuenta) es la bitácora real
+del devengo y también lo que hace que correr el batch dos veces el mismo
+día sea seguro por diseño — la segunda corrida no encuentra cuentas
+pendientes. Probado end-to-end: cuenta de $10,000 → $0.55 devengado
+exacto (10000 × 0.02 / 365), balde `INT` y cuentas `2503`/`4101`
+verificados en $0.55; segunda corrida el mismo día → 0 cuentas procesadas
+(no duplica). Pantalla real: botón "Ejecutar devengo de interés" en
+`Ahorros.tsx`.
+
+**Cierre de período contable** (`Corela15.Application.Contabilidad.
+ICierrePeriodoService` / `CierrePeriodoService`, `POST /api/contabilidad/
+periodos/cerrar`, `GET /api/contabilidad/periodos`): `contabilidad.
+periodo_contable` (Periodo, Cerrado, FechaCierre, CerradoPor) — mientras
+no exista una fila para un período se asume abierto, un cierre explícito
+lo bloquea. `ComprobanteContableService.RegistrarAsync` valida en **cada**
+registro si el período (año-mes) de la fecha del comprobante está
+cerrado, y si lo está rechaza con 422 (`PeriodoContableCerradoException`)
+— esto protege automáticamente a **todo** caso de uso que genera
+comprobantes (depósitos, préstamos, provisión, devengo, lo que sea que se
+construya después), no solo el endpoint directo de comprobantes, porque
+todos pasan por el mismo servicio. Doble cierre del mismo período se
+rechaza (`PeriodoYaCerradoException`, 422). **No implementa cierre de
+resultados** (utilidad del ejercicio → patrimonio, el paso típico de un
+cierre anual real) — solo el bloqueo operativo del período, que es lo que
+impide contabilizar retroactivo; el cierre de resultados queda fuera de
+alcance, documentado a propósito. Probado end-to-end: cierre de un
+período pasado (julio 2026, elegido a propósito para no bloquear el mes
+en curso durante la prueba), comprobante con fecha dentro de ese período
+rechazado (422), comprobante con fecha del mes abierto aceptado (201),
+doble cierre del mismo período rechazado (422). Pantalla real: sección
+"Cierre de período contable" en `Contabilidad.tsx` con selector de mes,
+botón de cierre, y tabla de períodos con su estado.
+
+Con esto, los 5 puntos identificados en la evaluación de seguridad/
+regulatoria de esta sesión (autenticación, concurrencia, idempotencia,
+tasas techo BCE, provisiones) más devengo y cierre de período están
+completos y probados de punta a punta. Pendiente real, documentado en
+cada sección: coeficiente de liquidez/COSEDE, motor de scoring de
+crédito/PLA, estructura de detalle de reportes regulatorios (solo índice
+hoy), cierre de resultados del ejercicio, tests automatizados.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

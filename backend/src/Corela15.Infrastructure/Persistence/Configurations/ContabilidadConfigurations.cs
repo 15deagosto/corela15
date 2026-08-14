@@ -122,3 +122,14 @@ public class SaldoContableConfiguration : IEntityTypeConfiguration<SaldoContable
         b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
+
+public class PeriodoContableConfiguration : IEntityTypeConfiguration<PeriodoContable>
+{
+    public void Configure(EntityTypeBuilder<PeriodoContable> b)
+    {
+        b.ToTable("periodo_contable", "contabilidad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CerradoPor).HasMaxLength(100);
+        b.HasIndex(x => x.Periodo).IsUnique();
+    }
+}

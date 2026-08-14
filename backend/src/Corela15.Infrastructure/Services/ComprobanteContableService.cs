@@ -25,6 +25,14 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
             throw new ComprobanteDesbalanceadoException(totalDebitos, totalCreditos);
         }
 
+        var periodoSolicitado = new DateOnly(request.Fecha.Year, request.Fecha.Month, 1);
+        var periodoCerrado = await db.PeriodosContables
+            .AnyAsync(p => p.Periodo == periodoSolicitado && p.Cerrado, cancellationToken);
+        if (periodoCerrado)
+        {
+            throw new PeriodoContableCerradoException(periodoSolicitado);
+        }
+
         var idsCuenta = request.Lineas.Select(l => l.IdCuentaContable).Distinct().ToList();
         var cuentas = await db.CuentasContables
             .Where(c => idsCuenta.Contains(c.Id))

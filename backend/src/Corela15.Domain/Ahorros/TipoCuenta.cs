@@ -23,5 +23,13 @@ public class TipoCuenta
     /// <summary>Saldo mínimo adicional exigido cuando la cuenta tiene débito de préstamo activo.</summary>
     public decimal? SaldoMinimoConPrestamo { get; set; }
 
+    /// <summary>
+    /// Tasa de interés nominal anual que devenga el saldo disponible de este
+    /// producto (0 = no devenga, ej. Ahorro Infantil). El devengo real corre
+    /// día a día vía IDevengoInteresService, acreditando al balde de saldo
+    /// "Interés por pagar" (item_saldo INT) — no un cálculo a mano.
+    /// </summary>
+    public decimal TasaInteresAnual { get; set; }
+
     public bool Activo { get; set; } = true;
 }

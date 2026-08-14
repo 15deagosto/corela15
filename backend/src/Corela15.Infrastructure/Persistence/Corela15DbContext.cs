@@ -59,6 +59,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<ComprobanteContable> ComprobantesContables => Set<ComprobanteContable>();
     public DbSet<MovimientoComprobanteContable> MovimientosComprobanteContable => Set<MovimientoComprobanteContable>();
     public DbSet<SaldoContable> SaldosContables => Set<SaldoContable>();
+    public DbSet<PeriodoContable> PeriodosContables => Set<PeriodoContable>();
     public DbSet<TipoTransaccion> TiposTransaccion => Set<TipoTransaccion>();
 
     // AHORROS
@@ -69,6 +70,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<TipoCuentaItemSaldo> TiposCuentaItemSaldo => Set<TipoCuentaItemSaldo>();
     public DbSet<CuentaItemSaldo> CuentasItemSaldo => Set<CuentaItemSaldo>();
     public DbSet<CuentaMovimiento> CuentasMovimientos => Set<CuentaMovimiento>();
+    public DbSet<DevengoInteresLog> DevengosInteresLog => Set<DevengoInteresLog>();
 
     // INVERSION (Plazo Fijo)
     public DbSet<Deposito> Depositos => Set<Deposito>();

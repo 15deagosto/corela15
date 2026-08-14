@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PiggyBank, Plus, X, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { PiggyBank, Plus, X, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -264,6 +264,18 @@ export function Ahorros() {
     queryFn: async () => (await api.get('/api/ahorros/cuentas', { params: { q: q || undefined } })).data,
   })
 
+  const queryClient = useQueryClient()
+  const devengo = useMutation({
+    mutationFn: async () => (await api.post('/api/ahorros/devengo-interes/ejecutar')).data as {
+      fecha: string
+      cuentasProcesadas: number
+      totalDevengado: number
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
+    },
+  })
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -272,16 +284,34 @@ export function Ahorros() {
         subtitle="Cuentas de ahorro y captación a la vista"
         actions={
           !mostrarForm && (
-            <button
-              type="button"
-              onClick={() => setMostrarForm(true)}
-              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
-            >
-              <Plus size={16} /> Abrir cuenta
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => devengo.mutate()}
+                disabled={devengo.isPending}
+                className="flex items-center gap-1.5 rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm font-medium text-graphite-100 hover:bg-black/[0.02] disabled:opacity-60"
+              >
+                <TrendingUp size={16} />
+                {devengo.isPending ? 'Calculando…' : 'Ejecutar devengo de interés'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMostrarForm(true)}
+                className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
+              >
+                <Plus size={16} /> Abrir cuenta
+              </button>
+            </div>
           )
         }
       />
+
+      {devengo.isSuccess && (
+        <p className="mb-4 rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+          Devengo del {devengo.data.fecha}: {devengo.data.cuentasProcesadas} cuenta(s) procesadas, $
+          {devengo.data.totalDevengado.toFixed(2)} devengados en total.
+        </p>
+      )}
 
       {mostrarForm && productos && <AbrirCuentaForm productos={productos} onClose={() => setMostrarForm(false)} />}
       {cuentaMovimiento && (

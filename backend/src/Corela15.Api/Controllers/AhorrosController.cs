@@ -16,7 +16,8 @@ public record CuentaAhorroListItem(
 [ApiController]
 [Route("api/ahorros")]
 [Authorize(Policy = "Menu:ahorros")]
-public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuentaAhorroService) : ControllerBase
+public class AhorrosController(
+    Corela15DbContext db, ICuentaAhorroService cuentaAhorroService, IDevengoInteresService devengoInteresService) : ControllerBase
 {
     [HttpGet("productos")]
     public async Task<ActionResult<IReadOnlyList<ProductoAhorroListItem>>> Productos(
@@ -85,6 +86,13 @@ public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuenta
         var resultado = await cuentaAhorroService.RegistrarMovimientoAsync(
             new RegistrarMovimientoCuentaRequest(idCuenta, body.CodigoTipoTransaccion, body.Monto, User.Identity!.Name!),
             cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("devengo-interes/ejecutar")]
+    public async Task<ActionResult<DevengoInteresEjecutadoResult>> EjecutarDevengoInteres(CancellationToken cancellationToken)
+    {
+        var resultado = await devengoInteresService.EjecutarDevengoDiarioAsync(User.Identity!.Name!, cancellationToken);
         return Ok(resultado);
     }
 }

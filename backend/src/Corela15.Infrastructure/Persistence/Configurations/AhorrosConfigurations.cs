@@ -14,6 +14,7 @@ public class TipoCuentaConfiguration : IEntityTypeConfiguration<TipoCuenta>
         b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
         b.Property(x => x.SaldoMinimo).HasColumnType("numeric(18,2)");
         b.Property(x => x.SaldoMinimoConPrestamo).HasColumnType("numeric(18,2)");
+        b.Property(x => x.TasaInteresAnual).HasColumnType("numeric(9,4)");
         b.HasIndex(x => x.Codigo).IsUnique();
     }
 }
@@ -112,5 +113,23 @@ public class CuentaMovimientoConfiguration : IEntityTypeConfiguration<CuentaMovi
             .OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdCuenta, x.FechaHora });
+    }
+}
+
+public class DevengoInteresLogConfiguration : IEntityTypeConfiguration<DevengoInteresLog>
+{
+    public void Configure(EntityTypeBuilder<DevengoInteresLog> b)
+    {
+        b.ToTable("devengo_interes_log", "ahorros");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.SaldoBase).HasColumnType("numeric(18,2)");
+        b.Property(x => x.TasaAnualAplicada).HasColumnType("numeric(9,4)");
+        b.Property(x => x.MontoDevengado).HasColumnType("numeric(18,2)");
+
+        b.HasOne(x => x.Cuenta).WithMany().HasForeignKey(x => x.IdCuenta).OnDelete(DeleteBehavior.Restrict);
+
+        // Un devengo por cuenta por día — corre el batch dos veces el mismo
+        // día es seguro por diseño, ver DevengoInteresLog.cs.
+        b.HasIndex(x => new { x.Fecha, x.IdCuenta }).IsUnique();
     }
 }

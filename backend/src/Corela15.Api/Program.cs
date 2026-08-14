@@ -45,7 +45,9 @@ builder.Services.AddDbContext<Corela15DbContext>(options =>
 
 builder.Services.AddScoped<IComprobanteContableService, ComprobanteContableService>();
 builder.Services.AddScoped<ICuentaContableAdminService, CuentaContableAdminService>();
+builder.Services.AddScoped<ICierrePeriodoService, CierrePeriodoService>();
 builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
+builder.Services.AddScoped<IDevengoInteresService, DevengoInteresService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 builder.Services.AddScoped<IProvisionCarteraService, ProvisionCarteraService>();
 builder.Services.AddScoped<IDepositoService, DepositoService>();
