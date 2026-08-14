@@ -794,10 +794,56 @@ aplicada, vencimiento) en el mismo modal sin recargar. Sección
 "Renovaciones de DPF" debajo de la cartera de plazo fijo con el
 historial completo origen→destino.
 
-Pendiente, no bloqueante (ya documentado desde Nivel 3, sigue igual):
-cálculo de interés devengado proporcional en cancelación anticipada
-(tanto del depósito origen al renovar como de una cancelación normal —
-sigue devolviendo solo el capital nominal).
+Cálculo de interés devengado proporcional en cancelación ✅ **hecho** (ver
+sección siguiente). Pendiente real que sigue: al renovar un DPF, el
+depósito origen no paga el interés devengado hasta la fecha de
+renovación — el capital simplemente se re-papela bajo el destino nuevo
+sin liquidar el interés del período que sí corrió sobre el origen.
+
+## Interés devengado proporcional en cancelación anticipada de DPF
+
+Último punto pendiente documentado desde Nivel 3: `CancelarAsync`
+devolvía solo el capital nominal del depósito, sin importar cuántos días
+habían transcurrido desde la apertura — cancelar al día 1 o al día 89 de
+un DPF a 90 días pagaba exactamente lo mismo (nada de interés), lo cual
+no es correcto financieramente.
+
+Fórmula (`DepositoService.CancelarAsync`): `interés = Monto × Tasa ×
+díasTranscurridos / 365`, con `díasTranscurridos` acotado entre 0 y
+`PlazoDias` del depósito (`Math.Clamp`) — protección explícita para que
+una cancelación después del vencimiento nominal (depósito vigente que
+nunca se renovó ni se canceló a tiempo) no pague más que el interés
+completo del plazo contratado. Mismo convención `/365` que
+`DevengoInteresService` (ver esa sección para la nota de que es una
+convención estándar, no una tasa techo regulatoria que exija
+verificación exacta contra circular oficial). Si el interés calculado es
+mayor a cero, el comprobante de cancelación pasa de 2 a 4 líneas: además
+de la reversión de capital (débito `2103` / crédito `1101`, sin cambios),
+se agrega débito `4101` Intereses causados en depósitos / crédito `1101`
+Caja por el interés — pagado en efectivo de inmediato junto con el
+capital, no diferido. Si el interés calculado es exactamente cero (ej.
+depósito cancelado el mismo día que se abrió), el comprobante se queda en
+2 líneas — no se agrega una línea con monto cero.
+
+`DepositoCanceladoResult` ahora expone `InteresPagado` además de
+`ValorDevuelto`. Probado end-to-end contra Postgres real, reproduciendo
+un escenario de cancelación anticipada real: DPF de $2,000 a 90 días
+(tasa 7%), fecha de apertura retrocedida 45 días por SQL para simular el
+paso del tiempo → cancelación devolvió `interesPagado: 17.26`, cálculo
+exacto (`2000 × 0.07 × 45 / 365 = 17.26`), balance de comprobación
+verificado cuadrado tras la prueba. **Cuidado real durante la prueba**:
+el ambiente de desarrollo compartido ya tenía actividad real del usuario
+(una cuenta y un préstamo abiertos manualmente desde el frontend, no
+datos de prueba) — la limpieza posterior fue quirúrgica (solo los
+comprobantes y saldo_contable generados por el DPF de prueba, verificado
+por `creado_en`/`creado_por` antes de borrar nada), en vez del `DELETE
+FROM saldo_contable` sin filtrar que se usó en rondas anteriores cuando
+la base estaba vacía — nunca asumir que la base de desarrollo está vacía
+solo porque lo estaba la última vez.
+
+Pantalla real: el mensaje de éxito al cancelar un DPF en `Creditos.tsx`
+(sección Plazo fijo) ahora muestra el capital devuelto y, si aplica, el
+interés devengado proporcional pagado, en el mismo lugar sin navegar.
 
 ## Administración de permisos por rol
 

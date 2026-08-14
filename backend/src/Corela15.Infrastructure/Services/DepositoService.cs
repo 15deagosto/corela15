@@ -13,6 +13,8 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
 {
     private const string CodigoTipoTransaccionApertura = "APER-DPF";
     private const string CodigoTipoTransaccionCancelacion = "CANC-DPF";
+    private const string CodigoCuentaIntereses = "4101";
+    private const string CodigoCuentaCaja = "1101";
 
     public async Task<DepositoAbiertoResult> AbrirAsync(
         AbrirDepositoRequest request, CancellationToken cancellationToken = default)
@@ -111,6 +113,10 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
             throw new TipoTransaccionInvalidoException(CodigoTipoTransaccionCancelacion);
         }
 
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var diasTranscurridos = Math.Clamp(hoy.DayNumber - deposito.FechaCreacion.DayNumber, 0, deposito.PlazoDias);
+        var interesDevengado = Math.Round(deposito.Monto * deposito.Tasa * diasTranscurridos / 365m, 2, MidpointRounding.AwayFromZero);
+
         await using var transaccion = await db.Database.BeginTransactionAsync(cancellationToken);
 
         deposito.Estado = EstadoDeposito.Cancelado;
@@ -125,25 +131,39 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
             throw new ConflictoConcurrenciaException($"El depósito {deposito.Codigo}");
         }
 
-        // Nota: devuelve el capital nominal — el cálculo de interés devengado
-        // a la fecha de corte (proporcional si se cancela antes del
-        // vencimiento) queda pendiente, ver CLAUDE.md.
+        var lineas = new List<LineaMovimientoRequest>
+        {
+            new(tipoTransaccion.IdCuentaContableDebito, deposito.Monto, 0, $"Cancelación DPF {deposito.Codigo}"),
+            new(tipoTransaccion.IdCuentaContableCredito, 0, deposito.Monto, $"Devolución capital DPF {deposito.Codigo}"),
+        };
+        if (interesDevengado > 0)
+        {
+            var idCuentaIntereses = await db.CuentasContables
+                .Where(c => c.Codigo == CodigoCuentaIntereses).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+            var idCuentaCaja = await db.CuentasContables
+                .Where(c => c.Codigo == CodigoCuentaCaja).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+            if (idCuentaIntereses is null || idCuentaCaja is null)
+            {
+                throw new InvalidOperationException($"Faltan las cuentas contables {CodigoCuentaIntereses}/{CodigoCuentaCaja}.");
+            }
+
+            lineas.Add(new LineaMovimientoRequest(idCuentaIntereses.Value, interesDevengado, 0, $"Interés devengado DPF {deposito.Codigo} ({diasTranscurridos} días)"));
+            lineas.Add(new LineaMovimientoRequest(idCuentaCaja.Value, 0, interesDevengado, $"Pago de interés DPF {deposito.Codigo}"));
+        }
+
         var resultadoComprobante = await comprobantes.RegistrarAsync(
             new RegistrarComprobanteContableRequest(
-                DateOnly.FromDateTime(DateTime.UtcNow),
+                hoy,
                 tipoTransaccion.IdTipoComprobante,
                 deposito.IdAgencia,
                 $"Cancelación DPF {deposito.Codigo}",
                 request.RegistradoPor,
-                [
-                    new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableDebito, deposito.Monto, 0, $"Cancelación DPF {deposito.Codigo}"),
-                    new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableCredito, 0, deposito.Monto, $"Devolución capital DPF {deposito.Codigo}"),
-                ]),
+                lineas.ToArray()),
             cancellationToken);
 
         await transaccion.CommitAsync(cancellationToken);
 
-        return new DepositoCanceladoResult(deposito.Monto, resultadoComprobante.Id);
+        return new DepositoCanceladoResult(deposito.Monto, interesDevengado, resultadoComprobante.Id);
     }
 
     public async Task<DepositoRenovadoResult> RenovarAsync(

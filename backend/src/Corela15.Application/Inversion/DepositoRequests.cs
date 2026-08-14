@@ -12,7 +12,7 @@ public record DepositoAbiertoResult(Guid IdDeposito, string Codigo, decimal Tasa
 
 public record CancelarDepositoRequest(Guid IdDeposito, string RegistradoPor);
 
-public record DepositoCanceladoResult(decimal ValorDevuelto, Guid IdComprobanteContable);
+public record DepositoCanceladoResult(decimal ValorDevuelto, decimal InteresPagado, Guid IdComprobanteContable);
 
 public record RenovarDepositoRequest(
     Guid IdDepositoOrigen,

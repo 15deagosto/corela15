@@ -105,6 +105,12 @@ interface DepositoRenovacionHistorial {
   fechaRenovacion: string
 }
 
+interface DepositoCancelado {
+  valorDevuelto: number
+  interesPagado: number
+  idComprobanteContable: string
+}
+
 function formatoUsd(monto: number) {
   return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
 }
@@ -865,7 +871,7 @@ function SeccionPlazoFijo() {
         await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, undefined, {
           headers: { 'Idempotency-Key': crypto.randomUUID() },
         })
-      ).data,
+      ).data as DepositoCancelado,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
     },
@@ -889,6 +895,16 @@ function SeccionPlazoFijo() {
       {mostrarFormDpf && <AbrirDpfForm onClose={() => setMostrarFormDpf(false)} />}
       {depositoARenovar && (
         <RenovarDpfModal deposito={depositoARenovar} onClose={() => setDepositoARenovar(null)} />
+      )}
+
+      {cancelarDpf.isSuccess && (
+        <p className="mb-4 rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+          Depósito cancelado: {formatoUsd(cancelarDpf.data.valorDevuelto)} de capital
+          {cancelarDpf.data.interesPagado > 0 && (
+            <> + {formatoUsd(cancelarDpf.data.interesPagado)} de interés devengado proporcional</>
+          )}
+          .
+        </p>
       )}
 
       <TableContainer>

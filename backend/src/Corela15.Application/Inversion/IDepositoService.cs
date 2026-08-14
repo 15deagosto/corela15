@@ -14,11 +14,13 @@ public interface IDepositoService
     Task<DepositoAbiertoResult> AbrirAsync(AbrirDepositoRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cancela/redime un DPF: revierte el asiento (débito Depósitos a plazo
-    /// fijo / crédito Caja) y marca el depósito como Cancelado. No calcula
-    /// interés devengado todavía — devuelve el capital nominal; el cálculo
-    /// de interés acumulado a la fecha de corte queda pendiente (ver
-    /// CLAUDE.md).
+    /// Cancela/redime un DPF: revierte el asiento de capital (débito
+    /// Depósitos a plazo fijo / crédito Caja), calcula el interés devengado
+    /// PROPORCIONAL a los días realmente transcurridos desde la apertura
+    /// (o la última renovación) hasta hoy — `Monto × Tasa × días/365`,
+    /// nunca el interés nominal completo del plazo — y lo paga en efectivo
+    /// en el mismo comprobante (débito Intereses causados en depósitos /
+    /// crédito Caja), antes de marcar el depósito como Cancelado.
     /// </summary>
     Task<DepositoCanceladoResult> CancelarAsync(CancelarDepositoRequest request, CancellationToken cancellationToken = default);
 
