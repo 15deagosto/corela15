@@ -1,3 +1,4 @@
+using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Domain.Contabilidad;
 using Corela15.Infrastructure.Persistence;
@@ -7,6 +8,8 @@ namespace Corela15.Infrastructure.Services;
 
 public class ComprobanteContableService(Corela15DbContext db) : IComprobanteContableService
 {
+    private const int MaxReintentosPorConcurrencia = 3;
+
     public async Task<ComprobanteContableRegistradoResult> RegistrarAsync(
         RegistrarComprobanteContableRequest request, CancellationToken cancellationToken = default)
     {
@@ -86,9 +89,36 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
 
         db.ComprobantesContables.Add(comprobante);
 
-        await ActualizarSaldosAsync(request, cuentas, cancellationToken);
+        // saldo_contable es el punto de mayor contención del sistema —
+        // toda cuenta/período puede recibir comprobantes concurrentes
+        // legítimos (dos depósitos distintos a la misma hora). Con xmin
+        // como token de concurrencia, un choque real ya no se pierde en
+        // silencio: se reintenta desde cero (soltando por completo el
+        // tracking de las filas de saldo tocadas, sean nuevas o existentes,
+        // para no aplicar el delta dos veces sobre una fila que nunca
+        // llegó a fallar) hasta MaxReintentosPorConcurrencia veces antes
+        // de rendirse con 409.
+        for (var intento = 1; ; intento++)
+        {
+            await ActualizarSaldosAsync(request, cuentas, cancellationToken);
 
-        await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (DbUpdateConcurrencyException) when (intento < MaxReintentosPorConcurrencia)
+            {
+                foreach (var entry in db.ChangeTracker.Entries<SaldoContable>().ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw new ConflictoConcurrenciaException("El saldo contable de una de las cuentas afectadas");
+            }
+        }
 
         if (transaccion is not null)
         {
@@ -112,6 +142,11 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
 
         foreach (var t in totalesPorCuenta)
         {
+            // Sin duplicados dentro de una misma pasada (GroupBy por
+            // cuenta) y siempre destrackeado por completo entre
+            // reintentos (ver RegistrarAsync) — cada pasada consulta la
+            // fila real más reciente, nunca reutiliza estado a medio
+            // aplicar de un intento anterior.
             var saldo = await db.SaldosContables.FirstOrDefaultAsync(
                 s => s.IdCuentaContable == t.IdCuentaContable && s.Periodo == periodo, cancellationToken);
 

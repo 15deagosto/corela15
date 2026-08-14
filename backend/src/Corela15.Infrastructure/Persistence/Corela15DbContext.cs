@@ -51,6 +51,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<AccionIngresoUsuario> AccionesIngresoUsuario => Set<AccionIngresoUsuario>();
     public DbSet<Menu> Menus => Set<Menu>();
     public DbSet<RolMenu> RolesMenu => Set<RolMenu>();
+    public DbSet<SolicitudIdempotente> SolicitudesIdempotentes => Set<SolicitudIdempotente>();
 
     // CONTABILIDAD
     public DbSet<CuentaContable> CuentasContables => Set<CuentaContable>();
@@ -137,4 +138,5 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(Corela15DbContext).Assembly);
     }
+
 }

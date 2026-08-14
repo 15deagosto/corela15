@@ -1,3 +1,4 @@
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Ahorros;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -77,6 +78,7 @@ public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuenta
     }
 
     [HttpPost("cuentas/{idCuenta:guid}/movimientos")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<MovimientoCuentaRegistradoResult>> RegistrarMovimiento(
         Guid idCuenta, [FromBody] RegistrarMovimientoBody body, CancellationToken cancellationToken)
     {

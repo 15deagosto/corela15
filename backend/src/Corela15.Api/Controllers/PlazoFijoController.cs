@@ -1,3 +1,4 @@
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Inversion;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -33,6 +34,7 @@ public class PlazoFijoController(Corela15DbContext db, IDepositoService deposito
     }
 
     [HttpPost("depositos")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<DepositoAbiertoResult>> Abrir(
         [FromBody] AbrirDepositoBody body, CancellationToken cancellationToken)
     {
@@ -43,6 +45,7 @@ public class PlazoFijoController(Corela15DbContext db, IDepositoService deposito
     }
 
     [HttpPost("depositos/{idDeposito:guid}/cancelar")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<DepositoCanceladoResult>> Cancelar(
         Guid idDeposito, CancellationToken cancellationToken)
     {

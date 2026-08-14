@@ -114,5 +114,11 @@ public class SaldoContableConfiguration : IEntityTypeConfiguration<SaldoContable
             .OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdCuentaContable, x.Periodo }).IsUnique();
+
+        // El punto de mayor contención real del sistema: todo comprobante
+        // toca esta fila. ComprobanteContableService reintenta ante
+        // conflicto (ver RegistrarAsync) en vez de burbujear un 409 al
+        // usuario por una colisión esperada bajo carga concurrente normal.
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }

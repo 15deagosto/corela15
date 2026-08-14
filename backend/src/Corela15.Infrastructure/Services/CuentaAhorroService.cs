@@ -1,4 +1,5 @@
 using Corela15.Application.Ahorros;
+using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Domain.Ahorros;
 using Corela15.Domain.Clientes;
@@ -162,7 +163,14 @@ public class CuentaAhorroService(Corela15DbContext db, IComprobanteContableServi
         itemDisponible.Saldo = saldoNuevo;
         itemDisponible.ModificadoEn = DateTimeOffset.UtcNow;
         itemDisponible.ModificadoPor = request.RegistradoPor;
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictoConcurrenciaException($"La cuenta {cuenta.Numero}");
+        }
 
         var resultadoComprobante = await comprobantes.RegistrarAsync(
             new RegistrarComprobanteContableRequest(

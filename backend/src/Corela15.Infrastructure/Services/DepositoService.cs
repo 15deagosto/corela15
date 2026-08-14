@@ -1,4 +1,5 @@
 using Corela15.Application.Ahorros;
+using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Application.Inversion;
 using Corela15.Domain.Clientes;
@@ -115,7 +116,14 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
         deposito.Estado = EstadoDeposito.Cancelado;
         deposito.ModificadoEn = DateTimeOffset.UtcNow;
         deposito.ModificadoPor = request.RegistradoPor;
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictoConcurrenciaException($"El depósito {deposito.Codigo}");
+        }
 
         // Nota: devuelve el capital nominal — el cálculo de interés devengado
         // a la fecha de corte (proporcional si se cancela antes del

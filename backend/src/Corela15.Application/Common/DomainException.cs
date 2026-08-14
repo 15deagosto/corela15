@@ -22,3 +22,18 @@ public abstract class SolicitudInvalidaException(string message) : DomainExcepti
 
 /// <summary>Credenciales inválidas o sesión no autenticada — HTTP 401.</summary>
 public abstract class NoAutenticadoException(string message) : DomainException(message, 401);
+
+/// <summary>
+/// Conflicto de concurrencia real (dos escrituras simultáneas sobre el
+/// mismo registro) que no se pudo resolver con reintento automático —
+/// HTTP 409. El cliente debe recargar el estado y reintentar la operación.
+/// </summary>
+public class ConflictoConcurrenciaException(string entidad)
+    : DomainException($"{entidad} — otra operación lo modificó al mismo tiempo, recargue e intente de nuevo", 409);
+
+/// <summary>
+/// Falta el header `Idempotency-Key` en una operación que mueve dinero y
+/// lo exige — ver Corela15.Api.Idempotencia. HTTP 400.
+/// </summary>
+public class FaltaIdempotencyKeyException()
+    : SolicitudInvalidaException("Esta operación requiere el header Idempotency-Key");

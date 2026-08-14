@@ -54,6 +54,8 @@ public class CuentaPorCobrarConfiguration : IEntityTypeConfiguration<CuentaPorCo
 
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.IdPersona).OnDelete(DeleteBehavior.Restrict);
+
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
 

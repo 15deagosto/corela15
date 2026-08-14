@@ -62,6 +62,10 @@ public class PrestamoConfiguration : IEntityTypeConfiguration<Prestamo>
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.Numero).IsUnique();
+
+        // Dos pagos de cuota simultáneos sobre el mismo préstamo ya no
+        // pueden pisarse — ver nota en AhorrosConfigurations.
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
 

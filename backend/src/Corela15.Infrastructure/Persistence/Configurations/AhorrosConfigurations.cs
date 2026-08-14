@@ -86,6 +86,13 @@ public class CuentaItemSaldoConfiguration : IEntityTypeConfiguration<CuentaItemS
         b.HasOne(x => x.ItemSaldo).WithMany().HasForeignKey(x => x.IdItemSaldo).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdCuenta, x.IdItemSaldo }).IsUnique();
+
+        // Concurrencia optimista real vía xmin (columna de sistema de
+        // Postgres, sin migración adicional) — dos depósitos/retiros
+        // simultáneos sobre el mismo saldo ya no pueden pisarse en
+        // silencio: el segundo SaveChanges falla con
+        // DbUpdateConcurrencyException, traducida a 409 en el servicio.
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
 

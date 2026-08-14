@@ -84,3 +84,18 @@ public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<Accion
         b.HasIndex(x => x.FechaHora);
     }
 }
+
+public class SolicitudIdempotenteConfiguration : IEntityTypeConfiguration<SolicitudIdempotente>
+{
+    public void Configure(EntityTypeBuilder<SolicitudIdempotente> b)
+    {
+        b.ToTable("solicitud_idempotente", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Clave).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Ruta).HasMaxLength(300).IsRequired();
+        b.Property(x => x.CuerpoRespuesta).HasColumnType("jsonb").IsRequired();
+
+        b.HasOne<Usuario>().WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.Clave, x.IdUsuario, x.Ruta }).IsUnique();
+    }
+}

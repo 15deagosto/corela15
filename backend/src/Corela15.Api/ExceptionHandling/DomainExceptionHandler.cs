@@ -31,6 +31,8 @@ public class DomainExceptionHandler : IExceptionHandler
                 Title = domainException.StatusCode switch
                 {
                     400 => "Bad Request",
+                    401 => "Unauthorized",
+                    409 => "Conflict",
                     422 => "Unprocessable Entity",
                     _ => "Error",
                 },

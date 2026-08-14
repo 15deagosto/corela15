@@ -232,11 +232,90 @@ con `RegistradoPor`/usuario de la ventanilla verificado en la base como el
 usuario autenticado real, no un string inventado por el cliente.
 
 Pendiente (no bloquea, pero es lo que sigue de la lista de gaps
-identificada): rowversion/concurrencia optimista en entidades financieras,
-idempotencia en operaciones que mueven dinero, pantalla de administración
-de `rol_menu` (hoy solo por migración), y expirar/revocar tokens
-(hoy expiran solos a las 8h vía `Jwt__ExpiryMinutes`, sin revocación
-activa — aceptable para desarrollo, revisar antes de un ambiente real).
+identificada): pantalla de administración de `rol_menu` (hoy solo por
+migración), y expirar/revocar tokens (hoy expiran solos a las 8h vía
+`Jwt__ExpiryMinutes`, sin revocación activa — aceptable para desarrollo,
+revisar antes de un ambiente real). Concurrencia optimista e idempotencia
+— los dos puntos que seguían en la lista de gaps críticos — ya están
+resueltos, ver sección siguiente.
+
+## Concurrencia optimista e idempotencia
+
+Dos gaps críticos más de la evaluación de seguridad: sin control de
+concurrencia, dos escrituras simultáneas sobre el mismo saldo podían
+pisarse en silencio (el "problema del último que escribe gana" clásico);
+sin idempotencia, un timeout de red o un doble-clic en el frontend podía
+duplicar un depósito o un pago de cuota real.
+
+**Concurrencia optimista real, sin migración de esquema**: Postgres ya
+trae una columna de sistema `xmin` en toda tabla (el número de transacción
+que escribió la fila más reciente) — en vez de agregar una columna
+`RowVersion` propia, se mapeó `xmin` como concurrency token vía
+`b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion()` en las 6
+entidades financieras donde dos escrituras concurrentes son un riesgo
+real: `Cuenta`/`CuentaItemSaldo` (Ahorros), `Prestamo` (Colocación),
+`Deposito` (Plazo Fijo), `CuentaPorCobrar` (Tesorería), `Ventanilla`
+(Cajas), y `SaldoContable` (Contabilidad — el punto de mayor contención
+real del sistema, toda cuenta/período recibe comprobantes concurrentes
+legítimos). **Cuidado real encontrado durante la implementación**: el
+helper `UseXminAsConcurrencyToken()` de Npgsql (y también el patrón
+"moderno" recomendado en su mensaje de obsolescencia) generan un
+`AddColumn xmin` en el archivo C# de la migración — parece una migración
+real y peligrosa (`xmin` es un nombre de columna reservado por Postgres,
+un `ALTER TABLE ADD COLUMN xmin` normal fallaría). Se verificó con
+`dotnet ef migrations script` antes de aplicar: el generador SQL de
+Npgsql reconoce el nombre reservado y **no emite ningún DDL real** para
+esa columna — la migración es histórica/bookkeeping puro. Nunca aplicar
+una migración así sin verificar el script primero si el nombre de columna
+suena sospechoso.
+
+`Corela15.Application.Common.ConflictoConcurrenciaException` (409) es la
+traducción estándar de `DbUpdateConcurrencyException`. Dos tratamientos
+distintos, a propósito: **`ComprobanteContableService`** reintenta hasta 3
+veces (contención esperada bajo carga normal en `saldo_contable` — dos
+depósitos distintos a la misma hora no son un error, son el caso común),
+destrackeando por completo las entidades de saldo tocadas en cada
+reintento (nunca reutiliza estado a medio aplicar de un intento anterior,
+evita duplicar el delta sobre una fila que nunca llegó a fallar). El resto
+de servicios (`CuentaAhorroService`, `PrestamoService`, `DepositoService`,
+`CuentaPorCobrarService`, `VentanillaService`) no reintentan — un choque
+ahí sí es una señal real de dos usuarios operando la misma cuenta/préstamo
+a la vez, se rechaza con 409 y el cliente decide si reintentar. Probado
+con una carrera real (10 depósitos verdaderamente concurrentes —
+`curl ... & ... & wait` — sobre la misma cuenta): exactamente 1 de 10 tuvo
+éxito, los otros 9 devolvieron 409, y el saldo final quedó exacto (sin
+pérdida ni duplicación de escritura).
+
+**Idempotencia real en las operaciones que mueven dinero**:
+`seguridad.solicitud_idempotente` (clave + usuario + ruta, único) +
+`Corela15.Api.Idempotencia.IdempotenciaFilter` (un `IAsyncActionFilter`
+global, activado solo en los endpoints marcados con
+`[RequireIdempotencyKey]`): exige el header `Idempotency-Key`
+(`FaltaIdempotencyKeyException`, 400, si falta), y si esa clave ya se
+procesó para el mismo usuario y la misma ruta, devuelve la respuesta
+original guardada **sin volver a ejecutar el caso de uso** — nunca
+duplica el movimiento. Solo se guarda la respuesta de una ejecución
+exitosa (2xx); un intento fallido no bloquea reintentar con la misma
+clave. Aplicado a los endpoints que mueven dinero real: `POST /api/
+ahorros/cuentas/{id}/movimientos`, `POST /api/creditos/solicitudes/{id}/
+desembolsar`, `POST /api/creditos/prestamos/{id}/pagos`, `POST /api/
+plazofijo/depositos` y `.../cancelar`, `POST /api/tesoreria/
+cuentas-por-cobrar/{id}/abonos`. La respuesta guardada se serializa con
+las mismas `JsonOptions` que usa MVC (`IOptions<Microsoft.AspNetCore.Mvc.
+JsonOptions>`) — bug real encontrado y corregido en la prueba: sin esto,
+la respuesta cacheada salía en PascalCase (`System.Text.Json` por
+defecto) en vez de camelCase, inconsistente con toda otra respuesta de la
+API. Probado end-to-end: sin header → 400; mismo header repetido dos veces
+→ segunda respuesta idéntica byte a byte a la primera, saldo solo se
+mueve una vez; header distinto → operación nueva de verdad, sí se aplica.
+**Limitación conocida, no bloqueante**: si dos requests con la
+**misma** clave llegan verdaderamente en simultáneo (no un reintento
+secuencial, sino dos en paralelo exacto), ambos pueden pasar el chequeo
+"¿existe ya?" antes de que cualquiera termine de escribir — el índice
+único evitaría el registro duplicado en la tabla de idempotencia, pero
+podría dejar pasar dos ejecuciones reales del caso de uso. Caso de
+probabilidad muy baja (indica un bug del cliente, no un timeout/reintento
+normal) — no se resolvió con un lock explícito, documentado a propósito.
 
 ## Estado actual
 

@@ -1,3 +1,4 @@
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Colocacion;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -70,6 +71,7 @@ public class CreditosController(Corela15DbContext db, IPrestamoService prestamoS
     }
 
     [HttpPost("solicitudes/{idSolicitud:guid}/desembolsar")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<PrestamoDesembolsadoResult>> Desembolsar(
         Guid idSolicitud, CancellationToken cancellationToken)
     {
@@ -79,6 +81,7 @@ public class CreditosController(Corela15DbContext db, IPrestamoService prestamoS
     }
 
     [HttpPost("prestamos/{idPrestamo:guid}/pagos")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<PagoCuotaRegistradoResult>> PagarCuota(
         Guid idPrestamo, CancellationToken cancellationToken)
     {

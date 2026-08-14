@@ -20,6 +20,8 @@ public class DepositoConfiguration : IEntityTypeConfiguration<Deposito>
 
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.Codigo).IsUnique();
+
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
 

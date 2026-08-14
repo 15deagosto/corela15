@@ -1,3 +1,4 @@
+using Corela15.Api.Idempotencia;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -55,6 +56,7 @@ public class CuentasPorCobrarController(Corela15DbContext db, ICuentaPorCobrarSe
     }
 
     [HttpPost("{id:guid}/abonos")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<AbonoCuentaPorCobrarRegistradoResult>> Abonar(
         Guid id, [FromBody] AbonarCuentaPorCobrarBody body, CancellationToken cancellationToken)
     {

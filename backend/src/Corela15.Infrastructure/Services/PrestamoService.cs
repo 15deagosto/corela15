@@ -1,5 +1,6 @@
 using Corela15.Application.Ahorros;
 using Corela15.Application.Colocacion;
+using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Colocacion;
@@ -229,7 +230,14 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
         prestamo.ModificadoEn = DateTimeOffset.UtcNow;
         prestamo.ModificadoPor = request.RegistradoPor;
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictoConcurrenciaException($"El préstamo {prestamo.Numero}");
+        }
 
         var montoTotal = rubroCapital.Proyectado + rubroInteres.Proyectado;
         var lineas = new List<LineaMovimientoRequest>

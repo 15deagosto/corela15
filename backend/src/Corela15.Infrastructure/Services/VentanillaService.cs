@@ -1,4 +1,5 @@
 using Corela15.Application.Cajas;
+using Corela15.Application.Common;
 using Corela15.Domain.Cajas;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -63,7 +64,14 @@ public class VentanillaService(Corela15DbContext db) : IVentanillaService
         };
         db.VentanillasCuadre.Add(cuadre);
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictoConcurrenciaException($"La ventanilla {ventanilla.Id}");
+        }
 
         return new VentanillaCerradaResult(cuadre.Id, cuadre.EstaCuadrado);
     }

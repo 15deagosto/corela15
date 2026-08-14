@@ -1,4 +1,5 @@
 using Corela15.Api.ExceptionHandling;
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Ahorros;
 using Corela15.Application.Cajas;
 using Corela15.Application.Cobranza;
@@ -52,6 +53,7 @@ builder.Services.AddScoped<IRolPagosService, RolPagosService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IdempotenciaFilter>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -102,7 +104,7 @@ builder.Services.AddAuthorization(options =>
     }
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<IdempotenciaFilter>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

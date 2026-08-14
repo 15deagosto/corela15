@@ -27,6 +27,8 @@ public class VentanillaConfiguration : IEntityTypeConfiguration<Ventanilla>
         b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdUsuario, x.Fecha }).IsUnique();
+
+        b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
 

@@ -1,4 +1,5 @@
 using Corela15.Application.Ahorros;
+using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Domain.CuentasPorCobrar;
@@ -99,7 +100,14 @@ public class CuentaPorCobrarService(Corela15DbContext db, IComprobanteContableSe
         {
             cuentaPorCobrar.Estado = EstadoCuentaPorCobrar.Cancelada;
         }
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictoConcurrenciaException($"La cuenta por cobrar {cuentaPorCobrar.Concepto}");
+        }
 
         var resultadoComprobante = await comprobantes.RegistrarAsync(
             new RegistrarComprobanteContableRequest(

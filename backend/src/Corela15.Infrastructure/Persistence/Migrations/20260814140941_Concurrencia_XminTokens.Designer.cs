@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814140941_Concurrencia_XminTokens")]
+    partial class Concurrencia_XminTokens
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3044,55 +3047,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.ToTable("rol_menu", "seguridad");
                 });
 
-            modelBuilder.Entity("Corela15.Domain.Seguridad.SolicitudIdempotente", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Clave")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("clave");
-
-                    b.Property<int>("CodigoEstado")
-                        .HasColumnType("integer")
-                        .HasColumnName("codigo_estado");
-
-                    b.Property<DateTimeOffset>("CreadoEn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("creado_en");
-
-                    b.Property<string>("CuerpoRespuesta")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("cuerpo_respuesta");
-
-                    b.Property<Guid>("IdUsuario")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_usuario");
-
-                    b.Property<string>("Ruta")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("ruta");
-
-                    b.HasKey("Id")
-                        .HasName("pk_solicitud_idempotente");
-
-                    b.HasIndex("IdUsuario")
-                        .HasDatabaseName("ix_solicitud_idempotente_id_usuario");
-
-                    b.HasIndex("Clave", "IdUsuario", "Ruta")
-                        .IsUnique()
-                        .HasDatabaseName("ix_solicitud_idempotente_clave_id_usuario_ruta");
-
-                    b.ToTable("solicitud_idempotente", "seguridad");
-                });
-
             modelBuilder.Entity("Corela15.Domain.Seguridad.Usuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4113,16 +4067,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("Menu");
 
                     b.Navigation("Rol");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Seguridad.SolicitudIdempotente", b =>
-                {
-                    b.HasOne("Corela15.Domain.Seguridad.Usuario", null)
-                        .WithMany()
-                        .HasForeignKey("IdUsuario")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_solicitud_idempotente_usuarios_id_usuario");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Seguridad.Usuario", b =>
