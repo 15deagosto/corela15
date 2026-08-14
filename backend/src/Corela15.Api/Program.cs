@@ -8,10 +8,14 @@ using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
 using Corela15.Application.Nomina;
 using Corela15.Application.Riesgo;
+using Corela15.Application.Seguridad;
 using Corela15.Infrastructure.Persistence;
 using Corela15.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using System.Text;
 
 // Carga .env.core (Postgres del core nuevo) — separado de .env/.env.nominal
 // que son de solo lectura de Softbank/SIGA y nunca deben mezclarse acá.
@@ -47,9 +51,56 @@ builder.Services.AddScoped<IVentanillaService, VentanillaService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// Autenticación JWT — el secreto y demás config viven en .env.core
+// (Jwt__Secret/Issuer/Audience/ExpiryMinutes), nunca hardcodeados.
+var jwtSecret = Environment.GetEnvironmentVariable("Jwt__Secret")
+    ?? builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException("Falta Jwt__Secret (revisar .env.core)");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "Corela15";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "Corela15Api";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ClockSkew = TimeSpan.FromMinutes(1),
+        };
+    });
+
+// Un menú = un módulo (frontend/src/modules.ts). Cada controller de negocio
+// exige la policy del menú al que pertenece; sin sesión o sin ese menú
+// asignado al rol (seguridad.rol_menu), 401/403. FallbackPolicy exige
+// sesión válida por defecto — un endpoint nuevo queda protegido solo con
+// heredar, no hace falta acordarse de agregarlo cada vez.
+var codigosMenu = new[]
+{
+    "socios", "usuarios-roles", "contabilidad", "ahorros", "creditos",
+    "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion",
+};
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
+    foreach (var codigo in codigosMenu)
+    {
+        options.AddPolicy($"Menu:{codigo}", policy => policy.RequireClaim("menu", codigo));
+    }
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -91,9 +142,10 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", timestampUtc = DateTimeOffset.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", timestampUtc = DateTimeOffset.UtcNow })).AllowAnonymous();
 
 app.Run();

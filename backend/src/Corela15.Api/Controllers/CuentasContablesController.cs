@@ -1,4 +1,5 @@
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,7 @@ public record CuentaContableListItem(
 
 [ApiController]
 [Route("api/contabilidad/cuentas")]
+[Authorize(Policy = "Menu:contabilidad")]
 public class CuentasContablesController(Corela15DbContext db) : ControllerBase
 {
     [HttpGet]

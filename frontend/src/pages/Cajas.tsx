@@ -6,11 +6,6 @@ import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
 
-interface UsuarioParaCaja {
-  id: string
-  nombreUsuario: string
-}
-
 interface VentanillaListItem {
   id: string
   usuario: string
@@ -20,12 +15,11 @@ interface VentanillaListItem {
   cuadrada: boolean
 }
 
-function AbrirVentanillaForm({ usuarios, onClose }: { usuarios: UsuarioParaCaja[]; onClose: () => void }) {
+function AbrirVentanillaForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
-  const [idUsuario, setIdUsuario] = useState('')
 
   const abrir = useMutation({
-    mutationFn: async () => (await api.post('/api/cajas/ventanillas', { idUsuario, idAgencia: 1 })).data,
+    mutationFn: async () => (await api.post('/api/cajas/ventanillas', { idAgencia: 1 })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cajas-ventanillas'] })
       onClose()
@@ -35,54 +29,29 @@ function AbrirVentanillaForm({ usuarios, onClose }: { usuarios: UsuarioParaCaja[
   return (
     <div className="glass-card animate-zoom-in mb-6 rounded-xl p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-medium text-graphite-100">Abrir ventanilla</h3>
+        <h3 className="font-medium text-graphite-100">Abrir mi ventanilla del día</h3>
         <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
           <X size={18} />
         </button>
       </div>
 
-      <form
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (!idUsuario) return
-          abrir.mutate()
-        }}
-      >
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-graphite-600">Cajero</span>
-          <select
-            required
-            value={idUsuario}
-            onChange={(e) => setIdUsuario(e.target.value)}
-            className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
-          >
-            <option value="">Seleccionar…</option>
-            {usuarios.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.nombreUsuario}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => abrir.mutate()}
+          disabled={abrir.isPending}
+          className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {abrir.isPending ? 'Abriendo…' : 'Abrir ventanilla'}
+        </button>
+      </div>
 
-        <div className="flex items-end gap-2">
-          <button
-            type="submit"
-            disabled={abrir.isPending}
-            className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {abrir.isPending ? 'Abriendo…' : 'Abrir ventanilla'}
-          </button>
-        </div>
-
-        {abrir.isError && (
-          <p className="sm:col-span-2 text-sm text-red-700">
-            {(abrir.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-              'No se pudo abrir la ventanilla.'}
-          </p>
-        )}
-      </form>
+      {abrir.isError && (
+        <p className="mt-3 text-sm text-red-700">
+          {(abrir.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+            'No se pudo abrir la ventanilla.'}
+        </p>
+      )}
     </div>
   )
 }
@@ -98,7 +67,6 @@ function CerrarVentanillaForm({ ventanilla, onClose }: { ventanilla: VentanillaL
         await api.post(`/api/cajas/ventanillas/${ventanilla.id}/cerrar`, {
           totalEfectivoContado: Number(totalEfectivoContado),
           totalCheque: Number(totalCheque),
-          registradoPor: ventanilla.usuario,
         })
       ).data,
     onSuccess: () => {
@@ -176,11 +144,6 @@ export function Cajas() {
   const [mostrarForm, setMostrarForm] = useState(false)
   const [ventanillaACerrar, setVentanillaACerrar] = useState<VentanillaListItem | null>(null)
 
-  const { data: usuarios } = useQuery<UsuarioParaCaja[]>({
-    queryKey: ['cajas-usuarios'],
-    queryFn: async () => (await api.get('/api/cajas/usuarios')).data,
-  })
-
   const { data: ventanillas, isLoading } = useQuery<VentanillaListItem[]>({
     queryKey: ['cajas-ventanillas'],
     queryFn: async () => (await api.get('/api/cajas/ventanillas')).data,
@@ -205,7 +168,7 @@ export function Cajas() {
         }
       />
 
-      {mostrarForm && usuarios && <AbrirVentanillaForm usuarios={usuarios} onClose={() => setMostrarForm(false)} />}
+      {mostrarForm && <AbrirVentanillaForm onClose={() => setMostrarForm(false)} />}
 
       {ventanillaACerrar && (
         <CerrarVentanillaForm ventanilla={ventanillaACerrar} onClose={() => setVentanillaACerrar(null)} />

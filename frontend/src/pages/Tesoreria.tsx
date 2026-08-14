@@ -44,7 +44,6 @@ function RegistrarCxCForm({ personas, onClose }: { personas: Persona[]; onClose:
           cuotas: Number(cuotas),
           montoInicial: Number(montoInicial),
           fechaVencimiento,
-          registradoPor: 'front:tesoreria',
         })
       ).data,
     onSuccess: () => {
@@ -163,7 +162,6 @@ function AbonarForm({ cuenta, onClose }: { cuenta: CuentaPorCobrar; onClose: () 
       (
         await api.post(`/api/tesoreria/cuentas-por-cobrar/${cuenta.id}/abonos`, {
           monto: Number(monto),
-          registradoPor: 'front:tesoreria',
         })
       ).data,
     onSuccess: () => {

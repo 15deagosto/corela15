@@ -1,5 +1,6 @@
 using Corela15.Application.Ahorros;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,6 +14,7 @@ public record CuentaAhorroListItem(
 
 [ApiController]
 [Route("api/ahorros")]
+[Authorize(Policy = "Menu:ahorros")]
 public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuentaAhorroService) : ControllerBase
 {
     [HttpGet("productos")]
@@ -66,9 +68,11 @@ public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuenta
 
     [HttpPost("cuentas")]
     public async Task<ActionResult<CuentaAhorroAbiertaResult>> AbrirCuenta(
-        [FromBody] AbrirCuentaAhorroRequest request, CancellationToken cancellationToken)
+        [FromBody] AbrirCuentaBody body, CancellationToken cancellationToken)
     {
-        var resultado = await cuentaAhorroService.AbrirAsync(request, cancellationToken);
+        var resultado = await cuentaAhorroService.AbrirAsync(
+            new AbrirCuentaAhorroRequest(body.IdCliente, body.IdTipoCuenta, body.IdAgencia, body.MontoInicial, User.Identity!.Name!),
+            cancellationToken);
         return Created($"/api/ahorros/cuentas/{resultado.IdCuenta}", resultado);
     }
 
@@ -77,12 +81,14 @@ public class AhorrosController(Corela15DbContext db, ICuentaAhorroService cuenta
         Guid idCuenta, [FromBody] RegistrarMovimientoBody body, CancellationToken cancellationToken)
     {
         var resultado = await cuentaAhorroService.RegistrarMovimientoAsync(
-            new RegistrarMovimientoCuentaRequest(idCuenta, body.CodigoTipoTransaccion, body.Monto, body.RegistradoPor),
+            new RegistrarMovimientoCuentaRequest(idCuenta, body.CodigoTipoTransaccion, body.Monto, User.Identity!.Name!),
             cancellationToken);
         return Ok(resultado);
     }
 }
 
-public record RegistrarMovimientoBody(string CodigoTipoTransaccion, decimal Monto, string RegistradoPor);
+public record RegistrarMovimientoBody(string CodigoTipoTransaccion, decimal Monto);
+
+public record AbrirCuentaBody(Guid IdCliente, int IdTipoCuenta, int IdAgencia, decimal MontoInicial);
 
 public record TipoTransaccionListItem(string Codigo, string Nombre, int SignoSaldoCuenta);

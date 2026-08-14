@@ -154,6 +154,90 @@ distintos. Pendiente: Nivel 1 en adelante (plan de cuentas editable,
 `tipo_comprobante_contable`, y luego los catálogos de cada nivel
 siguiente) — continuar en el mismo orden.
 
+## Autenticación real (JWT + roles + menús)
+
+Hasta este punto el core no tenía autenticación real: `hash_contrasena` era
+un placeholder literal, no había login, y cada caso de uso recibía
+`RegistradoPor` como un string libre que mandaba el frontend (`front:xxx`)
+— cualquiera podía decir ser cualquiera, y no había forma real de auditar
+quién hizo qué. Identificado como el gap más crítico (evaluación de
+seguridad/SEPS) antes de seguir agregando módulos, porque cuanto más se
+demore más caro sale retrofittearlo.
+
+**Modelo de permisos**: `seguridad.menu` (código = `slug` de
+`frontend/src/modules.ts`) + `seguridad.rol_menu` (N:M rol↔menú) —
+pendiente documentado desde Nivel 0, implementado ahora. Migración
+`Nivel0_MenuRolMenu`: sembró un menú por módulo y permisos por defecto
+(ADMINISTRADOR ve todo; CAJERO → cajas/ahorros/socios; ASESOR DE CREDITO →
+creditos/cobranzas-cumplimiento/socios; OFICIAL DE CAPTACIONES →
+ahorros/creditos/socios) — ajustable después desde una pantalla de
+Configuración > Roles todavía no construida (hoy solo por SQL/migración).
+
+**Contraseñas reales**: `Nivel0_PasswordHashReal` reemplazó el placeholder
+por un hash BCrypt real (`BCrypt.Net-Next`) para los usuarios de ejemplo
+`admin`/`mguaman` — contraseña de desarrollo **`Corela15!Dev`**, documentada
+acá a propósito porque son datos de ejemplo, nunca usar este patrón en un
+ambiente real.
+
+**JWT** (`Corela15.Application.Seguridad.IAuthService` /
+`Corela15.Infrastructure.Services.AuthService`): `POST /api/auth/login`
+valida contra el hash BCrypt, registra el intento en
+`seguridad.accion_ingreso_usuario` **siempre** (éxito o fallo — antes esa
+tabla no se usaba en ningún flujo real), y si es válido emite un JWT
+(HMAC-SHA256, secreto en `.env.core` vía `Jwt__Secret`/`Issuer`/`Audience`/
+`ExpiryMinutes`, nunca hardcodeado) con los roles y los **códigos de menú
+permitidos** como claims — el permiso se calcula una sola vez al login, no
+en cada request. `GET /api/auth/me` devuelve la sesión actual leyendo los
+claims del token, sin volver a golpear la base.
+
+**Autorización por menú**: en `Program.cs`, una policy `Menu:<código>` por
+cada uno de los 11 menús (`RequireClaim("menu", codigo)`), y
+`FallbackPolicy = RequireAuthenticatedUser()` — cualquier endpoint nuevo
+queda protegido por default con solo heredar de `ControllerBase`, no hace
+falta acordarse de agregarlo. Cada controller de negocio lleva
+`[Authorize(Policy = "Menu:xxx")]` a nivel de clase; `AuthController.Login`
+y `/health` son los únicos `[AllowAnonymous]`.
+
+**Retrofit de `RegistradoPor`**: en todos los casos de uso que escriben
+(Ahorros, Créditos, Plazo Fijo, Cobranzas, Cajas, Tesorería), el valor ya
+no lo manda el cliente — se deriva de `User.Identity.Name` (el claim del
+JWT) en el controller. Esto obligó a introducir un DTO de *body* separado
+del *request* de `Application` en los endpoints donde antes se bindeaba
+directo (`AbrirCuentaBody`, `AbrirDepositoBody`, `SolicitarPrestamoBody`,
+`RegistrarGestionBody`, `RegistrarCuentaPorCobrarBody`): si `RegistradoPor`
+sigue siendo un campo no-nullable en el record de `Application` y el JSON
+del cliente ya no lo manda, la validación automática de `[ApiController]`
+lo rechaza con 400 **antes** de que el controller pueda sobrescribirlo —
+bug real encontrado y corregido durante la prueba end-to-end, no una
+elección de diseño. La cuenta de ventanilla (`AbrirVentanillaRequest`)
+tuvo el mismo tratamiento: ya no se elige el cajero de una lista, la
+ventanilla se abre para el usuario autenticado.
+
+**Frontend**: `AuthContext`/`AuthProvider` (localStorage, no cookies —
+simple para desarrollo local, revisar si se necesita httpOnly cookie en un
+ambiente real expuesto a internet) + interceptor de axios que agrega
+`Authorization: Bearer` a cada request y desloguea automáticamente en un
+401. `RequireAuth` envuelve el `Layout` y redirige a `/login` si no hay
+sesión. `Sidebar` filtra los módulos visibles según los menús permitidos
+del usuario (`tieneMenu`), no solo según el catálogo `modules.ts` como
+antes. `TopBar` muestra usuario/roles y logout. Los `registradoPor:
+'front:xxx'` hardcodeados desaparecieron de las 5 pantallas que los tenían.
+
+Probado end-to-end: request sin token → 401; login con contraseña
+incorrecta → 401 (y se audita el intento fallido); login correcto → JWT
+con roles/menús correctos; request con token a un menú no permitido → 403;
+request a un menú permitido → 200; escritura real (registro de CxC,
+apertura de cuenta, solicitud de crédito, apertura/cierre de ventanilla)
+con `RegistradoPor`/usuario de la ventanilla verificado en la base como el
+usuario autenticado real, no un string inventado por el cliente.
+
+Pendiente (no bloquea, pero es lo que sigue de la lista de gaps
+identificada): rowversion/concurrencia optimista en entidades financieras,
+idempotencia en operaciones que mueven dinero, pantalla de administración
+de `rol_menu` (hoy solo por migración), y expirar/revocar tokens
+(hoy expiran solos a las 8h vía `Jwt__ExpiryMinutes`, sin revocación
+activa — aceptable para desarrollo, revisar antes de un ambiente real).
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

@@ -1,5 +1,6 @@
 using Corela15.Application.Inversion;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,6 +12,7 @@ public record DepositoListItem(
 
 [ApiController]
 [Route("api/plazofijo")]
+[Authorize(Policy = "Menu:creditos")]
 public class PlazoFijoController(Corela15DbContext db, IDepositoService depositoService) : ControllerBase
 {
     [HttpGet("depositos")]
@@ -32,20 +34,22 @@ public class PlazoFijoController(Corela15DbContext db, IDepositoService deposito
 
     [HttpPost("depositos")]
     public async Task<ActionResult<DepositoAbiertoResult>> Abrir(
-        [FromBody] AbrirDepositoRequest request, CancellationToken cancellationToken)
+        [FromBody] AbrirDepositoBody body, CancellationToken cancellationToken)
     {
-        var resultado = await depositoService.AbrirAsync(request, cancellationToken);
+        var resultado = await depositoService.AbrirAsync(
+            new AbrirDepositoRequest(body.IdCliente, body.IdAgencia, body.Monto, body.PlazoDias, body.EsPersonaJuridica, User.Identity!.Name!),
+            cancellationToken);
         return Created($"/api/plazofijo/depositos/{resultado.IdDeposito}", resultado);
     }
 
     [HttpPost("depositos/{idDeposito:guid}/cancelar")]
     public async Task<ActionResult<DepositoCanceladoResult>> Cancelar(
-        Guid idDeposito, [FromBody] CancelarDepositoBody body, CancellationToken cancellationToken)
+        Guid idDeposito, CancellationToken cancellationToken)
     {
         var resultado = await depositoService.CancelarAsync(
-            new CancelarDepositoRequest(idDeposito, body.RegistradoPor), cancellationToken);
+            new CancelarDepositoRequest(idDeposito, User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
 }
 
-public record CancelarDepositoBody(string RegistradoPor);
+public record AbrirDepositoBody(Guid IdCliente, int IdAgencia, decimal Monto, int PlazoDias, bool EsPersonaJuridica);

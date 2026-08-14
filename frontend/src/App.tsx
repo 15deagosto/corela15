@@ -1,5 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { RequireAuth } from './components/RequireAuth'
+import { Login } from './pages/Login'
 import { Home } from './pages/Home'
 import { Socios } from './pages/Socios'
 import { UsuariosRoles } from './pages/UsuariosRoles'
@@ -17,7 +19,14 @@ import { ModuloPagina } from './pages/ModuloPagina'
 function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="/login" element={<Login />} />
+      <Route
+        element={
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        }
+      >
         <Route path="/" element={<Home />} />
         <Route path="/socios" element={<Socios />} />
         <Route path="/usuarios-roles" element={<UsuariosRoles />} />

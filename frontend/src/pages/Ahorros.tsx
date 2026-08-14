@@ -42,7 +42,6 @@ interface AbrirCuentaPayload {
   idTipoCuenta: number
   idAgencia: number
   montoInicial: number
-  registradoPor: string
 }
 
 function formatoUsd(monto: number) {
@@ -87,7 +86,6 @@ function AbrirCuentaForm({ productos, onClose }: { productos: Producto[]; onClos
             idTipoCuenta,
             idAgencia: 1,
             montoInicial: Number(montoInicial) || 0,
-            registradoPor: 'front:ahorros',
           })
         }}
       >
@@ -171,7 +169,6 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
         await api.post(`/api/ahorros/cuentas/${cuenta.id}/movimientos`, {
           codigoTipoTransaccion,
           monto: Number(monto) || 0,
-          registradoPor: 'front:ahorros',
         })
       ).data,
     onSuccess: () => {

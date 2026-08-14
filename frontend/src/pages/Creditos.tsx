@@ -80,7 +80,6 @@ function SolicitarForm({ productos, onClose }: { productos: Producto[]; onClose:
           idAgencia: 1,
           montoSolicitado: Number(montoSolicitado) || 0,
           cuotas: Number(cuotas) || 0,
-          registradoPor: 'front:creditos',
         })
       ).data,
     onSuccess: () => {
@@ -203,7 +202,6 @@ function AbrirDpfForm({ onClose }: { onClose: () => void }) {
           monto: Number(monto) || 0,
           plazoDias: Number(plazoDias) || 0,
           esPersonaJuridica: false,
-          registradoPor: 'front:creditos',
         })
       ).data,
     onSuccess: () => {
@@ -319,11 +317,7 @@ export function Creditos() {
 
   const desembolsar = useMutation({
     mutationFn: async (idSolicitud: string) =>
-      (
-        await api.post(`/api/creditos/solicitudes/${idSolicitud}/desembolsar`, {
-          registradoPor: 'front:creditos',
-        })
-      ).data,
+      (await api.post(`/api/creditos/solicitudes/${idSolicitud}/desembolsar`)).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-solicitudes'] })
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
@@ -331,12 +325,7 @@ export function Creditos() {
   })
 
   const pagarCuota = useMutation({
-    mutationFn: async (idPrestamo: string) =>
-      (
-        await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, {
-          registradoPor: 'front:creditos',
-        })
-      ).data,
+    mutationFn: async (idPrestamo: string) => (await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`)).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
     },
@@ -348,12 +337,7 @@ export function Creditos() {
   })
 
   const cancelarDpf = useMutation({
-    mutationFn: async (idDeposito: string) =>
-      (
-        await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, {
-          registradoPor: 'front:creditos',
-        })
-      ).data,
+    mutationFn: async (idDeposito: string) => (await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`)).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
     },

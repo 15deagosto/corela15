@@ -1,4 +1,5 @@
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ public record SocioListItem(
 // un atajo por descuido.
 [ApiController]
 [Route("api/socios")]
+[Authorize(Policy = "Menu:socios")]
 public class SociosController(Corela15DbContext db) : ControllerBase
 {
     [HttpGet]

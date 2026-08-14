@@ -1,6 +1,7 @@
 using Corela15.Application.Cobranza;
 using Corela15.Domain.Colocacion;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ public record PrestamoParaCobranzaListItem(Guid Id, Guid IdCliente, string Numer
 
 [ApiController]
 [Route("api/cobranzas")]
+[Authorize(Policy = "Menu:cobranzas-cumplimiento")]
 public class CobranzasController(Corela15DbContext db, IGestionCobranzaService gestionService) : ControllerBase
 {
     [HttpGet("acciones")]
@@ -66,9 +68,17 @@ public class CobranzasController(Corela15DbContext db, IGestionCobranzaService g
 
     [HttpPost("gestiones")]
     public async Task<ActionResult<GestionCobranzaRegistradaResult>> Registrar(
-        [FromBody] RegistrarGestionCobranzaRequest request, CancellationToken cancellationToken)
+        [FromBody] RegistrarGestionBody body, CancellationToken cancellationToken)
     {
-        var resultado = await gestionService.RegistrarAsync(request, cancellationToken);
+        var resultado = await gestionService.RegistrarAsync(
+            new RegistrarGestionCobranzaRequest(
+                body.IdPrestamo, body.IdCliente, body.EsDeudor, body.CodigoAccionGestion,
+                body.TieneCompromisoPago, body.Observacion, User.Identity!.Name!),
+            cancellationToken);
         return Created($"/api/cobranzas/gestiones/{resultado.IdGestion}", resultado);
     }
 }
+
+public record RegistrarGestionBody(
+    Guid IdPrestamo, Guid IdCliente, bool EsDeudor, string CodigoAccionGestion,
+    bool TieneCompromisoPago, string? Observacion);

@@ -62,7 +62,6 @@ function RegistrarGestionForm({
           codigoAccionGestion,
           tieneCompromisoPago,
           observacion: observacion || null,
-          registradoPor: 'front:cobranzas',
         })
       ).data,
     onSuccess: () => {

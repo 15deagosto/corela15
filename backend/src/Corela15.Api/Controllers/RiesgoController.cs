@@ -1,5 +1,6 @@
 using Corela15.Application.Riesgo;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ public record EventoRiesgoListItem(
 
 [ApiController]
 [Route("api/riesgo")]
+[Authorize(Policy = "Menu:riesgo")]
 public class RiesgoController(Corela15DbContext db, IEventoRiesgoService service) : ControllerBase
 {
     [HttpGet("procesos")]

@@ -47,6 +47,30 @@ public class UsuarioRolConfiguration : IEntityTypeConfiguration<UsuarioRol>
     }
 }
 
+public class MenuConfiguration : IEntityTypeConfiguration<Menu>
+{
+    public void Configure(EntityTypeBuilder<Menu> b)
+    {
+        b.ToTable("menu", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Codigo).HasMaxLength(50).IsRequired();
+        b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+        b.HasIndex(x => x.Codigo).IsUnique();
+    }
+}
+
+public class RolMenuConfiguration : IEntityTypeConfiguration<RolMenu>
+{
+    public void Configure(EntityTypeBuilder<RolMenu> b)
+    {
+        b.ToTable("rol_menu", "seguridad");
+        b.HasKey(x => new { x.IdRol, x.IdMenu });
+
+        b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.IdRol).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Menu).WithMany().HasForeignKey(x => x.IdMenu).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<AccionIngresoUsuario>
 {
     public void Configure(EntityTypeBuilder<AccionIngresoUsuario> b)

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { LayoutDashboard } from 'lucide-react'
 import { modulos, type EstadoModulo } from '../modules'
+import { useAuth } from '../lib/AuthContext'
 
 const tagPorEstado: Record<Exclude<EstadoModulo, 'disponible'>, string> = {
   'en-construccion': 'EN DESARROLLO',
@@ -17,6 +18,9 @@ function itemClase(activo: boolean, habilitado: boolean) {
 }
 
 export function Sidebar() {
+  const { tieneMenu } = useAuth()
+  const modulosVisibles = modulos.filter((m) => tieneMenu(m.slug))
+
   return (
     <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-black/[0.06] bg-white">
       <div className="flex items-center gap-3 px-5 py-5">
@@ -52,7 +56,7 @@ export function Sidebar() {
           Módulos
         </p>
         <ul className="flex flex-col gap-0.5">
-          {modulos.map((m) => {
+          {modulosVisibles.map((m) => {
             const Icon = m.icon
             const habilitado = m.estado !== 'proximamente'
             const contenido = (

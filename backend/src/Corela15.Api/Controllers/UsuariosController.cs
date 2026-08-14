@@ -1,4 +1,5 @@
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,7 @@ public record UsuarioListItem(
 
 [ApiController]
 [Route("api/usuarios")]
+[Authorize(Policy = "Menu:usuarios-roles")]
 public class UsuariosController(Corela15DbContext db) : ControllerBase
 {
     [HttpGet]

@@ -1,5 +1,6 @@
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,6 +14,7 @@ public record CuentaPorCobrarListItem(
 
 [ApiController]
 [Route("api/tesoreria/cuentas-por-cobrar")]
+[Authorize(Policy = "Menu:tesoreria")]
 public class CuentasPorCobrarController(Corela15DbContext db, ICuentaPorCobrarService service) : ControllerBase
 {
     [HttpGet("personas")]
@@ -42,9 +44,13 @@ public class CuentasPorCobrarController(Corela15DbContext db, ICuentaPorCobrarSe
 
     [HttpPost]
     public async Task<ActionResult<CuentaPorCobrarRegistradaResult>> Registrar(
-        [FromBody] RegistrarCuentaPorCobrarRequest request, CancellationToken cancellationToken)
+        [FromBody] RegistrarCuentaPorCobrarBody body, CancellationToken cancellationToken)
     {
-        var resultado = await service.RegistrarAsync(request, cancellationToken);
+        var resultado = await service.RegistrarAsync(
+            new RegistrarCuentaPorCobrarRequest(
+                body.Concepto, body.IdAgencia, body.IdPersona, body.Cuotas, body.MontoInicial,
+                body.FechaVencimiento, User.Identity!.Name!),
+            cancellationToken);
         return Created($"/api/tesoreria/cuentas-por-cobrar/{resultado.IdCuentaPorCobrar}", resultado);
     }
 
@@ -53,9 +59,12 @@ public class CuentasPorCobrarController(Corela15DbContext db, ICuentaPorCobrarSe
         Guid id, [FromBody] AbonarCuentaPorCobrarBody body, CancellationToken cancellationToken)
     {
         var resultado = await service.AbonarAsync(
-            new AbonarCuentaPorCobrarRequest(id, body.Monto, body.RegistradoPor), cancellationToken);
+            new AbonarCuentaPorCobrarRequest(id, body.Monto, User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
 }
 
-public record AbonarCuentaPorCobrarBody(decimal Monto, string RegistradoPor);
+public record RegistrarCuentaPorCobrarBody(
+    string Concepto, int IdAgencia, Guid IdPersona, int Cuotas, decimal MontoInicial, DateOnly FechaVencimiento);
+
+public record AbonarCuentaPorCobrarBody(decimal Monto);

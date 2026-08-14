@@ -1,5 +1,6 @@
 using Corela15.Application.Colocacion;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,6 +17,7 @@ public record PrestamoListItem(
 
 [ApiController]
 [Route("api/creditos")]
+[Authorize(Policy = "Menu:creditos")]
 public class CreditosController(Corela15DbContext db, IPrestamoService prestamoService) : ControllerBase
 {
     [HttpGet("productos")]
@@ -59,29 +61,31 @@ public class CreditosController(Corela15DbContext db, IPrestamoService prestamoS
 
     [HttpPost("solicitudes")]
     public async Task<ActionResult<SolicitudPrestamoCreadaResult>> Solicitar(
-        [FromBody] SolicitarPrestamoRequest request, CancellationToken cancellationToken)
+        [FromBody] SolicitarPrestamoBody body, CancellationToken cancellationToken)
     {
-        var resultado = await prestamoService.SolicitarAsync(request, cancellationToken);
+        var resultado = await prestamoService.SolicitarAsync(
+            new SolicitarPrestamoRequest(body.IdCliente, body.IdTipoPrestamo, body.IdAgencia, body.MontoSolicitado, body.Cuotas, User.Identity!.Name!),
+            cancellationToken);
         return Created($"/api/creditos/solicitudes/{resultado.IdSolicitud}", resultado);
     }
 
     [HttpPost("solicitudes/{idSolicitud:guid}/desembolsar")]
     public async Task<ActionResult<PrestamoDesembolsadoResult>> Desembolsar(
-        Guid idSolicitud, [FromBody] DesembolsarBody body, CancellationToken cancellationToken)
+        Guid idSolicitud, CancellationToken cancellationToken)
     {
         var resultado = await prestamoService.DesembolsarAsync(
-            new DesembolsarPrestamoRequest(idSolicitud, body.RegistradoPor), cancellationToken);
+            new DesembolsarPrestamoRequest(idSolicitud, User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
 
     [HttpPost("prestamos/{idPrestamo:guid}/pagos")]
     public async Task<ActionResult<PagoCuotaRegistradoResult>> PagarCuota(
-        Guid idPrestamo, [FromBody] DesembolsarBody body, CancellationToken cancellationToken)
+        Guid idPrestamo, CancellationToken cancellationToken)
     {
         var resultado = await prestamoService.PagarCuotaAsync(
-            new PagarCuotaRequest(idPrestamo, body.RegistradoPor), cancellationToken);
+            new PagarCuotaRequest(idPrestamo, User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
 }
 
-public record DesembolsarBody(string RegistradoPor);
+public record SolicitarPrestamoBody(Guid IdCliente, int IdTipoPrestamo, int IdAgencia, decimal MontoSolicitado, int Cuotas);

@@ -1,5 +1,6 @@
 using Corela15.Application.Cajas;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,7 @@ public record VentanillaListItem(
 
 [ApiController]
 [Route("api/cajas")]
+[Authorize(Policy = "Menu:cajas")]
 public class CajasController(Corela15DbContext db, IVentanillaService ventanillaService) : ControllerBase
 {
     [HttpGet("usuarios")]
@@ -41,9 +43,12 @@ public class CajasController(Corela15DbContext db, IVentanillaService ventanilla
 
     [HttpPost("ventanillas")]
     public async Task<ActionResult<VentanillaAbiertaResult>> Abrir(
-        [FromBody] AbrirVentanillaRequest request, CancellationToken cancellationToken)
+        [FromBody] AbrirVentanillaBody body, CancellationToken cancellationToken)
     {
-        var resultado = await ventanillaService.AbrirAsync(request, cancellationToken);
+        var idUsuario = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")!.Value);
+        var resultado = await ventanillaService.AbrirAsync(
+            new AbrirVentanillaRequest(idUsuario, body.IdAgencia), cancellationToken);
         return Created($"/api/cajas/ventanillas/{resultado.IdVentanilla}", resultado);
     }
 
@@ -52,10 +57,12 @@ public class CajasController(Corela15DbContext db, IVentanillaService ventanilla
         Guid idVentanilla, [FromBody] CerrarVentanillaBody body, CancellationToken cancellationToken)
     {
         var resultado = await ventanillaService.CerrarAsync(
-            new CerrarVentanillaRequest(idVentanilla, body.TotalEfectivoContado, body.TotalCheque, body.RegistradoPor),
+            new CerrarVentanillaRequest(idVentanilla, body.TotalEfectivoContado, body.TotalCheque, User.Identity!.Name!),
             cancellationToken);
         return Ok(resultado);
     }
 }
 
-public record CerrarVentanillaBody(decimal TotalEfectivoContado, decimal TotalCheque, string RegistradoPor);
+public record AbrirVentanillaBody(int IdAgencia);
+
+public record CerrarVentanillaBody(decimal TotalEfectivoContado, decimal TotalCheque);

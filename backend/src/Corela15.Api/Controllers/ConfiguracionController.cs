@@ -2,6 +2,7 @@ using Corela15.Application.Common;
 using Corela15.Domain.General;
 using Corela15.Domain.Seguridad;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,6 +37,7 @@ public record ActualizarRolRequest(string Nombre, int Nivel);
 
 [ApiController]
 [Route("api/configuracion")]
+[Authorize(Policy = "Menu:configuracion")]
 public class ConfiguracionController(Corela15DbContext db) : ControllerBase
 {
     // ---- Países ----

@@ -1,10 +1,12 @@
 using Corela15.Application.Contabilidad;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Corela15.Api.Controllers;
 
 [ApiController]
 [Route("api/contabilidad/comprobantes")]
+[Authorize(Policy = "Menu:contabilidad")]
 public class ComprobantesContablesController(IComprobanteContableService service) : ControllerBase
 {
     [HttpPost]

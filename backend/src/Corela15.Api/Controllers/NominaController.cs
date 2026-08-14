@@ -1,5 +1,6 @@
 using Corela15.Application.Nomina;
 using Corela15.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,7 @@ public record RolPagosListItem(
 
 [ApiController]
 [Route("api/nomina")]
+[Authorize(Policy = "Menu:nomina")]
 public class NominaController(Corela15DbContext db, IRolPagosService rolPagosService) : ControllerBase
 {
     [HttpGet("empleados")]
