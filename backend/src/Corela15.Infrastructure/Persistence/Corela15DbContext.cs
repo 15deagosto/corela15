@@ -81,6 +81,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     // CREDITO (originación)
     public DbSet<TipoPrestamo> TiposPrestamo => Set<TipoPrestamo>();
     public DbSet<SolicitudPrestamo> SolicitudesPrestamo => Set<SolicitudPrestamo>();
+    public DbSet<ScoreCrediticio> ScoresCrediticios => Set<ScoreCrediticio>();
     public DbSet<TasaTechoBce> TasasTechoBce => Set<TasaTechoBce>();
 
     // COLOCACION (préstamo vivo)
@@ -125,6 +126,8 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<NivelProbabilidad> NivelesProbabilidad => Set<NivelProbabilidad>();
     public DbSet<NivelRiesgo> NivelesRiesgo => Set<NivelRiesgo>();
     public DbSet<EventoRiesgo> EventosRiesgo => Set<EventoRiesgo>();
+    public DbSet<IndicadorLiquidez> IndicadoresLiquidez => Set<IndicadorLiquidez>();
+    public DbSet<ParametroLiquidez> ParametrosLiquidez => Set<ParametroLiquidez>();
     public DbSet<ReporteRegulatorio> ReportesRegulatorios => Set<ReporteRegulatorio>();
 
     // Periféricos

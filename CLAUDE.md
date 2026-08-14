@@ -498,9 +498,126 @@ Con esto, los 5 puntos identificados en la evaluación de seguridad/
 regulatoria de esta sesión (autenticación, concurrencia, idempotencia,
 tasas techo BCE, provisiones) más devengo y cierre de período están
 completos y probados de punta a punta. Pendiente real, documentado en
-cada sección: coeficiente de liquidez/COSEDE, motor de scoring de
-crédito/PLA, estructura de detalle de reportes regulatorios (solo índice
-hoy), cierre de resultados del ejercicio, tests automatizados.
+cada sección: estructura de detalle de reportes regulatorios (solo índice
+hoy), cierre de resultados del ejercicio.
+
+## Tests automatizados
+
+`backend/src/Corela15.Tests` (xUnit, agregado a `Corela15.sln`) — corre
+contra el Postgres real de desarrollo (`CORELA15_CONNECTION`, mismo patrón
+que el resto del proyecto: nunca mockear la base, ver la regla de oro del
+proyecto en espíritu aunque acá aplica a la base propia, no a Softbank),
+sin proveedor en memoria. Cada clase de test limpia sus propios datos en
+`DisposeAsync` (`IAsyncLifetime`) — se verificó explícitamente con `psql`
+que no queda ningún residuo tras correr la suite completa.
+
+Cobertura: `ComprobanteContableServiceTests` (balance de líneas, mínimo de
+2 líneas, cuenta inválida, actualización de `saldo_contable`),
+`ProvisionCarteraServiceTests` (las 9 combinaciones día-de-mora→categoría→
+porcentaje de la matriz A1-E, vía `[Theory]`/`[InlineData]`),
+`TipoPrestamoAdminServiceTests` (tasa excede techo BCE, segmento inválido,
+código duplicado), `AuthServiceTests` (login correcto con roles/menús,
+contraseña incorrecta auditada, usuario inexistente — con `IConfiguration`
+en memoria solo para el JWT, no para la base), `CuentaContableAdminServiceTests`
+(alta/baja de cuenta contable, incluyendo el caso real de que `1101` Caja
+General no se puede desactivar — con saldo real de actividad de sesión, el
+test acepta `CuentaContableConSaldoException` o `CuentaContableEnUsoException`
+según cuál de las dos validaciones dispare primero, ambas son 422 legítimos
+para el mismo caso de negocio). `dotnet test` desde `backend/`: 25/25 en
+verde.
+
+## Coeficiente de liquidez
+
+Esquema `riesgo`: `indicador_liquidez` (snapshot histórico: Fecha,
+FondosDisponibles, DepositosCortoPlazo, Coeficiente, MinimoRegulatorio,
+CumpleMinimo — una fila por corrida, nunca se sobreescribe) y
+`parametro_liquidez` (fila única configurable, sembrada en 25% — **valor
+de referencia, pendiente de verificación oficial contra la norma SEPS**;
+la extracción de los PDFs oficiales de SEPS/BCE volvió a fallar —binario/
+codificado, no texto legible— así que el porcentaje exacto vigente no se
+pudo confirmar, se documenta así en vez de presentarlo como dato oficial).
+Migración `Riesgo_IndicadorLiquidez`.
+
+`Corela15.Application.Riesgo.IIndicadorLiquidezService` /
+`IndicadorLiquidezService`: `POST /api/riesgo/liquidez/calcular` suma
+`saldo_contable` del período vigente para cuentas de grupo CUC `11`
+(Fondos disponibles) sobre grupo `21` (Depósitos a corto plazo) — el mismo
+`saldo_contable` que ya alimenta cada asiento del sistema, no una tabla
+paralela — y guarda el snapshot con `CumpleMinimo` calculado contra el
+parámetro vigente. `GET /api/riesgo/liquidez` lista el histórico. `GET`/
+`PUT /api/riesgo/liquidez/parametro` para consultar/actualizar el mínimo
+regulatorio. Probado: con saldos en cero → coeficiente 0 (no divide por
+cero, correcto: no cumple); con una cuenta de ahorro de prueba de $1,000
+abierta → fondos disponibles $1,000 / depósitos corto plazo $1,000 =
+coeficiente 1.0 (100%), verificado contra un mínimo temporal de 30% →
+cumple. Todos los datos de prueba limpiados después (cuenta, comprobante,
+saldo_contable, indicador_liquidez, parámetro repuesto a 0.25/seed).
+
+Pantalla real: pestaña "Liquidez" nueva en `Riesgo.tsx` (antes solo tenía
+registro de eventos de riesgo, ahora tiene navegación por pestañas —
+`SeccionEventos`/`SeccionLiquidez`). Botón "Calcular ahora", tarjetas de
+coeficiente actual (con badge de cumple/no cumple), fondos/depósitos en
+dólares, y el mínimo regulatorio con **edición inline** (ícono de lápiz
+abre un formulario pequeño en el mismo lugar, sin navegar a
+Configuración) — por el requerimiento explícito de no forzar cambio de
+pantalla para completar un proceso. Tabla histórica de corridas debajo.
+
+No se implementó el aporte/prima de COSEDE (seguro de depósitos) como
+cálculo separado — es un cargo regulatorio distinto al coeficiente de
+liquidez operativo, con su propia fórmula sobre el total de depósitos
+asegurados; queda fuera de esta ronda, a construir cuando haga falta el
+caso de uso real de reporte a COSEDE.
+
+## Motor de scoring de crédito
+
+`credito.score_crediticio` (`Corela15.Domain.Credito.ScoreCrediticio`,
+migración `Credito_ScoreCrediticio`): snapshot histórico por cliente
+(nunca se sobreescribe, cada cálculo agrega una fila) con Puntaje (0-100),
+Categoría (RiesgoBajo/RiesgoMedio/RiesgoAlto), los dos ratios financieros,
+si tiene algún préstamo `Castigado` en su historial, cuántos préstamos
+`Cancelado` tiene, y si es PEP. **Deliberadamente no es el motor histórico
+completo de Softbank** (`CALIFICACIONCLIENTE_TRANSACCION`/`_DETALLE`,
+6.3M/4M filas, fuera de alcance por complejidad — mismo criterio que ya
+se aplicó en Nivel 4 con `lavadoactivos.calificacion_cliente`) — pero
+tampoco un número inventado: cada componente del puntaje sale de una
+columna real ya existente en el dominio (`Persona.Ingresos/Egresos/
+Activos/Pasivos`, `Prestamo.Estado` vía `PrestamoCliente`,
+`PersonaNatural.EsPep`), nunca de una tabla nueva fabricada para la
+ocasión.
+
+Fórmula (`Corela15.Application.Colocacion.IScoreCrediticioService` /
+`ScoreCrediticioService`, base 50 puntos): ratio ingreso neto
+`(Ingresos-Egresos)/Ingresos` suma hasta +30 (≥50%) o resta -20 (negativo);
+ratio de endeudamiento `Pasivos/Activos` suma +10 (<30%) o resta -15
+(≥60%); préstamo castigado en el historial resta -40; cada préstamo
+cancelado con éxito suma +10 (tope +20). Resultado acotado a [0,100].
+Categoría: ≥70 RiesgoBajo, ≥40 RiesgoMedio, <40 RiesgoAlto. Cuando
+`Persona` no tiene Ingresos/Activos capturados (caso real de los socios de
+prueba sembrados), esos componentes simplemente no aplican — no es un
+error, el score queda en la base + ajustes por historial de préstamos.
+Probado end-to-end con datos reales: socio sin datos financieros →
+puntaje 50/RiesgoMedio; mismo socio con Ingresos=$1000/Egresos=$400
+(ratio 60% → +30) y Activos=$5000/Pasivos=$1000 (ratio 20% → +10) →
+puntaje 90/RiesgoBajo, confirmando que la fórmula responde correctamente a
+datos reales y no es un valor fijo. Datos de prueba limpiados después
+(score y campos financieros de la persona de prueba revertidos a null).
+
+`POST /api/creditos/clientes/{idCliente}/score` calcula y guarda un nuevo
+snapshot; `GET /api/creditos/clientes/{idCliente}/score/historial` lista
+los anteriores. **Integrado inline en el flujo de solicitud de crédito**
+(`Creditos.tsx`, componente `ScoreCrediticioPanel` dentro de
+`SolicitarForm`): en cuanto el asesor selecciona el socio en el
+desplegable, el score se calcula automáticamente si no existe uno
+reciente (sin que el asesor tenga que hacer nada ni cambiar de pantalla),
+mostrando puntaje/categoría con badge de color, alertas visuales si el
+socio es PEP o tiene un préstamo castigado, y los dos ratios — toda la
+información para decidir la solicitud aparece en el mismo formulario,
+antes de completar el envío. Botón "Recalcular" disponible por si los
+datos de la persona cambiaron. El "PLA" del ítem original (antilavado de
+activos) se cubre solo parcialmente acá vía el flag `EsPep` expuesto en el
+score — el motor transaccional de PLA real
+(`lavadoactivos.calificacion_cliente`, perfil ya modelado en Nivel 4) no
+se construyó en esta ronda, sigue pendiente.
 
 ## Estado actual
 

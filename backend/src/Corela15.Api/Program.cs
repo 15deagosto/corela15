@@ -50,6 +50,7 @@ builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
 builder.Services.AddScoped<IDevengoInteresService, DevengoInteresService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 builder.Services.AddScoped<ITipoPrestamoAdminService, TipoPrestamoAdminService>();
+builder.Services.AddScoped<IScoreCrediticioService, ScoreCrediticioService>();
 builder.Services.AddScoped<IProvisionCarteraService, ProvisionCarteraService>();
 builder.Services.AddScoped<IDepositoService, DepositoService>();
 builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();
@@ -57,6 +58,7 @@ builder.Services.AddScoped<IVentanillaService, VentanillaService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
+builder.Services.AddScoped<IIndicadorLiquidezService, IndicadorLiquidezService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IdempotenciaFilter>();
 

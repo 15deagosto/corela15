@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Landmark, Plus, X } from 'lucide-react'
+import { Landmark, Plus, X, Gauge, AlertTriangle, ShieldAlert } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -43,6 +43,19 @@ interface Socio {
   nombre: string
 }
 
+interface ScoreCrediticio {
+  id: string
+  idCliente: string
+  fecha: string
+  puntaje: number
+  categoria: string
+  ratioIngresoEgreso: number | null
+  ratioEndeudamiento: number | null
+  tienePrestamoCastigado: boolean
+  prestamosCancelados: number
+  esPep: boolean
+}
+
 interface Deposito {
   id: string
   codigo: string
@@ -57,6 +70,96 @@ interface Deposito {
 
 function formatoUsd(monto: number) {
   return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
+}
+
+function categoriaVariant(categoria: string) {
+  if (categoria === 'RiesgoBajo') return 'exito' as const
+  if (categoria === 'RiesgoAlto') return 'peligro' as const
+  return 'alerta' as const
+}
+
+function categoriaLabel(categoria: string) {
+  if (categoria === 'RiesgoBajo') return 'Riesgo bajo'
+  if (categoria === 'RiesgoAlto') return 'Riesgo alto'
+  return 'Riesgo medio'
+}
+
+function ScoreCrediticioPanel({ idCliente }: { idCliente: string }) {
+  const queryClient = useQueryClient()
+
+  const { data: historial } = useQuery<ScoreCrediticio[]>({
+    queryKey: ['creditos-score-historial', idCliente],
+    queryFn: async () => (await api.get(`/api/creditos/clientes/${idCliente}/score/historial`)).data,
+    enabled: !!idCliente,
+  })
+
+  const calcular = useMutation({
+    mutationFn: async () => (await api.post(`/api/creditos/clientes/${idCliente}/score`)).data as ScoreCrediticio,
+    onSuccess: (nuevoScore) => {
+      queryClient.setQueryData<ScoreCrediticio[]>(['creditos-score-historial', idCliente], (prev) => [
+        nuevoScore,
+        ...(prev ?? []),
+      ])
+    },
+  })
+
+  useEffect(() => {
+    if (idCliente && (historial?.length ?? 0) === 0 && !calcular.isPending && !calcular.isSuccess) {
+      calcular.mutate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idCliente, historial])
+
+  if (!idCliente) return null
+
+  const score = calcular.data ?? historial?.[0]
+
+  return (
+    <div className="sm:col-span-2 rounded-lg border border-black/[0.08] bg-graphite-950/40 p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-graphite-600">
+          <Gauge size={14} /> Calificación crediticia del socio
+        </div>
+        <button
+          type="button"
+          onClick={() => calcular.mutate()}
+          disabled={calcular.isPending}
+          className="text-xs font-medium text-gold-400 hover:underline disabled:opacity-50"
+        >
+          {calcular.isPending ? 'Calculando…' : 'Recalcular'}
+        </button>
+      </div>
+
+      {calcular.isPending && !score && <p className="mt-2 text-sm text-graphite-600">Calculando score…</p>}
+
+      {score && (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <span className="text-2xl font-semibold tabular-nums text-graphite-100">{score.puntaje}</span>
+          <Badge variant={categoriaVariant(score.categoria)}>{categoriaLabel(score.categoria)}</Badge>
+          {score.esPep && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-gold-300">
+              <ShieldAlert size={13} /> Persona expuesta políticamente (PEP)
+            </span>
+          )}
+          {score.tienePrestamoCastigado && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+              <AlertTriangle size={13} /> Tiene préstamo castigado en el historial
+            </span>
+          )}
+          {score.ratioIngresoEgreso !== null && (
+            <span className="text-xs text-graphite-600">
+              Ingreso neto: {(score.ratioIngresoEgreso * 100).toFixed(0)}%
+            </span>
+          )}
+          {score.ratioEndeudamiento !== null && (
+            <span className="text-xs text-graphite-600">
+              Endeudamiento: {(score.ratioEndeudamiento * 100).toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SolicitarForm({ productos, onClose }: { productos: Producto[]; onClose: () => void }) {
@@ -121,6 +224,8 @@ function SolicitarForm({ productos, onClose }: { productos: Producto[]; onClose:
             ))}
           </select>
         </label>
+
+        <ScoreCrediticioPanel idCliente={idCliente} />
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-graphite-600">Producto</span>

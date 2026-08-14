@@ -72,3 +72,28 @@ public class EventoRiesgoConfiguration : IEntityTypeConfiguration<EventoRiesgo>
         b.HasOne(x => x.NivelRiesgo).WithMany().HasForeignKey(x => x.IdNivelRiesgo).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public class IndicadorLiquidezConfiguration : IEntityTypeConfiguration<IndicadorLiquidez>
+{
+    public void Configure(EntityTypeBuilder<IndicadorLiquidez> b)
+    {
+        b.ToTable("indicador_liquidez", "riesgo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.FondosDisponibles).HasColumnType("numeric(18,2)");
+        b.Property(x => x.DepositosCortoPlazo).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Coeficiente).HasColumnType("numeric(9,4)");
+        b.Property(x => x.MinimoRegulatorio).HasColumnType("numeric(9,4)");
+        b.HasIndex(x => x.Fecha);
+    }
+}
+
+public class ParametroLiquidezConfiguration : IEntityTypeConfiguration<ParametroLiquidez>
+{
+    public void Configure(EntityTypeBuilder<ParametroLiquidez> b)
+    {
+        b.ToTable("parametro_liquidez", "riesgo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.MinimoRegulatorio).HasColumnType("numeric(9,4)");
+        b.Property(x => x.ActualizadoPor).HasMaxLength(100).IsRequired();
+    }
+}

@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814220437_Riesgo_IndicadorLiquidez")]
+    partial class Riesgo_IndicadorLiquidez
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1657,60 +1660,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_tipo_transaccion_signo", "signo_saldo_cuenta IN (-1, 1)");
                         });
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Credito.ScoreCrediticio", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Categoria")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("categoria");
-
-                    b.Property<bool>("EsPep")
-                        .HasColumnType("boolean")
-                        .HasColumnName("es_pep");
-
-                    b.Property<DateTimeOffset>("Fecha")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fecha");
-
-                    b.Property<Guid>("IdCliente")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_cliente");
-
-                    b.Property<int>("PrestamosCancelados")
-                        .HasColumnType("integer")
-                        .HasColumnName("prestamos_cancelados");
-
-                    b.Property<int>("Puntaje")
-                        .HasColumnType("integer")
-                        .HasColumnName("puntaje");
-
-                    b.Property<decimal?>("RatioEndeudamiento")
-                        .HasColumnType("numeric(9,4)")
-                        .HasColumnName("ratio_endeudamiento");
-
-                    b.Property<decimal?>("RatioIngresoEgreso")
-                        .HasColumnType("numeric(9,4)")
-                        .HasColumnName("ratio_ingreso_egreso");
-
-                    b.Property<bool>("TienePrestamoCastigado")
-                        .HasColumnType("boolean")
-                        .HasColumnName("tiene_prestamo_castigado");
-
-                    b.HasKey("Id")
-                        .HasName("pk_score_crediticio");
-
-                    b.HasIndex("IdCliente", "Fecha")
-                        .HasDatabaseName("ix_score_crediticio_id_cliente_fecha");
-
-                    b.ToTable("score_crediticio", "credito");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Credito.SolicitudPrestamo", b =>
@@ -4086,18 +4035,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("CuentaContableDebito");
 
                     b.Navigation("TipoComprobante");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Credito.ScoreCrediticio", b =>
-                {
-                    b.HasOne("Corela15.Domain.Clientes.Cliente", "Cliente")
-                        .WithMany()
-                        .HasForeignKey("IdCliente")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_score_crediticio_cliente_id_cliente");
-
-                    b.Navigation("Cliente");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Credito.SolicitudPrestamo", b =>

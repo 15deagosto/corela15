@@ -52,3 +52,18 @@ public class SolicitudPrestamoConfiguration : IEntityTypeConfiguration<Solicitud
         b.HasIndex(x => x.Numero).IsUnique();
     }
 }
+
+public class ScoreCrediticioConfiguration : IEntityTypeConfiguration<ScoreCrediticio>
+{
+    public void Configure(EntityTypeBuilder<ScoreCrediticio> b)
+    {
+        b.ToTable("score_crediticio", "credito");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Categoria).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.RatioIngresoEgreso).HasColumnType("numeric(9,4)");
+        b.Property(x => x.RatioEndeudamiento).HasColumnType("numeric(9,4)");
+
+        b.HasOne(x => x.Cliente).WithMany().HasForeignKey(x => x.IdCliente).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.IdCliente, x.Fecha });
+    }
+}

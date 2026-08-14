@@ -17,7 +17,8 @@ public record EventoRiesgoListItem(
 [ApiController]
 [Route("api/riesgo")]
 [Authorize(Policy = "Menu:riesgo")]
-public class RiesgoController(Corela15DbContext db, IEventoRiesgoService service) : ControllerBase
+public class RiesgoController(
+    Corela15DbContext db, IEventoRiesgoService service, IIndicadorLiquidezService indicadorLiquidezService) : ControllerBase
 {
     [HttpGet("procesos")]
     public async Task<ActionResult<IReadOnlyList<ProcesoListItem>>> Procesos(CancellationToken cancellationToken)
@@ -80,4 +81,35 @@ public class RiesgoController(Corela15DbContext db, IEventoRiesgoService service
         var resultado = await service.RegistrarAsync(request, cancellationToken);
         return Created($"/api/riesgo/eventos/{resultado.IdEventoRiesgo}", resultado);
     }
+
+    [HttpGet("liquidez")]
+    public async Task<ActionResult<IReadOnlyList<IndicadorLiquidezResult>>> HistoricoLiquidez(CancellationToken cancellationToken)
+    {
+        var resultado = await indicadorLiquidezService.ListarHistoricoAsync(cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("liquidez/calcular")]
+    public async Task<ActionResult<IndicadorLiquidezResult>> CalcularLiquidez(CancellationToken cancellationToken)
+    {
+        var resultado = await indicadorLiquidezService.CalcularAsync(cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpGet("liquidez/parametro")]
+    public async Task<ActionResult<ParametroLiquidezResult>> ParametroLiquidez(CancellationToken cancellationToken)
+    {
+        var resultado = await indicadorLiquidezService.ObtenerParametroAsync(cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPut("liquidez/parametro")]
+    public async Task<ActionResult<ParametroLiquidezResult>> ActualizarParametroLiquidez(
+        [FromBody] ActualizarParametroLiquidezBody body, CancellationToken cancellationToken)
+    {
+        var resultado = await indicadorLiquidezService.ActualizarParametroAsync(body.MinimoRegulatorio, User.Identity!.Name!, cancellationToken);
+        return Ok(resultado);
+    }
 }
+
+public record ActualizarParametroLiquidezBody(decimal MinimoRegulatorio);

@@ -20,7 +20,8 @@ public record PrestamoListItem(
 [Route("api/creditos")]
 [Authorize(Policy = "Menu:creditos")]
 public class CreditosController(
-    Corela15DbContext db, IPrestamoService prestamoService, IProvisionCarteraService provisionCarteraService) : ControllerBase
+    Corela15DbContext db, IPrestamoService prestamoService, IProvisionCarteraService provisionCarteraService,
+    IScoreCrediticioService scoreCrediticioService) : ControllerBase
 {
     [HttpGet("productos")]
     public async Task<ActionResult<IReadOnlyList<TipoPrestamoListItem>>> Productos(CancellationToken cancellationToken)
@@ -95,6 +96,20 @@ public class CreditosController(
     public async Task<ActionResult<ProvisionCarteraCalculadaResult>> CalcularProvisionCartera(CancellationToken cancellationToken)
     {
         var resultado = await provisionCarteraService.EjecutarCalculoAsync(User.Identity!.Name!, cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("clientes/{idCliente:guid}/score")]
+    public async Task<ActionResult<ScoreCrediticioResult>> CalcularScore(Guid idCliente, CancellationToken cancellationToken)
+    {
+        var resultado = await scoreCrediticioService.CalcularAsync(idCliente, cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpGet("clientes/{idCliente:guid}/score/historial")]
+    public async Task<ActionResult<IReadOnlyList<ScoreCrediticioResult>>> HistorialScore(Guid idCliente, CancellationToken cancellationToken)
+    {
+        var resultado = await scoreCrediticioService.HistorialAsync(idCliente, cancellationToken);
         return Ok(resultado);
     }
 }
