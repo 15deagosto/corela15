@@ -15,7 +15,20 @@ public class TipoPrestamoConfiguration : IEntityTypeConfiguration<TipoPrestamo>
         b.Property(x => x.MontoMinimo).HasColumnType("numeric(18,2)");
         b.Property(x => x.MontoMaximo).HasColumnType("numeric(18,2)");
         b.Property(x => x.TasaAnual).HasColumnType("numeric(9,4)");
+        b.Property(x => x.SegmentoBce).HasMaxLength(60).IsRequired();
         b.HasIndex(x => x.Codigo).IsUnique();
+    }
+}
+
+public class TasaTechoBceConfiguration : IEntityTypeConfiguration<TasaTechoBce>
+{
+    public void Configure(EntityTypeBuilder<TasaTechoBce> b)
+    {
+        b.ToTable("tasa_techo_bce", "credito");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Segmento).HasMaxLength(60).IsRequired();
+        b.Property(x => x.TasaMaxima).HasColumnType("numeric(9,4)");
+        b.HasIndex(x => new { x.Segmento, x.FechaVigenciaDesde }).IsUnique();
     }
 }
 

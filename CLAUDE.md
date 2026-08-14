@@ -494,14 +494,43 @@ netean en cero tras el ciclo completo. Pantalla real integrada en
 `Creditos.tsx` (mismo módulo que Crédito, ya que `modules.ts` los agrupa
 como "Créditos y Plazo Fijo").
 
+**Tasas techo BCE (regulatorio real, no inventado)**: `credito.tasa_techo_bce`
+(`Corela15.Domain.Credito.TasaTechoBce`) guarda la tasa de interés activa
+efectiva **máxima** por segmento, publicada mensualmente por la Junta de
+Política y Regulación Monetaria y Financiera (BCE) — con vigencia real
+(`FechaVigenciaDesde`), no un valor fijo. Sembrado con los 10 segmentos
+reales (Productivo Corporativo/Empresarial/PYMES, Consumo Ordinario/
+Prioritario, Vivienda/Vivienda de Interés Público, Microcrédito Minorista/
+Acumulación Simple/Acumulación Ampliada) con las tasas **máximas** reales
+vigentes a marzo 2026 (fuente: circulares BCE, compiladas en
+verifacturaec.com — no un placeholder, ver migración
+`Credito_TasaTechoBce` para el detalle). `TipoPrestamo.SegmentoBce` liga
+cada producto sembrado a su segmento real: `CONS`→Consumo Prioritario,
+`PROD`→Productivo PYMES (el segmento realista para una cooperativa
+Segmento 2, no Corporativo), `MICRO`→Microcrédito Acumulación Ampliada
+(el techo más conservador de los 3 subsegmentos de microcrédito, porque
+el catálogo hoy no distingue subsegmento — simplificación explícita).
+`IPrestamoService.SolicitarAsync` valida `TipoPrestamo.TasaAnual` contra
+el techo **vigente a la fecha de la solicitud** (no el que existía cuando
+se sembró el producto — si el BCE baja un techo, un producto que era
+válido se detecta como inválido en la próxima solicitud, no requiere
+revisar productos uno por uno). Probado: solicitud normal (dentro del
+techo) sigue funcionando; producto de prueba con tasa 50% rechazado con
+422 y mensaje explícito (`TasaExcedeTechoBceException`). **Las tasas techo
+cambian mes a mes — hasta que exista una pantalla de Configuración para
+mantenerlas (pendiente, mismo patrón que el resto de catálogos), actualizar
+con una fila nueva (nunca editar la existente, se conserva el historial de
+vigencia) cuando el BCE publique una circular nueva.**
+
 Pendiente dentro de Nivel 3: renovación automática de DPF
 (`DepositoRenovacion` ya modelada, sin caso de uso — debe leer la tasa
 vigente al momento de renovar, no la original, ver aprendizaje documentado
 en `Deposito.cs`), cálculo de interés devengado proporcional en
 cancelación anticipada (hoy devuelve solo el capital nominal), motor de
 scoring de `SolicitudPrestamo` (`SOLICITUD_PRESTAMO_CALIFICACION` en
-Softbank, fuera de alcance), y el auto-débito de cuota por SPI ya
-documentado arriba.
+Softbank, fuera de alcance), microsegmentación real de Microcrédito (hoy
+un solo producto/segmento, sin distinguir Minorista/Acum. Simple/Acum.
+Ampliada), y el auto-débito de cuota por SPI ya documentado arriba.
 
 **Nivel 4** — esquema `cobranza` (`periodo_mora` —sembrado con los 5 tramos
 Preventiva→Judicial—, `accion_gestion`, `gestion_prestamo_cobranza`) y

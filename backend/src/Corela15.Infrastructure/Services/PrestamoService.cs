@@ -32,6 +32,24 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
             throw new MontoFueraDeRangoException(request.MontoSolicitado, tipoPrestamo.MontoMinimo, tipoPrestamo.MontoMaximo);
         }
 
+        // Techo regulatorio BCE: se valida contra el techo VIGENTE a hoy,
+        // no contra el que existía cuando se sembró/configuró el producto
+        // — si el BCE baja el techo de un segmento, un producto que era
+        // válido puede dejar de serlo, y acá se detecta en cada solicitud
+        // nueva, no solo al crear el producto.
+        var techoVigente = await db.TasasTechoBce
+            .Where(t => t.Segmento == tipoPrestamo.SegmentoBce && t.Activo && t.FechaVigenciaDesde <= DateOnly.FromDateTime(DateTime.UtcNow))
+            .OrderByDescending(t => t.FechaVigenciaDesde)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (techoVigente is null)
+        {
+            throw new SinTechoBceConfiguradoException(tipoPrestamo.SegmentoBce);
+        }
+        if (tipoPrestamo.TasaAnual > techoVigente.TasaMaxima)
+        {
+            throw new TasaExcedeTechoBceException(tipoPrestamo.TasaAnual, techoVigente.TasaMaxima, tipoPrestamo.SegmentoBce);
+        }
+
         var cliente = await db.Clientes.FirstOrDefaultAsync(c => c.Id == request.IdCliente, cancellationToken);
         if (cliente is null || cliente.Estado != EstadoCliente.Activo)
         {

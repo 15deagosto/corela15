@@ -79,6 +79,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     // CREDITO (originación)
     public DbSet<TipoPrestamo> TiposPrestamo => Set<TipoPrestamo>();
     public DbSet<SolicitudPrestamo> SolicitudesPrestamo => Set<SolicitudPrestamo>();
+    public DbSet<TasaTechoBce> TasasTechoBce => Set<TasaTechoBce>();
 
     // COLOCACION (préstamo vivo)
     public DbSet<Rubro> Rubros => Set<Rubro>();

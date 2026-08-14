@@ -45,3 +45,10 @@ public class PrestamoInvalidoException(Guid idPrestamo)
 
 public class PrestamoSinCuotasPendientesException(Guid idPrestamo)
     : ReglaDeNegocioException($"El préstamo {idPrestamo} no tiene cuotas pendientes de pago");
+
+public class TasaExcedeTechoBceException(decimal tasaAnual, decimal tasaMaxima, string segmento)
+    : ReglaDeNegocioException(
+        $"La tasa del producto ({tasaAnual:0.00%}) excede el techo BCE vigente para {segmento} ({tasaMaxima:0.00%})");
+
+public class SinTechoBceConfiguradoException(string segmento)
+    : ReglaDeNegocioException($"No hay una tasa techo BCE vigente configurada para el segmento '{segmento}'");
