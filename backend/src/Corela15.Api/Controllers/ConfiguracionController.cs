@@ -41,6 +41,9 @@ public record RolDto(int Id, string Nombre, int Nivel);
 public record CrearRolRequest(string Nombre, int Nivel);
 public record ActualizarRolRequest(string Nombre, int Nivel);
 
+public record MenuAsignadoDto(int IdMenu, string Codigo, string Nombre, bool Asignado);
+public record ActualizarRolMenuRequest(List<int> IdsMenu);
+
 public record CuentaContablePlanDto(
     Guid Id, string Codigo, string Nombre, string Grupo, string Naturaleza,
     bool EsMayor, bool Activa, string? CodigoPadre);
@@ -321,6 +324,66 @@ public class ConfiguracionController(
         rol.Nivel = request.Nivel;
         await db.SaveChangesAsync(ct);
         return Ok(new RolDto(rol.Id, rol.Nombre, rol.Nivel));
+    }
+
+    // ---- Permisos por rol (rol_menu) ----
+    // Hasta ahora solo editable por migración (Nivel0_MenuRolMenu) — sin
+    // pantalla real, había que tocar la base a mano para cambiar qué
+    // módulos ve un rol. Mismo patrón simple directo contra el DbContext:
+    // es un flag de asignación N:M sin invariante de negocio más allá de
+    // "no duplicar la fila", igual que el resto de catálogos de acá.
+    //
+    // Limitación real, no oculta: los permisos de un usuario ya logueado
+    // se calculan una sola vez al login (claims del JWT) — un cambio acá
+    // no afecta una sesión activa hasta el próximo login. Documentado
+    // también en CLAUDE.md junto con la revocación de tokens pendiente.
+
+    [HttpGet("roles/{id:int}/menus")]
+    public async Task<ActionResult<IReadOnlyList<MenuAsignadoDto>>> MenusDelRol(int id, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var asignados = await db.RolesMenu
+            .Where(rm => rm.IdRol == id && rm.Activo)
+            .Select(rm => rm.IdMenu)
+            .ToListAsync(ct);
+
+        var resultado = await db.Menus
+            .Where(m => m.Activo)
+            .OrderBy(m => m.Orden)
+            .Select(m => new MenuAsignadoDto(m.Id, m.Codigo, m.Nombre, asignados.Contains(m.Id)))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("roles/{id:int}/menus")]
+    public async Task<IActionResult> ActualizarMenusDelRol(
+        int id, [FromBody] ActualizarRolMenuRequest request, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var existentes = await db.RolesMenu.Where(rm => rm.IdRol == id).ToListAsync(ct);
+
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.IdsMenu.Contains(existente.IdMenu);
+        }
+
+        var idsExistentes = existentes.Select(e => e.IdMenu).ToHashSet();
+        foreach (var idMenu in request.IdsMenu.Where(idMenu => !idsExistentes.Contains(idMenu)))
+        {
+            db.RolesMenu.Add(new RolMenu { IdRol = id, IdMenu = idMenu, Activo = true });
+        }
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     // ---- Plan de cuentas (Nivel 1) ----

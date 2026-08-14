@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Settings, Plus, X, Pencil } from 'lucide-react'
+import { Settings, Plus, X, Pencil, ShieldCheck } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -500,12 +500,115 @@ interface Rol {
   nivel: number
 }
 
+interface MenuAsignado {
+  idMenu: number
+  codigo: string
+  nombre: string
+  asignado: boolean
+}
+
+function PermisosDelRol({ rol, onClose }: { rol: Rol; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [seleccion, setSeleccion] = useState<Set<number> | null>(null)
+
+  const { data: menus, isLoading } = useQuery<MenuAsignado[]>({
+    queryKey: ['config-rol-menus', rol.id],
+    queryFn: async () => (await api.get(`/api/configuracion/roles/${rol.id}/menus`)).data,
+  })
+
+  useEffect(() => {
+    if (menus && seleccion === null) {
+      setSeleccion(new Set(menus.filter((m) => m.asignado).map((m) => m.idMenu)))
+    }
+  }, [menus, seleccion])
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      api.put(`/api/configuracion/roles/${rol.id}/menus`, { idsMenu: Array.from(seleccion ?? []) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-rol-menus', rol.id] })
+    },
+  })
+
+  const alternar = (idMenu: number) => {
+    setSeleccion((prev) => {
+      const siguiente = new Set(prev ?? [])
+      if (siguiente.has(idMenu)) {
+        siguiente.delete(idMenu)
+      } else {
+        siguiente.add(idMenu)
+      }
+      return siguiente
+    })
+  }
+
+  return (
+    <tr>
+      <Td colSpan={3}>
+        <div className="glass-card animate-zoom-in rounded-xl p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+              <ShieldCheck size={15} /> Módulos permitidos para {rol.nombre}
+            </h4>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={16} />
+            </button>
+          </div>
+
+          {isLoading && <p className="text-sm text-graphite-600">Cargando…</p>}
+
+          {menus && seleccion && (
+            <>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {menus.map((m) => (
+                  <button
+                    key={m.idMenu}
+                    type="button"
+                    onClick={() => alternar(m.idMenu)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      seleccion.has(m.idMenu)
+                        ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    }`}
+                  >
+                    {m.nombre}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => guardar.mutate()}
+                  disabled={guardar.isPending}
+                  className="btn-hover rounded-lg bg-gold-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {guardar.isPending ? 'Guardando…' : 'Guardar permisos'}
+                </button>
+                {guardar.isSuccess && <span className="text-xs text-petrol-700">Guardado.</span>}
+                {guardar.isError && <span className="text-xs text-red-700">No se pudo guardar.</span>}
+              </div>
+
+              <p className="mt-3 text-xs text-graphite-600">
+                Un cambio acá no afecta sesiones ya iniciadas — el usuario debe volver a iniciar sesión para que el
+                nuevo permiso (o la quita) se refleje, porque los módulos permitidos se calculan una sola vez al
+                login.
+              </p>
+            </>
+          )}
+        </div>
+      </Td>
+    </tr>
+  )
+}
+
 function TabRoles() {
   const queryClient = useQueryClient()
   const [mostrarForm, setMostrarForm] = useState(false)
   const [editando, setEditando] = useState<Rol | null>(null)
   const [nombre, setNombre] = useState('')
   const [nivel, setNivel] = useState('10')
+  const [rolPermisos, setRolPermisos] = useState<Rol | null>(null)
 
   const { data, isLoading } = useQuery<Rol[]>({
     queryKey: ['config-roles'],
@@ -613,19 +716,33 @@ function TabRoles() {
           {isLoading && <EmptyState>Cargando…</EmptyState>}
           {!isLoading && (data?.length ?? 0) === 0 && <EmptyState>Sin registros</EmptyState>}
           {data?.map((item) => (
-            <tr key={item.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
-              <Td className="font-medium">{item.nombre}</Td>
-              <Td>{item.nivel}</Td>
-              <Td>
-                <button
-                  type="button"
-                  onClick={() => abrirEditar(item)}
-                  className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
-                >
-                  <Pencil size={13} /> Editar
-                </button>
-              </Td>
-            </tr>
+            <Fragment key={item.id}>
+              <tr className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+                <Td className="font-medium">{item.nombre}</Td>
+                <Td>{item.nivel}</Td>
+                <Td>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => abrirEditar(item)}
+                      className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
+                    >
+                      <Pencil size={13} /> Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRolPermisos(rolPermisos?.id === item.id ? null : item)}
+                      className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
+                    >
+                      <ShieldCheck size={13} /> Permisos
+                    </button>
+                  </div>
+                </Td>
+              </tr>
+              {rolPermisos?.id === item.id && (
+                <PermisosDelRol rol={item} onClose={() => setRolPermisos(null)} />
+              )}
+            </Fragment>
           ))}
         </tbody>
       </TableContainer>

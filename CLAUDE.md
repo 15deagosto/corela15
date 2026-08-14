@@ -288,12 +288,13 @@ con `RegistradoPor`/usuario de la ventanilla verificado en la base como el
 usuario autenticado real, no un string inventado por el cliente.
 
 Pendiente (no bloquea, pero es lo que sigue de la lista de gaps
-identificada): pantalla de administración de `rol_menu` (hoy solo por
-migración), y expirar/revocar tokens (hoy expiran solos a las 8h vía
-`Jwt__ExpiryMinutes`, sin revocación activa — aceptable para desarrollo,
-revisar antes de un ambiente real). Concurrencia optimista e idempotencia
-— los dos puntos que seguían en la lista de gaps críticos — ya están
-resueltos, ver sección siguiente.
+identificada): pantalla de administración de `rol_menu` ✅ **hecho** (ver
+sección "Administración de permisos por rol" más abajo), y expirar/
+revocar tokens (hoy expiran solos a las 8h vía `Jwt__ExpiryMinutes`, sin
+revocación activa — aceptable para desarrollo, revisar antes de un
+ambiente real). Concurrencia optimista e idempotencia — los dos puntos
+que seguían en la lista de gaps críticos — ya están resueltos, ver
+sección siguiente.
 
 ## Concurrencia optimista e idempotencia
 
@@ -794,6 +795,46 @@ Pendiente, no bloqueante (ya documentado desde Nivel 3, sigue igual):
 cálculo de interés devengado proporcional en cancelación anticipada
 (tanto del depósito origen al renovar como de una cancelación normal —
 sigue devolviendo solo el capital nominal).
+
+## Administración de permisos por rol
+
+Tercer hallazgo real que originó el proyecto (ver
+[01-contexto-origen.md](01-contexto-origen.md)): en SIGA se construyó
+`/admin/permisos` para ver, filtrable, qué rol tiene qué acceso —
+reemplazando la revisión manual uno por uno en Softbank. Acá el
+equivalente escribe, no solo lee: hasta ahora `seguridad.rol_menu` (qué
+módulos ve cada rol) solo se podía tocar por migración
+(`Nivel0_MenuRolMenu`) — cualquier ajuste real requería una migración
+nueva y un despliegue, no una pantalla.
+
+`GET /api/configuracion/roles/{id}/menus` / `PUT /api/configuracion/
+roles/{id}/menus` (`ConfiguracionController`, mismo patrón directo contra
+el DbContext que el resto de catálogos simples — la asignación N:M no
+tiene invariante de negocio más allá de no duplicar la fila): el `PUT`
+recibe la lista completa de `idsMenu` que debe tener el rol y reconcilia
+`rol_menu` completo (activa las filas presentes, desactiva las que ya no
+están, crea las que faltan) en una sola llamada — el frontend no necesita
+mandar diffs.
+
+**Limitación real, documentada explícitamente en el código y en la UI, no
+oculta**: los permisos de una sesión ya iniciada se calculan una sola vez
+al login (claims del JWT, ver "Autenticación real" más arriba) — cambiar
+`rol_menu` acá no afecta una sesión activa hasta el próximo login, porque
+todavía no hay revocación activa de tokens (mismo pendiente documentado
+ahí). Probado end-to-end: permisos del rol CAJERO editados (quitar
+`cajas`, agregar `riesgo`), verificado por `GET`; un nuevo login del
+usuario `mguaman` (que tiene CAJERO + OFICIAL DE CAPTACIONES) confirmó
+`menus: ["ahorros","creditos","riesgo","socios"]` en `/api/auth/me` — sin
+`cajas`, con `riesgo` — probando que el cambio se propaga correctamente
+al siguiente login. Permisos de CAJERO restaurados al estado original
+sembrado después de la prueba.
+
+Pantalla real: dentro de la pestaña "Roles" en `Configuracion.tsx`, botón
+"Permisos" por rol que expande una fila inline (`PermisosDelRol`) con los
+11 módulos como chips seleccionables (clic para activar/desactivar,
+mismo patrón visual que los tipos de transacción en `Ahorros.tsx`) y un
+botón "Guardar permisos" — todo en el mismo lugar, sin navegar a otra
+pantalla ni abrir un modal separado.
 
 ## Estado actual
 
