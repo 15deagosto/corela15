@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Corela15.Application.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -27,5 +28,13 @@ public class AuthController(IAuthService authService) : ControllerBase
         var menus = User.FindAll("menu").Select(c => c.Value).ToList();
 
         return Ok(new SesionActualResult(idUsuario, nombreUsuario, roles, menus));
+    }
+
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        var jti = Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Jti)!);
+        await authService.LogoutAsync(jti, User.Identity!.Name!, cancellationToken);
+        return NoContent();
     }
 }

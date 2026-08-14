@@ -52,6 +52,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Menu> Menus => Set<Menu>();
     public DbSet<RolMenu> RolesMenu => Set<RolMenu>();
     public DbSet<SolicitudIdempotente> SolicitudesIdempotentes => Set<SolicitudIdempotente>();
+    public DbSet<SesionUsuario> SesionesUsuario => Set<SesionUsuario>();
 
     // CONTABILIDAD
     public DbSet<CuentaContable> CuentasContables => Set<CuentaContable>();

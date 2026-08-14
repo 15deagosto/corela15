@@ -11,6 +11,20 @@ public interface IAuthService
     /// códigos de menú permitidos como claims.
     /// </summary>
     Task<LoginResult> LoginAsync(LoginRequest request, string? direccionIp, CancellationToken cancellationToken = default);
+
+    /// <summary>Revoca la sesión (token) actual — logout real, no solo del lado del cliente.</summary>
+    Task LogoutAsync(Guid idSesion, string registradoPor, CancellationToken cancellationToken = default);
+
+    /// <summary>Historial de sesiones (tokens emitidos) de un usuario, más recientes primero.</summary>
+    Task<IReadOnlyList<SesionUsuarioResult>> ListarSesionesAsync(Guid idUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revoca TODAS las sesiones activas de un usuario de una sola vez —
+    /// el caso real de "cerrar todos los accesos" cuando alguien deja la
+    /// cooperativa o se sospecha de una cuenta comprometida, sin esperar a
+    /// que cada token expire solo.
+    /// </summary>
+    Task RevocarTodasLasSesionesAsync(Guid idUsuario, string registradoPor, CancellationToken cancellationToken = default);
 }
 
 public class CredencialesInvalidasException() : NoAutenticadoException("Usuario o contraseña incorrectos");

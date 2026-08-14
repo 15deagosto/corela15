@@ -88,6 +88,35 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ClockSkew = TimeSpan.FromMinutes(1),
         };
+
+        // Un JWT válido por firma/expiración igual puede haber sido
+        // revocado (logout real o "cerrar todas las sesiones" desde
+        // administración) — sin este chequeo extra contra
+        // seguridad.sesion_usuario, la revocación no tendría ningún efecto
+        // real hasta que el token expirara solo a las 8h.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var jtiClaim = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                if (jtiClaim is null || !Guid.TryParse(jtiClaim, out var jti))
+                {
+                    context.Fail("Token sin jti.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<Corela15DbContext>();
+                var revocada = await db.SesionesUsuario
+                    .Where(s => s.Id == jti)
+                    .Select(s => (bool?)s.Revocada)
+                    .FirstOrDefaultAsync();
+
+                if (revocada != false)
+                {
+                    context.Fail("Sesión revocada o inexistente.");
+                }
+            },
+        };
     });
 
 // Un menú = un módulo (frontend/src/modules.ts). Cada controller de negocio

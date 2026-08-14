@@ -44,8 +44,65 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
 
         await RegistrarIntentoAsync(usuario.Id, exitoso: true, direccionIp, null, cancellationToken);
 
-        var (token, expiraEn) = GenerarToken(usuario, roles, menus);
+        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus);
+
+        db.SesionesUsuario.Add(new SesionUsuario
+        {
+            Id = jti,
+            IdUsuario = usuario.Id,
+            EmitidaEn = DateTimeOffset.UtcNow,
+            ExpiraEn = expiraEn,
+            DireccionIp = direccionIp,
+            Revocada = false,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+
         return new LoginResult(token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus);
+    }
+
+    public async Task LogoutAsync(Guid idSesion, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        var sesion = await db.SesionesUsuario.FirstOrDefaultAsync(s => s.Id == idSesion, cancellationToken);
+        if (sesion is null || sesion.Revocada)
+        {
+            return;
+        }
+
+        sesion.Revocada = true;
+        sesion.RevocadaEn = DateTimeOffset.UtcNow;
+        sesion.RevocadaPor = registradoPor;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SesionUsuarioResult>> ListarSesionesAsync(
+        Guid idUsuario, CancellationToken cancellationToken = default)
+    {
+        var ahora = DateTimeOffset.UtcNow;
+        return await db.SesionesUsuario
+            .Where(s => s.IdUsuario == idUsuario)
+            .OrderByDescending(s => s.EmitidaEn)
+            .Select(s => new SesionUsuarioResult(
+                s.Id, s.EmitidaEn, s.ExpiraEn, s.DireccionIp, s.Revocada, s.RevocadaEn, s.RevocadaPor,
+                !s.Revocada && s.ExpiraEn > ahora))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task RevocarTodasLasSesionesAsync(
+        Guid idUsuario, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        var ahora = DateTimeOffset.UtcNow;
+        var sesionesActivas = await db.SesionesUsuario
+            .Where(s => s.IdUsuario == idUsuario && !s.Revocada && s.ExpiraEn > ahora)
+            .ToListAsync(cancellationToken);
+
+        foreach (var sesion in sesionesActivas)
+        {
+            sesion.Revocada = true;
+            sesion.RevocadaEn = ahora;
+            sesion.RevocadaPor = registradoPor;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task RegistrarIntentoAsync(
@@ -64,7 +121,7 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private (string Token, DateTimeOffset ExpiraEn) GenerarToken(Usuario usuario, List<string> roles, List<string> menus)
+    private (string Token, DateTimeOffset ExpiraEn, Guid Jti) GenerarToken(Usuario usuario, List<string> roles, List<string> menus)
     {
         var secret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Falta Jwt:Secret (revisar .env.core)");
@@ -73,12 +130,13 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         var expiryMinutes = int.TryParse(configuration["Jwt:ExpiryMinutes"], out var m) ? m : 480;
 
         var expiraEn = DateTimeOffset.UtcNow.AddMinutes(expiryMinutes);
+        var jti = Guid.NewGuid();
 
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
             new(ClaimTypes.Name, usuario.NombreUsuario),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, jti.ToString()),
         };
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
         claims.AddRange(menus.Select(m2 => new Claim("menu", m2)));
@@ -93,6 +151,6 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             expires: expiraEn.UtcDateTime,
             signingCredentials: credentials);
 
-        return (new JwtSecurityTokenHandler().WriteToken(token), expiraEn);
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiraEn, jti);
     }
 }

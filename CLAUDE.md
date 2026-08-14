@@ -292,10 +292,9 @@ usuario autenticado real, no un string inventado por el cliente.
 
 Pendiente (no bloquea, pero es lo que sigue de la lista de gaps
 identificada): pantalla de administración de `rol_menu` ✅ **hecho** (ver
-sección "Administración de permisos por rol" más abajo), y expirar/
-revocar tokens (hoy expiran solos a las 8h vía `Jwt__ExpiryMinutes`, sin
-revocación activa — aceptable para desarrollo, revisar antes de un
-ambiente real). Concurrencia optimista e idempotencia — los dos puntos
+sección "Administración de permisos por rol" más abajo), y revocación
+activa de tokens ✅ **hecho** (ver sección "Revocación de tokens" más
+abajo). Concurrencia optimista e idempotencia — los dos puntos
 que seguían en la lista de gaps críticos — ya están resueltos, ver
 sección siguiente.
 
@@ -868,9 +867,12 @@ mandar diffs.
 **Limitación real, documentada explícitamente en el código y en la UI, no
 oculta**: los permisos de una sesión ya iniciada se calculan una sola vez
 al login (claims del JWT, ver "Autenticación real" más arriba) — cambiar
-`rol_menu` acá no afecta una sesión activa hasta el próximo login, porque
-todavía no hay revocación activa de tokens (mismo pendiente documentado
-ahí). Probado end-to-end: permisos del rol CAJERO editados (quitar
+`rol_menu` acá no actualiza automáticamente una sesión activa, sus claims
+siguen siendo los de cuando inició sesión. Ya no es un callejón sin
+salida: con la revocación de tokens (ver esa sección más abajo), un
+administrador puede forzar el refresco cerrando las sesiones activas del
+usuario afectado desde `Usuarios y roles` — el siguiente login trae los
+permisos nuevos. Probado end-to-end: permisos del rol CAJERO editados (quitar
 `cajas`, agregar `riesgo`), verificado por `GET`; un nuevo login del
 usuario `mguaman` (que tiene CAJERO + OFICIAL DE CAPTACIONES) confirmó
 `menus: ["ahorros","creditos","riesgo","socios"]` en `/api/auth/me` — sin
@@ -884,6 +886,77 @@ Pantalla real: dentro de la pestaña "Roles" en `Configuracion.tsx`, botón
 mismo patrón visual que los tipos de transacción en `Ahorros.tsx`) y un
 botón "Guardar permisos" — todo en el mismo lugar, sin navegar a otra
 pantalla ni abrir un modal separado.
+
+## Revocación de tokens
+
+Último gap crítico documentado desde la implementación original de
+autenticación: un JWT es válido por firma y fecha de expiración
+únicamente — sin nada más, un token seguía siendo aceptado durante las 8h
+de `Jwt__ExpiryMinutes` sin importar qué pasara después con la cuenta
+(usuario deshabilitado, contraseña cambiada por sospecha de robo, alguien
+que deja la cooperativa). No había forma real de "desconectar" a alguien.
+
+`seguridad.sesion_usuario` (`Corela15.Domain.Seguridad.SesionUsuario`,
+migración `Seguridad_SesionUsuario`): una fila por token emitido, con
+`Id` = el claim `jti` del JWT (no un id nuevo — el jti ya viaja en el
+token, reusarlo como PK evita una tabla de mapeo aparte). Cada login
+(`AuthService.LoginAsync`) inserta la fila junto con el token. En
+`Program.cs`, `AddJwtBearer().Events.OnTokenValidated` agrega un chequeo
+extra después de que .NET ya validó firma/emisor/expiración: busca el
+`jti` en `sesion_usuario` y si no existe o `Revocada=true`, falla la
+autenticación (401) — sin este chequeo, revocar no tendría ningún efecto
+real hasta que el token expirara solo.
+
+Tres operaciones nuevas en `IAuthService`:
+- **`LogoutAsync`** (`POST /api/auth/logout`) — revoca la sesión actual
+  (su propio `jti`, leído del token). Logout real, no solo
+  `localStorage.removeItem` del lado del cliente.
+- **`ListarSesionesAsync`** (`GET /api/usuarios/{id}/sesiones`) —
+  historial completo de tokens emitidos a un usuario (emitida, expira,
+  IP, vigente/revocada/expirada), más reciente primero.
+- **`RevocarTodasLasSesionesAsync`** (`POST /api/usuarios/{id}/sesiones/
+  revocar-todas`) — cierra TODAS las sesiones activas de un usuario de
+  una sola vez, el caso real de "cortar todos los accesos ya" cuando
+  alguien deja la cooperativa o se sospecha de una cuenta comprometida.
+  **Efecto colateral esperado, no un bug**: si el administrador ejecuta
+  esto sobre su propio usuario, también cierra su propia sesión actual —
+  probado a propósito, es el comportamiento correcto (revocar todas es
+  todas, sin excepción tácita para quien lo ejecuta).
+
+Probado end-to-end contra Postgres real: login → token nuevo funciona en
+`/api/auth/me`; logout → el mismo token, reutilizado inmediatamente
+después, devuelve 401; login de una segunda sesión → activa; `GET .../
+sesiones` lista ambas (una vigente, la ya cerrada marcada revocada con
+`revocadaPor`); `POST .../revocar-todas` → la sesión que seguía activa
+también queda revocada, verificado con un request inmediato posterior
+(401). Las filas de `sesion_usuario` generadas durante la prueba se
+dejaron como quedan — es una bitácora de auditoría real (mismo criterio
+que `accion_ingreso_usuario`: nunca se borra, ni siquiera la de pruebas
+con credenciales reales).
+
+**Advertencia real para cualquier sesión de desarrollo abierta ANTES de
+este cambio**: un token emitido antes de que existiera `sesion_usuario`
+no tiene fila en la tabla → el chequeo `OnTokenValidated` lo trata igual
+que revocado (`revocada != false` cuando no hay fila es `null`, y
+`null != false` es verdadero) y lo rechaza con 401. Es el comportamiento
+correcto (más estricto: preferible perder sesiones válidas viejas a que
+la revocación tenga huecos), pero significa que **cualquier usuario con
+sesión activa en el navegador al momento de desplegar esto necesita
+volver a iniciar sesión** — no es un bug, es la transición esperada de
+"sin tracking de sesiones" a "con tracking de sesiones".
+
+Pantalla real: `TopBar` ya no solo limpia `localStorage` al cerrar
+sesión — `AuthContext.logout` ahora llama a `POST /api/auth/logout`
+antes de limpiar el token local (best-effort: si falla por red, igual
+limpia localmente). En `UsuariosRoles.tsx`, botón "Sesiones" por usuario
+que expande una fila inline con la tabla de historial y el botón "Cerrar
+todas las sesiones" — mismo patrón de expansión inline que "Permisos" en
+`Configuracion.tsx`, sin navegar a otra pantalla.
+
+Pendiente, no bloqueante: no hay un job que purgue filas viejas de
+`sesion_usuario` (crece sin límite, mismo criterio de "no borrar
+auditoría" que `accion_ingreso_usuario` — revisar si hace falta un
+archivado en un ambiente real con volumen alto de logins).
 
 ## Estado actual
 

@@ -85,6 +85,20 @@ public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<Accion
     }
 }
 
+public class SesionUsuarioConfiguration : IEntityTypeConfiguration<SesionUsuario>
+{
+    public void Configure(EntityTypeBuilder<SesionUsuario> b)
+    {
+        b.ToTable("sesion_usuario", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.DireccionIp).HasMaxLength(45);
+        b.Property(x => x.RevocadaPor).HasMaxLength(100);
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.IdUsuario, x.Revocada });
+    }
+}
+
 public class SolicitudIdempotenteConfiguration : IEntityTypeConfiguration<SolicitudIdempotente>
 {
     public void Configure(EntityTypeBuilder<SolicitudIdempotente> b)

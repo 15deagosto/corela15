@@ -1,3 +1,4 @@
+using Corela15.Application.Seguridad;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,7 @@ public record UsuarioListItem(
 [ApiController]
 [Route("api/usuarios")]
 [Authorize(Policy = "Menu:usuarios-roles")]
-public class UsuariosController(Corela15DbContext db) : ControllerBase
+public class UsuariosController(Corela15DbContext db, IAuthService authService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<UsuarioListItem>>> Listar(
@@ -41,5 +42,19 @@ public class UsuariosController(Corela15DbContext db) : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
+    }
+
+    [HttpGet("{id:guid}/sesiones")]
+    public async Task<ActionResult<IReadOnlyList<SesionUsuarioResult>>> Sesiones(Guid id, CancellationToken cancellationToken)
+    {
+        var resultado = await authService.ListarSesionesAsync(id, cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("{id:guid}/sesiones/revocar-todas")]
+    public async Task<IActionResult> RevocarTodasLasSesiones(Guid id, CancellationToken cancellationToken)
+    {
+        await authService.RevocarTodasLasSesionesAsync(id, User.Identity!.Name!, cancellationToken);
+        return NoContent();
     }
 }
