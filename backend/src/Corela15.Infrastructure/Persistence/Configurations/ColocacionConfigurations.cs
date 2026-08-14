@@ -112,3 +112,20 @@ public class PrestamoRubroConfiguration : IEntityTypeConfiguration<PrestamoRubro
         b.HasIndex(x => new { x.IdPrestamo, x.NumeroCuota, x.IdRubro }).IsUnique();
     }
 }
+
+public class AutoDebitoSpiLogConfiguration : IEntityTypeConfiguration<AutoDebitoSpiLog>
+{
+    public void Configure(EntityTypeBuilder<AutoDebitoSpiLog> b)
+    {
+        b.ToTable("auto_debito_spi_log", "colocacion");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Motivo).HasMaxLength(300).IsRequired();
+        b.Property(x => x.Monto).HasColumnType("numeric(18,2)");
+
+        b.HasOne(x => x.Prestamo).WithMany().HasForeignKey(x => x.IdPrestamo).OnDelete(DeleteBehavior.Restrict);
+
+        // Un registro por préstamo por día, se debite o se omita — correr el
+        // batch dos veces el mismo día es seguro por diseño, ver AutoDebitoSpiLog.cs.
+        b.HasIndex(x => new { x.Fecha, x.IdPrestamo }).IsUnique();
+    }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Landmark, Plus, X, Gauge, AlertTriangle, ShieldAlert } from 'lucide-react'
+import { Landmark, Plus, X, Gauge, AlertTriangle, ShieldAlert, Zap } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -35,6 +35,25 @@ interface Prestamo {
   tasa: number
   estado: string
   fechaAdjudicacion: string
+  debitoSpi: boolean
+}
+
+interface AutoDebitoSpiDetalle {
+  numeroPrestamo: string
+  numeroCuenta: string | null
+  numeroCuota: number | null
+  debitado: boolean
+  motivo: string
+  monto: number
+}
+
+interface AutoDebitoSpiResultado {
+  fecha: string
+  debitados: number
+  omitidos: number
+  totalDebitado: number
+  idComprobanteContable: string | null
+  detalles: AutoDebitoSpiDetalle[]
 }
 
 interface Socio {
@@ -398,6 +417,81 @@ function estadoVariant(estado: string) {
   return 'alerta' as const
 }
 
+function SeccionAutoDebitoSpi() {
+  const queryClient = useQueryClient()
+
+  const { data: historial } = useQuery<AutoDebitoSpiDetalle[]>({
+    queryKey: ['creditos-auto-debito-spi-historial'],
+    queryFn: async () => (await api.get('/api/creditos/auto-debito-spi/historial')).data,
+  })
+
+  const ejecutar = useMutation({
+    mutationFn: async () => (await api.post('/api/creditos/auto-debito-spi/ejecutar')).data as AutoDebitoSpiResultado,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creditos-auto-debito-spi-historial'] })
+      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+      queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
+    },
+  })
+
+  return (
+    <div className="mt-8">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Auto-débito de cuota por SPI</h2>
+        <button
+          type="button"
+          onClick={() => ejecutar.mutate()}
+          disabled={ejecutar.isPending}
+          className="btn-hover flex items-center gap-1.5 rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-xs font-medium text-graphite-100 hover:bg-black/[0.02] disabled:opacity-60"
+        >
+          <Zap size={14} />
+          {ejecutar.isPending ? 'Procesando…' : 'Ejecutar auto-débito SPI'}
+        </button>
+      </div>
+
+      <p className="mb-3 text-xs text-graphite-600">
+        Debita la próxima cuota de cada préstamo con débito SPI activo, cruzando las tres configuraciones (préstamo,
+        producto de la cuenta y saldo disponible) como una sola fuente de verdad antes de mover dinero.
+      </p>
+
+      {ejecutar.isSuccess && (
+        <p className="mb-3 rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+          Corrida del {ejecutar.data.fecha}: {ejecutar.data.debitados} cuota(s) debitada(s) (
+          {formatoUsd(ejecutar.data.totalDebitado)}), {ejecutar.data.omitidos} omitida(s).
+        </p>
+      )}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Préstamo</Th>
+            <Th>Cuenta</Th>
+            <Th>Cuota</Th>
+            <Th>Resultado</Th>
+            <Th>Motivo</Th>
+            <Th>Monto</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {(historial?.length ?? 0) === 0 && <EmptyState>Todavía no se ha ejecutado el auto-débito SPI</EmptyState>}
+          {historial?.map((d, i) => (
+            <tr key={i} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{d.numeroPrestamo}</Td>
+              <Td>{d.numeroCuenta ?? '—'}</Td>
+              <Td>{d.numeroCuota ?? '—'}</Td>
+              <Td>
+                <Badge variant={d.debitado ? 'exito' : 'alerta'}>{d.debitado ? 'Debitado' : 'Omitido'}</Badge>
+              </Td>
+              <Td className="text-xs text-graphite-600">{d.motivo}</Td>
+              <Td className="tabular-nums">{formatoUsd(d.monto)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
 export function Creditos() {
   const [mostrarForm, setMostrarForm] = useState(false)
   const [mostrarFormDpf, setMostrarFormDpf] = useState(false)
@@ -438,6 +532,14 @@ export function Creditos() {
           headers: { 'Idempotency-Key': crypto.randomUUID() },
         })
       ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+    },
+  })
+
+  const toggleDebitoSpi = useMutation({
+    mutationFn: async ({ idPrestamo, activar }: { idPrestamo: string; activar: boolean }) =>
+      api.patch(`/api/creditos/prestamos/${idPrestamo}/debito-spi`, { activar }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
     },
@@ -536,6 +638,7 @@ export function Creditos() {
             <Th>Saldo</Th>
             <Th>Tasa</Th>
             <Th>Estado</Th>
+            <Th>Débito SPI</Th>
             <Th>Acciones</Th>
           </tr>
         </thead>
@@ -551,6 +654,21 @@ export function Creditos() {
               <Td>{(p.tasa * 100).toFixed(2)}%</Td>
               <Td>
                 <Badge variant={estadoVariant(p.estado)}>{p.estado}</Badge>
+              </Td>
+              <Td>
+                {p.estado === 'Vigente' ? (
+                  <button
+                    type="button"
+                    disabled={toggleDebitoSpi.isPending}
+                    onClick={() => toggleDebitoSpi.mutate({ idPrestamo: p.id, activar: !p.debitoSpi })}
+                    className="disabled:opacity-50"
+                    title="Habilita que la cuota se debite automáticamente por SPI cuando llegue el sueldo del socio a su cuenta"
+                  >
+                    <Badge variant={p.debitoSpi ? 'exito' : 'neutral'}>{p.debitoSpi ? 'Activo' : 'Inactivo'}</Badge>
+                  </button>
+                ) : (
+                  '—'
+                )}
               </Td>
               <Td>
                 {p.estado === 'Vigente' && (
@@ -574,6 +692,8 @@ export function Creditos() {
             'No se pudo registrar el pago.'}
         </p>
       )}
+
+      <SeccionAutoDebitoSpi />
 
       <div className="mb-2 mt-8 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Plazo fijo</h2>

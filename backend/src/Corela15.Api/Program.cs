@@ -51,6 +51,7 @@ builder.Services.AddScoped<IDevengoInteresService, DevengoInteresService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
 builder.Services.AddScoped<ITipoPrestamoAdminService, TipoPrestamoAdminService>();
 builder.Services.AddScoped<IScoreCrediticioService, ScoreCrediticioService>();
+builder.Services.AddScoped<IAutoDebitoSpiService, AutoDebitoSpiService>();
 builder.Services.AddScoped<IProvisionCarteraService, ProvisionCarteraService>();
 builder.Services.AddScoped<IDepositoService, DepositoService>();
 builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();

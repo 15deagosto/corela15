@@ -11,7 +11,8 @@ public record ProductoAhorroListItem(
     int Id, string Codigo, string Nombre, bool PermiteDebitoPrestamo, bool Activo);
 
 public record CuentaAhorroListItem(
-    Guid Id, string Numero, string Producto, string Agencia, string Estado, DateOnly FechaApertura, decimal SaldoDisponible);
+    Guid Id, string Numero, string Producto, string Agencia, string Estado, DateOnly FechaApertura,
+    decimal SaldoDisponible, bool PermiteDebitoPrestamo, bool AcreditaPrestamo);
 
 [ApiController]
 [Route("api/ahorros")]
@@ -49,6 +50,11 @@ public class AhorrosController(
                 db.CuentasItemSaldo
                     .Where(i => i.IdCuenta == c.Id && i.ItemSaldo.Codigo == "DISP")
                     .Select(i => i.Saldo)
+                    .FirstOrDefault(),
+                c.TipoCuenta.PermiteDebitoPrestamo,
+                db.CuentasItemSaldo
+                    .Where(i => i.IdCuenta == c.Id && i.ItemSaldo.Codigo == "DISP")
+                    .Select(i => i.AcreditaPrestamo)
                     .FirstOrDefault()))
             .ToListAsync(cancellationToken);
 
@@ -95,7 +101,32 @@ public class AhorrosController(
         var resultado = await devengoInteresService.EjecutarDevengoDiarioAsync(User.Identity!.Name!, cancellationToken);
         return Ok(resultado);
     }
+
+    // Tercera de las tres configuraciones independientes del auto-débito de
+    // cuota por SPI (ver CuentaItemSaldo.cs / AutoDebitoSpiLog.cs) — flag
+    // simple sin invariante de negocio, se resuelve directo contra el
+    // DbContext, mismo patrón que los catálogos de Configuración.
+    [HttpPatch("cuentas/{idCuenta:guid}/acredita-prestamo")]
+    public async Task<IActionResult> ConfigurarAcreditaPrestamo(
+        Guid idCuenta, [FromBody] ConfigurarAcreditaPrestamoBody body, CancellationToken cancellationToken)
+    {
+        var item = await db.CuentasItemSaldo
+            .Include(x => x.ItemSaldo)
+            .FirstOrDefaultAsync(x => x.IdCuenta == idCuenta && x.ItemSaldo.Codigo == "DISP", cancellationToken);
+        if (item is null)
+        {
+            return NotFound();
+        }
+
+        item.AcreditaPrestamo = body.Activar;
+        item.ModificadoEn = DateTimeOffset.UtcNow;
+        item.ModificadoPor = User.Identity!.Name!;
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
 }
+
+public record ConfigurarAcreditaPrestamoBody(bool Activar);
 
 public record RegistrarMovimientoBody(string CodigoTipoTransaccion, decimal Monto);
 

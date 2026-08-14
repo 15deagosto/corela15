@@ -14,14 +14,15 @@ public record SolicitudPrestamoListItem(
     Guid Id, string Numero, string Socio, string Producto, decimal MontoSolicitado, int Cuotas, string Estado, DateOnly FechaSolicitud);
 
 public record PrestamoListItem(
-    Guid Id, string Numero, string Producto, decimal DeudaInicial, decimal Saldo, decimal Tasa, string Estado, DateOnly FechaAdjudicacion);
+    Guid Id, string Numero, string Producto, decimal DeudaInicial, decimal Saldo, decimal Tasa, string Estado,
+    DateOnly FechaAdjudicacion, bool DebitoSpi);
 
 [ApiController]
 [Route("api/creditos")]
 [Authorize(Policy = "Menu:creditos")]
 public class CreditosController(
     Corela15DbContext db, IPrestamoService prestamoService, IProvisionCarteraService provisionCarteraService,
-    IScoreCrediticioService scoreCrediticioService) : ControllerBase
+    IScoreCrediticioService scoreCrediticioService, IAutoDebitoSpiService autoDebitoSpiService) : ControllerBase
 {
     [HttpGet("productos")]
     public async Task<ActionResult<IReadOnlyList<TipoPrestamoListItem>>> Productos(CancellationToken cancellationToken)
@@ -56,7 +57,8 @@ public class CreditosController(
             .Include(p => p.TipoPrestamo)
             .OrderByDescending(p => p.FechaAdjudicacion)
             .Select(p => new PrestamoListItem(
-                p.Id, p.Numero, p.TipoPrestamo.Nombre, p.DeudaInicial, p.Saldo, p.Tasa, p.Estado.ToString(), p.FechaAdjudicacion))
+                p.Id, p.Numero, p.TipoPrestamo.Nombre, p.DeudaInicial, p.Saldo, p.Tasa, p.Estado.ToString(),
+                p.FechaAdjudicacion, p.DebitoSpi))
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
@@ -112,6 +114,30 @@ public class CreditosController(
         var resultado = await scoreCrediticioService.HistorialAsync(idCliente, cancellationToken);
         return Ok(resultado);
     }
+
+    [HttpPatch("prestamos/{idPrestamo:guid}/debito-spi")]
+    public async Task<IActionResult> ConfigurarDebitoSpi(
+        Guid idPrestamo, [FromBody] ConfigurarDebitoSpiBody body, CancellationToken cancellationToken)
+    {
+        await autoDebitoSpiService.ConfigurarAsync(idPrestamo, body.Activar, User.Identity!.Name!, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("auto-debito-spi/ejecutar")]
+    public async Task<ActionResult<AutoDebitoSpiEjecutadoResult>> EjecutarAutoDebitoSpi(CancellationToken cancellationToken)
+    {
+        var resultado = await autoDebitoSpiService.EjecutarAsync(User.Identity!.Name!, cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpGet("auto-debito-spi/historial")]
+    public async Task<ActionResult<IReadOnlyList<AutoDebitoSpiDetalle>>> HistorialAutoDebitoSpi(CancellationToken cancellationToken)
+    {
+        var resultado = await autoDebitoSpiService.HistorialAsync(cancellationToken);
+        return Ok(resultado);
+    }
 }
+
+public record ConfigurarDebitoSpiBody(bool Activar);
 
 public record SolicitarPrestamoBody(Guid IdCliente, int IdTipoPrestamo, int IdAgencia, decimal MontoSolicitado, int Cuotas);

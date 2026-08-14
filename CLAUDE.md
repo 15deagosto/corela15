@@ -665,6 +665,80 @@ de período (`<input type="month">`) más atajos de un clic a los períodos
 con movimientos reales, badge Cuadrado/Descuadrado, tabla con fila de
 totales.
 
+## Auto-débito de cuota por SPI
+
+Este es el incidente que originó todo el proyecto (ver
+[01-contexto-origen.md](01-contexto-origen.md)): el proceso real de
+Softbank descontaba la cuota de un préstamo por SPI/Banco Central sin
+cruzar correctamente tres configuraciones independientes, e ignoraba en
+la práctica `PRESTAMO.DEBITOSPI` en algunos casos. El aprendizaje ya
+estaba documentado desde Nivel 2/3 en los comentarios de
+`CuentaItemSaldo.AcreditaPrestamo`, `TipoCuenta.PermiteDebitoPrestamo` y
+`Prestamo.DebitoSpi`: las tres deben validarse como una sola fuente de
+verdad, nunca como flags independientes que un proceso puede ignorar.
+
+`colocacion.auto_debito_spi_log` (`Corela15.Domain.Colocacion.
+AutoDebitoSpiLog`, migración `Colocacion_AutoDebitoSpiLog`): un registro
+por préstamo por día, **se debite o se omita**, siempre con el motivo
+explícito — la corrección directa del incidente real, donde no había
+forma de saber por qué un préstamo sí o no fue debitado sin cruzar el
+historial temporal nativo de SQL Server a mano. El índice único (Fecha,
+IdPrestamo) hace que correr el batch dos veces el mismo día sea seguro
+por diseño, mismo patrón que `DevengoInteresLog`.
+
+**`IAutoDebitoSpiService`/`AutoDebitoSpiService`** (`Corela15.Infrastructure.
+Services`): `PATCH /api/creditos/prestamos/{id}/debito-spi` activa/
+desactiva `Prestamo.DebitoSpi` (antes quedaba fijo en `false` desde el
+desembolso, sin forma de encenderlo — gap real encontrado al construir
+este caso de uso). `POST /api/creditos/auto-debito-spi/ejecutar` corre el
+batch: para cada préstamo vigente con `DebitoSpi=true` no procesado hoy,
+busca la próxima cuota pendiente y valida en orden:
+1. `TipoCuenta.PermiteDebitoPrestamo` en alguna cuenta activa del socio.
+2. `CuentaItemSaldo.AcreditaPrestamo=true` en el balde Disponible de esa
+   cuenta (tercera configuración — no tenía pantalla para activarla; se
+   agregó `PATCH /api/ahorros/cuentas/{id}/acredita-prestamo`, directo
+   contra el DbContext por ser un flag sin invariante de negocio, mismo
+   patrón que los catálogos simples de Configuración).
+3. Saldo disponible suficiente para cubrir la cuota sin bajar del mínimo
+   del producto (`TipoCuenta.SaldoMinimoConPrestamo ?? SaldoMinimo`).
+
+Si las tres se cumplen, debita la cuenta del socio, marca la cuota
+pagada, reduce `Prestamo.Saldo` (cancela el préstamo si era la última
+cuota) — mismo tratamiento de `PagarCuotaAsync`, pero financiado desde el
+pasivo del socio (`2101` Depósitos de ahorro a la vista) en vez de
+efectivo (`1101` Caja). Un solo comprobante consolidado por corrida
+(débito `2101` / crédito `1401` Cartera por el total de capital / crédito
+`5101` Intereses ganados por el total de interés), mismo patrón que
+`DevengoInteresService`. `GET /api/creditos/auto-debito-spi/historial`
+lista la bitácora completa.
+
+Probado end-to-end contra Postgres real, cubriendo las tres causas de
+omisión y el caso exitoso: préstamo Consumo de $300 a 3 cuotas con
+`DebitoSpi=true` sobre una cuenta AHV con `AcreditaPrestamo=false` →
+omitido con motivo explícito; activado `AcreditaPrestamo` y reejecutado
+→ debitado $102.88 exacto (cuota 1), saldo de la cuenta $500→$397.12,
+saldo del préstamo $300→$201.42, comprobante verificado cuadrado en el
+balance de comprobación ($902.88 = $902.88 incluyendo el resto de la
+prueba). Reejecución el mismo día → 0 procesados (idempotente). Datos de
+prueba limpiados después (préstamo, solicitud, cuenta, comprobantes,
+saldo_contable, log).
+
+Pantalla real: en `Creditos.tsx`, columna "Débito SPI" con badge
+interactivo por préstamo vigente (toggle directo, sin navegar a otra
+pantalla) y sección "Auto-débito de cuota por SPI" con botón "Ejecutar
+auto-débito SPI" + tabla de bitácora (préstamo, cuenta, cuota, resultado,
+motivo, monto). En `Ahorros.tsx`, columna "Débito de préstamo (SPI)" con
+el mismo patrón de badge interactivo, deshabilitada visualmente cuando el
+producto no admite débito de préstamo.
+
+Pendiente, no bloqueante: batch diseñado para correr una vez al día
+(no hay todavía un job programado — se ejecuta manualmente desde la
+pantalla, igual que devengo de interés y provisión de cartera); si dos
+socios comparten cuenta y ambos tienen préstamos con `DebitoSpi=true`,
+la elegibilidad de cuenta usa la primera cuenta activa con
+`PermiteDebitoPrestamo=true` encontrada, sin priorización explícita entre
+varias cuentas elegibles del mismo socio (caso poco común, no probado).
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

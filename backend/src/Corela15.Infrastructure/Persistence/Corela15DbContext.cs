@@ -92,6 +92,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Prestamo> Prestamos => Set<Prestamo>();
     public DbSet<PrestamoCliente> PrestamosClientes => Set<PrestamoCliente>();
     public DbSet<PrestamoRubro> PrestamosRubros => Set<PrestamoRubro>();
+    public DbSet<AutoDebitoSpiLog> AutoDebitosSpiLog => Set<AutoDebitoSpiLog>();
 
     // COBRANZA
     public DbSet<PeriodoMora> PeriodosMora => Set<PeriodoMora>();

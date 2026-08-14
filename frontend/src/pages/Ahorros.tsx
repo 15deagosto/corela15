@@ -23,6 +23,8 @@ interface CuentaAhorro {
   estado: string
   fechaApertura: string
   saldoDisponible: number
+  permiteDebitoPrestamo: boolean
+  acreditaPrestamo: boolean
 }
 
 interface Socio {
@@ -265,6 +267,15 @@ export function Ahorros() {
   })
 
   const queryClient = useQueryClient()
+
+  const toggleAcreditaPrestamo = useMutation({
+    mutationFn: async ({ idCuenta, activar }: { idCuenta: string; activar: boolean }) =>
+      api.patch(`/api/ahorros/cuentas/${idCuenta}/acredita-prestamo`, { activar }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
+    },
+  })
+
   const devengo = useMutation({
     mutationFn: async () => (await api.post('/api/ahorros/devengo-interes/ejecutar')).data as {
       fecha: string
@@ -341,6 +352,7 @@ export function Ahorros() {
             <Th>Agencia</Th>
             <Th>Saldo</Th>
             <Th>Estado</Th>
+            <Th>Débito de préstamo (SPI)</Th>
             <Th>Acciones</Th>
           </tr>
         </thead>
@@ -357,6 +369,23 @@ export function Ahorros() {
               <Td className="tabular-nums">{formatoUsd(c.saldoDisponible)}</Td>
               <Td>
                 <Badge variant={c.estado === 'Activa' ? 'exito' : 'neutral'}>{c.estado}</Badge>
+              </Td>
+              <Td>
+                {!c.permiteDebitoPrestamo ? (
+                  <span className="text-xs text-graphite-600">No aplica a este producto</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={c.estado !== 'Activa' || toggleAcreditaPrestamo.isPending}
+                    onClick={() => toggleAcreditaPrestamo.mutate({ idCuenta: c.id, activar: !c.acreditaPrestamo })}
+                    className="disabled:opacity-50"
+                    title="Habilita que esta cuenta reciba el débito automático de la cuota del socio (una de las tres configuraciones cruzadas del auto-débito SPI)"
+                  >
+                    <Badge variant={c.acreditaPrestamo ? 'exito' : 'neutral'}>
+                      {c.acreditaPrestamo ? 'Habilitada' : 'Deshabilitada'}
+                    </Badge>
+                  </button>
+                )}
               </Td>
               <Td>
                 {c.estado === 'Activa' && (
