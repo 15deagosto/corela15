@@ -6,6 +6,7 @@ import {
   Landmark,
   ShieldAlert,
   Wallet,
+  Briefcase,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -78,6 +79,14 @@ export const modulos: Modulo[] = [
     nombre: 'Cajas',
     descripcion: 'Apertura, transacciones y cuadre diario de ventanillas',
     icon: Wallet,
+    estado: 'en-construccion',
+  },
+  {
+    slug: 'nomina',
+    path: '/nomina',
+    nombre: 'Nómina',
+    descripcion: 'Empleados y roles de pago',
+    icon: Briefcase,
     estado: 'en-construccion',
   },
 ]

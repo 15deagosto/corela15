@@ -8,6 +8,7 @@ import { Ahorros } from './pages/Ahorros'
 import { Creditos } from './pages/Creditos'
 import { CobranzasCumplimiento } from './pages/CobranzasCumplimiento'
 import { Cajas } from './pages/Cajas'
+import { Nomina } from './pages/Nomina'
 import { ModuloPagina } from './pages/ModuloPagina'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/creditos" element={<Creditos />} />
         <Route path="/cobranzas-cumplimiento" element={<CobranzasCumplimiento />} />
         <Route path="/cajas" element={<Cajas />} />
+        <Route path="/nomina" element={<Nomina />} />
         <Route path="/:slug" element={<ModuloPagina />} />
       </Route>
     </Routes>

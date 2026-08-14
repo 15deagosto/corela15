@@ -346,7 +346,36 @@ abre un formulario de cuadre (efectivo + cheques).
 provisión de vacaciones (obligatorios en Ecuador, `EMPLEADO_DECIMOTERCERO`/
 `_DECIMOCUARTO`/`_FONDOSRESERVA`/`_PROVISION_VACACION`) quedan fuera de
 alcance inicial — se agregan cuando se construya el cálculo real de rol de
-pagos, no antes. Migración: `Nivel6_Nomina`.
+pagos, no antes. Migración: `Nivel6_Nomina`. `Nivel6_SeedEmpleados` sembró
+2 empleados de **ejemplo** (nombres/cédulas ficticios, mismo patrón que
+`Nivel0_SeedDatosPrueba`) para que la pantalla tenga contenido real.
+
+Hallazgo real de la verificación contra Softbank antes de diseñar el caso
+de uso: `NOMINA.CARGO` **no** guarda un sueldo base, y no existe ninguna
+otra tabla de sueldo-por-cargo — el ingreso se digita directamente en
+`NOMINA.ROLPAGOS_EMPLEADO.INGRESOS` cada período. Por eso `Empleado` acá
+tampoco tiene un campo `SueldoBase`: hubiera sido un campo inventado que no
+existe en el sistema real que se está reemplazando.
+
+**Generación de rol de pagos implementada y probada end-to-end**
+(`Corela15.Application.Nomina.IRolPagosService.GenerarAsync`): `POST /api/
+nomina/roles-pagos` recibe período + tipo (Mensual/Quincenal) + una línea
+por empleado (ingresos, egresos, días laborados, digitados por quien genera
+el rol, no derivados), valida que cada empleado exista y esté activo
+(`EmpleadoInvalidoException`, 422), rechaza período+tipo duplicado a nivel
+de aplicación además del índice único de `RolPagos(Periodo, Tipo)` en la
+base (`RolPagosDuplicadoException`, 422), y rechaza un rol sin líneas
+(`RolPagosSinLineasException`, 400). Cada línea calcula `Total = Ingresos -
+Egresos` y el rol queda `Procesado`. Sin asiento contable: como en
+Softbank, el rol de pagos es el registro fuente, no el pago en sí (el pago
+real y su asiento contable — débito Gasto sueldos / crédito Caja o Banco —
+quedan fuera de alcance, se agregan cuando se construya el caso de uso de
+pago de rol). Probado vía curl: generación con 2 empleados (total exacto
+$888.90 sobre $460+$520 de ingresos menos $42.50+$48.60 de egresos),
+duplicado de período+tipo rechazado, empleado inexistente rechazado, rol
+sin líneas rechazado (400). Pantalla real (`Nomina.tsx`, reemplaza el
+placeholder "Próximamente"): formulario para agregar líneas de empleado
+dinámicamente, tabla de roles de pago generados con total y estado.
 
 **Nivel 7** — cinco esquemas, cada uno con su tabla núcleo verificada contra
 Softbank: `obligacion` (`obligacion_financiera` — 0 filas en Softbank hoy,
