@@ -62,12 +62,15 @@ ASPNETCORE_ENVIRONMENT="Development" \
 dotnet run
 
 # 3. Frontend (desde frontend/)
-npm run dev   # http://localhost:5173 — si ya hay otro Vite corriendo (SIGA,
-               # otras apps propias en la misma máquina), Vite salta al
-               # próximo puerto libre (5174, 5175...); revisar el log de
-               # `npm run dev`. El backend en Development acepta CUALQUIER
-               # puerto de localhost/127.0.0.1 (ver CORS en Program.cs) —
-               # no hace falta tocar nada cuando cambia el puerto.
+npm run dev   # http://localhost:5174 — puerto fijo (vite.config.ts,
+               # server.port + strictPort:true) para no chocar con otras
+               # apps propias en la misma máquina (SIGA, CredVault COAC,
+               # etc.) que ya ocupan 5173/5180/otros. Con strictPort, si
+               # 5174 ya está en uso Vite falla en vez de saltar de puerto
+               # en silencio — revisar qué lo está usando antes de asumir
+               # que cambió solo. El backend en Development acepta
+               # CUALQUIER puerto de localhost/127.0.0.1 (ver CORS en
+               # Program.cs) — no hace falta tocar nada por este cambio.
 ```
 
 Migraciones (desde `backend/`):

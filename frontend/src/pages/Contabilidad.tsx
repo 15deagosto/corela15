@@ -72,9 +72,7 @@ function SeccionBalanceComprobacion() {
   })
 
   return (
-    <div className="mt-8">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-graphite-600">Balance de comprobación</h2>
-
+    <div>
       <div className="glass-card mb-4 rounded-xl p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <label className="flex flex-col gap-1 text-sm">
@@ -172,9 +170,7 @@ function SeccionCierrePeriodo() {
   })
 
   return (
-    <div className="mt-8">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-graphite-600">Cierre de período contable</h2>
-
+    <div>
       <div className="glass-card mb-4 rounded-xl p-4">
         <form
           className="flex flex-wrap items-end gap-3"
@@ -234,7 +230,7 @@ function SeccionCierrePeriodo() {
   )
 }
 
-export function Contabilidad() {
+function SeccionPlanCuentas() {
   const [q, setQ] = useState('')
 
   const { data, isLoading } = useQuery<CuentaContable[]>({
@@ -243,9 +239,7 @@ export function Contabilidad() {
   })
 
   return (
-    <div className="animate-fade-in">
-      <PageHeader icon={Calculator} title="Contabilidad" subtitle="Plan de cuentas, sobre el Catálogo Único de Cuentas (CUC) de la SEPS" />
-
+    <div>
       <div className="mb-4">
         <SearchBar value={q} onChange={setQ} placeholder="Buscar por código o nombre…" />
       </div>
@@ -280,9 +274,44 @@ export function Contabilidad() {
           ))}
         </tbody>
       </TableContainer>
+    </div>
+  )
+}
 
-      <SeccionBalanceComprobacion />
-      <SeccionCierrePeriodo />
+const TABS = [
+  { id: 'plan-cuentas', label: 'Plan de cuentas' },
+  { id: 'balance', label: 'Balance de comprobación' },
+  { id: 'cierre', label: 'Cierre de período' },
+] as const
+type TabId = (typeof TABS)[number]['id']
+
+export function Contabilidad() {
+  const [tab, setTab] = useState<TabId>('plan-cuentas')
+
+  return (
+    <div className="animate-fade-in">
+      <PageHeader icon={Calculator} title="Contabilidad" subtitle="Plan de cuentas, sobre el Catálogo Único de Cuentas (CUC) de la SEPS" />
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-black/[0.06]">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-t-lg px-3 py-2 text-sm font-medium transition ${
+              tab === t.id
+                ? 'border-b-2 border-gold-500 text-graphite-100'
+                : 'text-graphite-600 hover:text-graphite-100'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'plan-cuentas' && <SeccionPlanCuentas />}
+      {tab === 'balance' && <SeccionBalanceComprobacion />}
+      {tab === 'cierre' && <SeccionCierrePeriodo />}
     </div>
   )
 }

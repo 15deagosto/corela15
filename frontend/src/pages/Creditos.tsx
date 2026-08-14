@@ -663,25 +663,13 @@ function SeccionAutoDebitoSpi() {
   )
 }
 
-export function Creditos() {
+function SeccionSolicitudes({ productos }: { productos: Producto[] | undefined }) {
   const [mostrarForm, setMostrarForm] = useState(false)
-  const [mostrarFormDpf, setMostrarFormDpf] = useState(false)
-  const [depositoARenovar, setDepositoARenovar] = useState<Deposito | null>(null)
   const queryClient = useQueryClient()
-
-  const { data: productos } = useQuery<Producto[]>({
-    queryKey: ['creditos-productos'],
-    queryFn: async () => (await api.get('/api/creditos/productos')).data,
-  })
 
   const { data: solicitudes, isLoading: cargandoSolicitudes } = useQuery<Solicitud[]>({
     queryKey: ['creditos-solicitudes'],
     queryFn: async () => (await api.get('/api/creditos/solicitudes')).data,
-  })
-
-  const { data: prestamos, isLoading: cargandoPrestamos } = useQuery<Prestamo[]>({
-    queryKey: ['creditos-prestamos'],
-    queryFn: async () => (await api.get('/api/creditos/prestamos')).data,
   })
 
   const desembolsar = useMutation({
@@ -697,65 +685,23 @@ export function Creditos() {
     },
   })
 
-  const pagarCuota = useMutation({
-    mutationFn: async (idPrestamo: string) =>
-      (
-        await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
-        })
-      ).data,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
-    },
-  })
-
-  const toggleDebitoSpi = useMutation({
-    mutationFn: async ({ idPrestamo, activar }: { idPrestamo: string; activar: boolean }) =>
-      api.patch(`/api/creditos/prestamos/${idPrestamo}/debito-spi`, { activar }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
-    },
-  })
-
-  const { data: depositos, isLoading: cargandoDepositos } = useQuery<Deposito[]>({
-    queryKey: ['plazofijo-depositos'],
-    queryFn: async () => (await api.get('/api/plazofijo/depositos')).data,
-  })
-
-  const cancelarDpf = useMutation({
-    mutationFn: async (idDeposito: string) =>
-      (
-        await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
-        })
-      ).data,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
-    },
-  })
-
   return (
-    <div className="animate-fade-in">
-      <PageHeader
-        icon={Landmark}
-        title="Créditos"
-        subtitle="Solicitudes, desembolsos y cartera de préstamos"
-        actions={
-          !mostrarForm && (
-            <button
-              type="button"
-              onClick={() => setMostrarForm(true)}
-              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
-            >
-              <Plus size={16} /> Nueva solicitud
-            </button>
-          )
-        }
-      />
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Solicitudes de crédito</h2>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={() => setMostrarForm(true)}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
+          >
+            <Plus size={16} /> Nueva solicitud
+          </button>
+        )}
+      </div>
 
       {mostrarForm && productos && <SolicitarForm productos={productos} onClose={() => setMostrarForm(false)} />}
 
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-graphite-600">Solicitudes</h2>
       <TableContainer>
         <thead>
           <tr>
@@ -799,8 +745,41 @@ export function Creditos() {
           ))}
         </tbody>
       </TableContainer>
+    </div>
+  )
+}
 
-      <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-graphite-600">Cartera de préstamos</h2>
+function SeccionCartera() {
+  const queryClient = useQueryClient()
+
+  const { data: prestamos, isLoading: cargandoPrestamos } = useQuery<Prestamo[]>({
+    queryKey: ['creditos-prestamos'],
+    queryFn: async () => (await api.get('/api/creditos/prestamos')).data,
+  })
+
+  const pagarCuota = useMutation({
+    mutationFn: async (idPrestamo: string) =>
+      (
+        await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, undefined, {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+    },
+  })
+
+  const toggleDebitoSpi = useMutation({
+    mutationFn: async ({ idPrestamo, activar }: { idPrestamo: string; activar: boolean }) =>
+      api.patch(`/api/creditos/prestamos/${idPrestamo}/debito-spi`, { activar }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
+    },
+  })
+
+  return (
+    <div>
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-graphite-600">Cartera de préstamos</h2>
       <TableContainer>
         <thead>
           <tr>
@@ -866,9 +845,36 @@ export function Creditos() {
       )}
 
       <SeccionAutoDebitoSpi />
+    </div>
+  )
+}
 
-      <div className="mb-2 mt-8 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Plazo fijo</h2>
+function SeccionPlazoFijo() {
+  const [mostrarFormDpf, setMostrarFormDpf] = useState(false)
+  const [depositoARenovar, setDepositoARenovar] = useState<Deposito | null>(null)
+  const queryClient = useQueryClient()
+
+  const { data: depositos, isLoading: cargandoDepositos } = useQuery<Deposito[]>({
+    queryKey: ['plazofijo-depositos'],
+    queryFn: async () => (await api.get('/api/plazofijo/depositos')).data,
+  })
+
+  const cancelarDpf = useMutation({
+    mutationFn: async (idDeposito: string) =>
+      (
+        await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, undefined, {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plazofijo-depositos'] })
+    },
+  })
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Depósitos a plazo fijo</h2>
         {!mostrarFormDpf && (
           <button
             type="button"
@@ -939,6 +945,53 @@ export function Creditos() {
       </TableContainer>
 
       <SeccionRenovacionesDpf />
+    </div>
+  )
+}
+
+const TABS = [
+  { id: 'solicitudes', label: 'Solicitudes' },
+  { id: 'cartera', label: 'Cartera de préstamos' },
+  { id: 'plazofijo', label: 'Plazo fijo' },
+] as const
+type TabId = (typeof TABS)[number]['id']
+
+export function Creditos() {
+  const [tab, setTab] = useState<TabId>('solicitudes')
+
+  const { data: productos } = useQuery<Producto[]>({
+    queryKey: ['creditos-productos'],
+    queryFn: async () => (await api.get('/api/creditos/productos')).data,
+  })
+
+  return (
+    <div className="animate-fade-in">
+      <PageHeader
+        icon={Landmark}
+        title="Créditos"
+        subtitle="Solicitudes, desembolsos, cartera de préstamos y plazo fijo"
+      />
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-black/[0.06]">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-t-lg px-3 py-2 text-sm font-medium transition ${
+              tab === t.id
+                ? 'border-b-2 border-gold-500 text-graphite-100'
+                : 'text-graphite-600 hover:text-graphite-100'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'solicitudes' && <SeccionSolicitudes productos={productos} />}
+      {tab === 'cartera' && <SeccionCartera />}
+      {tab === 'plazofijo' && <SeccionPlazoFijo />}
     </div>
   )
 }
