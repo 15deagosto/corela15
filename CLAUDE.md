@@ -619,6 +619,52 @@ score — el motor transaccional de PLA real
 (`lavadoactivos.calificacion_cliente`, perfil ya modelado en Nivel 4) no
 se construyó en esta ronda, sigue pendiente.
 
+## Reportes contables (balance de comprobación)
+
+Último ítem pendiente de la ronda de evaluación de seguridad/regulatoria.
+**Decisión consciente de alcance**: no se implementó la estructura de
+detalle de ningún reporte regulatorio codificado (B13, D01, BCE01/02,
+etc. — el índice de `reportecontrol.reporte_regulatorio` de Nivel 8) por
+la misma razón ya documentada ahí: verificar la estructura de tablas de
+Softbank no sustituye verificar la norma oficial SEPS/BCE, y esa
+verificación volvió a fallar (PDFs oficiales devuelven binario/codificado,
+no texto legible, mismo problema que con la matriz de provisión y el
+mínimo de liquidez). Inventar la estructura de un reporte regulatorio
+real sin esa verificación sería peor que no construirlo. En su lugar se
+construyó el **Balance de Comprobación** — un reporte contable estándar
+universal (no un formulario SEPS/BCE codificado), 100% derivable de datos
+que el sistema ya calcula, sin fabricar estructura nueva.
+
+`GET /api/contabilidad/reportes/balance-comprobacion?periodo=YYYY-MM-DD`
+(`Corela15.Api.Controllers.ReportesController`, patrón de lectura directa
+sobre `Corela15DbContext` sin pasar por Application, igual que
+`CuentasContablesController` — no hay lógica de negocio que validar, solo
+agregación): para cada cuenta de detalle (`es_mayor=true`), calcula saldo
+inicial como la suma de `SaldoFinal` de todos los períodos anteriores al
+solicitado (`contabilidad.saldo_contable` ya guarda un `SaldoFinal`
+correctamente firmado según la naturaleza de la cuenta desde
+`ComprobanteContableService`, así que sumarlos a través de períodos da un
+acumulado válido sin tabla nueva), más los débitos/créditos/saldo final
+del período consultado. Omite cuentas sin ningún movimiento (inicial o
+del período) para no listar las ~30 cuentas del plan que nunca se han
+usado. Expone `cuadrado` (total débitos == total créditos del período) —
+la misma verificación de partida doble que ya hace
+`ComprobanteContableService` por comprobante, acá agregada por período
+completo, así que si algún día hay una inconsistencia real sería visible
+acá primero. `GET /api/contabilidad/reportes/periodos` lista los períodos
+con algún movimiento real, para poblar accesos rápidos en el selector.
+
+Probado end-to-end: cuenta de ahorro de prueba con depósito inicial de
+$1,500 → balance de agosto 2026 mostró `1101` Caja General (débito
+$1,500, saldo final $1,500) y `2101` Depósitos de ahorro a la vista
+(crédito $1,500, saldo final $1,500), `cuadrado: true`, totales
+$1,500/$1,500 exactos. Datos de prueba limpiados después (cuenta,
+comprobante, saldo_contable). Pantalla real: sección "Balance de
+comprobación" en `Contabilidad.tsx`, debajo del plan de cuentas — selector
+de período (`<input type="month">`) más atajos de un clic a los períodos
+con movimientos reales, badge Cuadrado/Descuadrado, tabla con fila de
+totales.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

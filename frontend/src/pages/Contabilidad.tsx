@@ -31,6 +31,126 @@ function mensajeError(error: unknown, fallback: string) {
   return (error as ApiError)?.response?.data?.detail ?? fallback
 }
 
+interface BalanceComprobacionLinea {
+  codigo: string
+  nombre: string
+  grupo: string
+  saldoInicial: number
+  debitos: number
+  creditos: number
+  saldoFinal: number
+}
+
+interface BalanceComprobacionResult {
+  periodo: string
+  lineas: BalanceComprobacionLinea[]
+  totalDebitos: number
+  totalCreditos: number
+  cuadrado: boolean
+}
+
+function formatoUsd(monto: number) {
+  return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
+}
+
+function SeccionBalanceComprobacion() {
+  const hoy = new Date()
+  const [periodo, setPeriodo] = useState(
+    `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`,
+  )
+
+  const { data: periodosDisponibles } = useQuery<string[]>({
+    queryKey: ['contabilidad-reportes-periodos'],
+    queryFn: async () => (await api.get('/api/contabilidad/reportes/periodos')).data,
+  })
+
+  const { data: balance, isLoading } = useQuery<BalanceComprobacionResult>({
+    queryKey: ['contabilidad-balance-comprobacion', periodo],
+    queryFn: async () =>
+      (await api.get('/api/contabilidad/reportes/balance-comprobacion', { params: { periodo: `${periodo}-01` } })).data,
+    enabled: !!periodo,
+  })
+
+  return (
+    <div className="mt-8">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-graphite-600">Balance de comprobación</h2>
+
+      <div className="glass-card mb-4 rounded-xl p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Período</span>
+            <input
+              type="month"
+              value={periodo}
+              onChange={(e) => setPeriodo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          {periodosDisponibles && periodosDisponibles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 text-xs text-graphite-600">
+              <span>Con movimientos:</span>
+              {periodosDisponibles.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriodo(p.slice(0, 7))}
+                  className="rounded-full bg-graphite-950 px-2 py-0.5 hover:bg-gold-500/15 hover:text-gold-400"
+                >
+                  {p.slice(0, 7)}
+                </button>
+              ))}
+            </div>
+          )}
+          {balance && (
+            <Badge variant={balance.cuadrado ? 'exito' : 'peligro'}>
+              {balance.cuadrado ? 'Cuadrado' : 'Descuadrado'}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código</Th>
+            <Th>Cuenta</Th>
+            <Th>Saldo inicial</Th>
+            <Th>Débitos</Th>
+            <Th>Créditos</Th>
+            <Th>Saldo final</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (balance?.lineas.length ?? 0) === 0 && (
+            <EmptyState>Sin movimientos registrados en este período</EmptyState>
+          )}
+          {balance?.lineas.map((l) => (
+            <tr key={l.codigo} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-mono text-xs font-medium">{l.codigo}</Td>
+              <Td>{l.nombre}</Td>
+              <Td className="tabular-nums">{formatoUsd(l.saldoInicial)}</Td>
+              <Td className="tabular-nums">{formatoUsd(l.debitos)}</Td>
+              <Td className="tabular-nums">{formatoUsd(l.creditos)}</Td>
+              <Td className="tabular-nums font-medium">{formatoUsd(l.saldoFinal)}</Td>
+            </tr>
+          ))}
+        </tbody>
+        {balance && (balance.lineas.length ?? 0) > 0 && (
+          <tfoot>
+            <tr className="border-t border-black/[0.08] font-semibold">
+              <Td colSpan={3}>Totales</Td>
+              <Td className="tabular-nums">{formatoUsd(balance.totalDebitos)}</Td>
+              <Td className="tabular-nums">{formatoUsd(balance.totalCreditos)}</Td>
+              <Td />
+            </tr>
+          </tfoot>
+        )}
+      </TableContainer>
+    </div>
+  )
+}
+
 function SeccionCierrePeriodo() {
   const queryClient = useQueryClient()
   const hoy = new Date()
@@ -161,6 +281,7 @@ export function Contabilidad() {
         </tbody>
       </TableContainer>
 
+      <SeccionBalanceComprobacion />
       <SeccionCierrePeriodo />
     </div>
   )

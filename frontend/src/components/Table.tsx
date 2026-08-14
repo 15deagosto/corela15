@@ -22,13 +22,15 @@ export function Td({
   children,
   className = '',
   style,
+  colSpan,
 }: {
-  children: ReactNode
+  children?: ReactNode
   className?: string
   style?: CSSProperties
+  colSpan?: number
 }) {
   return (
-    <td className={`px-4 py-3 text-graphite-100 ${className}`} style={style}>
+    <td className={`px-4 py-3 text-graphite-100 ${className}`} style={style} colSpan={colSpan}>
       {children}
     </td>
   )
