@@ -1,6 +1,11 @@
+using Corela15.Application.Colocacion;
 using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
+using Corela15.Domain.Ahorros;
+using Corela15.Domain.Colocacion;
+using Corela15.Domain.Credito;
 using Corela15.Domain.General;
+using Corela15.Domain.Inversion;
 using Corela15.Domain.Seguridad;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -46,10 +51,41 @@ public record ActualizarCuentaContablePlanRequest(string Nombre, bool Activa);
 public record TipoComprobanteContableDto(int Id, string Codigo, string Nombre);
 public record CrearTipoComprobanteContableRequest(string Codigo, string Nombre);
 
+public record TipoCuentaDto(
+    int Id, string Codigo, string Nombre, decimal SaldoMinimo, bool PermiteDebitoPrestamo,
+    decimal? SaldoMinimoConPrestamo, decimal TasaInteresAnual, bool Activo);
+public record CrearTipoCuentaRequest(
+    string Codigo, string Nombre, decimal SaldoMinimo, bool PermiteDebitoPrestamo,
+    decimal? SaldoMinimoConPrestamo, decimal TasaInteresAnual);
+public record ActualizarTipoCuentaRequest(
+    string Nombre, decimal SaldoMinimo, bool PermiteDebitoPrestamo,
+    decimal? SaldoMinimoConPrestamo, decimal TasaInteresAnual, bool Activo);
+
+public record TipoPrestamoDto(
+    int Id, string Codigo, string Nombre, decimal MontoMinimo, decimal MontoMaximo,
+    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo);
+
+public record TasaTechoBceDto(int Id, string Segmento, decimal TasaMaxima, DateOnly FechaVigenciaDesde, bool Activo);
+public record CrearTasaTechoBceRequest(string Segmento, decimal TasaMaxima, DateOnly FechaVigenciaDesde);
+public record ActualizarTasaTechoBceRequest(decimal TasaMaxima, bool Activo);
+
+public record ItemPlazoTasaDto(
+    Guid Id, int PlazoDiasMin, int PlazoDiasMax, decimal MontoMin, decimal? MontoMax,
+    string TipoPersona, decimal Tasa, DateOnly FechaVigenciaDesde, bool Activo);
+public record CrearItemPlazoTasaRequest(
+    int PlazoDiasMin, int PlazoDiasMax, decimal MontoMin, decimal? MontoMax,
+    string TipoPersona, decimal Tasa, DateOnly FechaVigenciaDesde);
+public record ActualizarItemPlazoTasaRequest(decimal Tasa, bool Activo);
+
+public record CategoriaRiesgoCarteraDto(
+    int Id, string Codigo, string Nombre, int DiasMoraInicio, int DiasMoraFin, decimal PorcentajeProvision, bool Activo);
+public record ActualizarCategoriaRiesgoCarteraRequest(int DiasMoraInicio, int DiasMoraFin, decimal PorcentajeProvision, bool Activo);
+
 [ApiController]
 [Route("api/configuracion")]
 [Authorize(Policy = "Menu:configuracion")]
-public class ConfiguracionController(Corela15DbContext db, ICuentaContableAdminService cuentaContableAdmin) : ControllerBase
+public class ConfiguracionController(
+    Corela15DbContext db, ICuentaContableAdminService cuentaContableAdmin, ITipoPrestamoAdminService tipoPrestamoAdmin) : ControllerBase
 {
     // ---- Países ----
 
@@ -376,5 +412,242 @@ public class ConfiguracionController(Corela15DbContext db, ICuentaContableAdminS
         tipo.Nombre = request.Nombre;
         await db.SaveChangesAsync(ct);
         return Ok(new TipoComprobanteContableDto(tipo.Id, tipo.Codigo, tipo.Nombre));
+    }
+
+    // ---- Tipos de cuenta (productos de Ahorros, Nivel 2) ----
+    // Catálogo simple: sin invariante más allá de código único, ya que
+    // SaldoMinimo/TasaInteresAnual/PermiteDebitoPrestamo no dependen de
+    // ninguna otra entidad para ser válidos.
+
+    [HttpGet("tipos-cuenta")]
+    public async Task<ActionResult<IReadOnlyList<TipoCuentaDto>>> TiposCuenta(CancellationToken ct)
+    {
+        var resultado = await db.TiposCuenta
+            .OrderBy(t => t.Nombre)
+            .Select(t => new TipoCuentaDto(
+                t.Id, t.Codigo, t.Nombre, t.SaldoMinimo, t.PermiteDebitoPrestamo,
+                t.SaldoMinimoConPrestamo, t.TasaInteresAnual, t.Activo))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("tipos-cuenta")]
+    public async Task<ActionResult<TipoCuentaDto>> CrearTipoCuenta([FromBody] CrearTipoCuentaRequest request, CancellationToken ct)
+    {
+        if (await db.TiposCuenta.AnyAsync(t => t.Codigo == request.Codigo, ct))
+        {
+            throw new CodigoDuplicadoException("un tipo de cuenta", request.Codigo);
+        }
+
+        var tipo = new TipoCuenta
+        {
+            Codigo = request.Codigo,
+            Nombre = request.Nombre,
+            SaldoMinimo = request.SaldoMinimo,
+            PermiteDebitoPrestamo = request.PermiteDebitoPrestamo,
+            SaldoMinimoConPrestamo = request.SaldoMinimoConPrestamo,
+            TasaInteresAnual = request.TasaInteresAnual,
+            Activo = true,
+        };
+        db.TiposCuenta.Add(tipo);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/tipos-cuenta/{tipo.Id}", new TipoCuentaDto(
+            tipo.Id, tipo.Codigo, tipo.Nombre, tipo.SaldoMinimo, tipo.PermiteDebitoPrestamo,
+            tipo.SaldoMinimoConPrestamo, tipo.TasaInteresAnual, tipo.Activo));
+    }
+
+    [HttpPut("tipos-cuenta/{id:int}")]
+    public async Task<ActionResult<TipoCuentaDto>> ActualizarTipoCuenta(
+        int id, [FromBody] ActualizarTipoCuentaRequest request, CancellationToken ct)
+    {
+        var tipo = await db.TiposCuenta.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tipo is null) return NotFound();
+
+        tipo.Nombre = request.Nombre;
+        tipo.SaldoMinimo = request.SaldoMinimo;
+        tipo.PermiteDebitoPrestamo = request.PermiteDebitoPrestamo;
+        tipo.SaldoMinimoConPrestamo = request.SaldoMinimoConPrestamo;
+        tipo.TasaInteresAnual = request.TasaInteresAnual;
+        tipo.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new TipoCuentaDto(
+            tipo.Id, tipo.Codigo, tipo.Nombre, tipo.SaldoMinimo, tipo.PermiteDebitoPrestamo,
+            tipo.SaldoMinimoConPrestamo, tipo.TasaInteresAnual, tipo.Activo));
+    }
+
+    // ---- Tipos de préstamo (productos de Crédito, Nivel 3) ----
+    // Sí tiene un invariante real (la tasa no puede exceder el techo BCE
+    // vigente del segmento) — pasa por Application (ITipoPrestamoAdminService),
+    // mismo motivo que el plan de cuentas.
+
+    [HttpGet("tipos-prestamo")]
+    public async Task<ActionResult<IReadOnlyList<TipoPrestamoDto>>> TiposPrestamo(CancellationToken ct)
+    {
+        var resultado = await db.TiposPrestamo
+            .OrderBy(t => t.Nombre)
+            .Select(t => new TipoPrestamoDto(
+                t.Id, t.Codigo, t.Nombre, t.MontoMinimo, t.MontoMaximo,
+                t.PlazoMinimoDias, t.PlazoMaximoDias, t.TasaAnual, t.SegmentoBce, t.Activo))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("tipos-prestamo")]
+    public async Task<ActionResult<TipoPrestamoAdminResult>> CrearTipoPrestamo(
+        [FromBody] CrearTipoPrestamoRequest request, CancellationToken ct)
+    {
+        var resultado = await tipoPrestamoAdmin.CrearAsync(request, ct);
+        return Created($"/api/configuracion/tipos-prestamo/{resultado.Id}", resultado);
+    }
+
+    [HttpPut("tipos-prestamo/{id:int}")]
+    public async Task<ActionResult> ActualizarTipoPrestamo(
+        int id, [FromBody] ActualizarTipoPrestamoRequest request, CancellationToken ct)
+    {
+        await tipoPrestamoAdmin.ActualizarAsync(id, request, ct);
+        return NoContent();
+    }
+
+    // ---- Tasas techo BCE ----
+    // Catálogo simple con vigencia real: nunca se edita una tasa ya
+    // sembrada (se conserva el historial), se agrega una fila nueva con
+    // FechaVigenciaDesde — PUT solo permite corregir un error de tipeo o
+    // desactivar, no cambiar el valor histórico.
+
+    [HttpGet("tasas-techo-bce")]
+    public async Task<ActionResult<IReadOnlyList<TasaTechoBceDto>>> TasasTechoBce(CancellationToken ct)
+    {
+        var resultado = await db.TasasTechoBce
+            .OrderBy(t => t.Segmento).ThenByDescending(t => t.FechaVigenciaDesde)
+            .Select(t => new TasaTechoBceDto(t.Id, t.Segmento, t.TasaMaxima, t.FechaVigenciaDesde, t.Activo))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("tasas-techo-bce")]
+    public async Task<ActionResult<TasaTechoBceDto>> CrearTasaTechoBce(
+        [FromBody] CrearTasaTechoBceRequest request, CancellationToken ct)
+    {
+        if (await db.TasasTechoBce.AnyAsync(t => t.Segmento == request.Segmento && t.FechaVigenciaDesde == request.FechaVigenciaDesde, ct))
+        {
+            throw new CodigoDuplicadoException("una tasa techo", $"{request.Segmento} — {request.FechaVigenciaDesde:yyyy-MM-dd}");
+        }
+
+        var tasa = new TasaTechoBce
+        {
+            Segmento = request.Segmento,
+            TasaMaxima = request.TasaMaxima,
+            FechaVigenciaDesde = request.FechaVigenciaDesde,
+            Activo = true,
+        };
+        db.TasasTechoBce.Add(tasa);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/tasas-techo-bce/{tasa.Id}",
+            new TasaTechoBceDto(tasa.Id, tasa.Segmento, tasa.TasaMaxima, tasa.FechaVigenciaDesde, tasa.Activo));
+    }
+
+    [HttpPut("tasas-techo-bce/{id:int}")]
+    public async Task<ActionResult<TasaTechoBceDto>> ActualizarTasaTechoBce(
+        int id, [FromBody] ActualizarTasaTechoBceRequest request, CancellationToken ct)
+    {
+        var tasa = await db.TasasTechoBce.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tasa is null) return NotFound();
+
+        tasa.TasaMaxima = request.TasaMaxima;
+        tasa.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new TasaTechoBceDto(tasa.Id, tasa.Segmento, tasa.TasaMaxima, tasa.FechaVigenciaDesde, tasa.Activo));
+    }
+
+    // ---- Tablero de tasas DPF (item_plazo_tasa, Nivel 3) ----
+
+    [HttpGet("tablero-tasas-dpf")]
+    public async Task<ActionResult<IReadOnlyList<ItemPlazoTasaDto>>> TableroTasasDpf(CancellationToken ct)
+    {
+        var resultado = await db.ItemsPlazoTasa
+            .OrderBy(t => t.PlazoDiasMin)
+            .Select(t => new ItemPlazoTasaDto(
+                t.Id, t.PlazoDiasMin, t.PlazoDiasMax, t.MontoMin, t.MontoMax,
+                t.TipoPersona.ToString(), t.Tasa, t.FechaVigenciaDesde, t.Activo))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPost("tablero-tasas-dpf")]
+    public async Task<ActionResult<ItemPlazoTasaDto>> CrearItemPlazoTasa(
+        [FromBody] CrearItemPlazoTasaRequest request, CancellationToken ct)
+    {
+        if (!Enum.TryParse<TipoPersonaTasa>(request.TipoPersona, ignoreCase: true, out var tipoPersona))
+        {
+            throw new SolicitudInvalidaExceptionGenerica($"Tipo de persona inválido: {request.TipoPersona}");
+        }
+
+        var item = new ItemPlazoTasa
+        {
+            Id = Guid.NewGuid(),
+            PlazoDiasMin = request.PlazoDiasMin,
+            PlazoDiasMax = request.PlazoDiasMax,
+            MontoMin = request.MontoMin,
+            MontoMax = request.MontoMax,
+            TipoPersona = tipoPersona,
+            Tasa = request.Tasa,
+            FechaVigenciaDesde = request.FechaVigenciaDesde,
+            Activo = true,
+        };
+        db.ItemsPlazoTasa.Add(item);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/tablero-tasas-dpf/{item.Id}", new ItemPlazoTasaDto(
+            item.Id, item.PlazoDiasMin, item.PlazoDiasMax, item.MontoMin, item.MontoMax,
+            item.TipoPersona.ToString(), item.Tasa, item.FechaVigenciaDesde, item.Activo));
+    }
+
+    [HttpPut("tablero-tasas-dpf/{id:guid}")]
+    public async Task<ActionResult<ItemPlazoTasaDto>> ActualizarItemPlazoTasa(
+        Guid id, [FromBody] ActualizarItemPlazoTasaRequest request, CancellationToken ct)
+    {
+        var item = await db.ItemsPlazoTasa.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (item is null) return NotFound();
+
+        item.Tasa = request.Tasa;
+        item.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new ItemPlazoTasaDto(
+            item.Id, item.PlazoDiasMin, item.PlazoDiasMax, item.MontoMin, item.MontoMax,
+            item.TipoPersona.ToString(), item.Tasa, item.FechaVigenciaDesde, item.Activo));
+    }
+
+    // ---- Categorías de riesgo de cartera (matriz A1-E, Nivel 3) ----
+
+    [HttpGet("categorias-riesgo-cartera")]
+    public async Task<ActionResult<IReadOnlyList<CategoriaRiesgoCarteraDto>>> CategoriasRiesgoCartera(CancellationToken ct)
+    {
+        var resultado = await db.CategoriasRiesgoCartera
+            .OrderBy(c => c.DiasMoraInicio)
+            .Select(c => new CategoriaRiesgoCarteraDto(
+                c.Id, c.Codigo, c.Nombre, c.DiasMoraInicio, c.DiasMoraFin, c.PorcentajeProvision, c.Activo))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("categorias-riesgo-cartera/{id:int}")]
+    public async Task<ActionResult<CategoriaRiesgoCarteraDto>> ActualizarCategoriaRiesgoCartera(
+        int id, [FromBody] ActualizarCategoriaRiesgoCarteraRequest request, CancellationToken ct)
+    {
+        var categoria = await db.CategoriasRiesgoCartera.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (categoria is null) return NotFound();
+
+        categoria.DiasMoraInicio = request.DiasMoraInicio;
+        categoria.DiasMoraFin = request.DiasMoraFin;
+        categoria.PorcentajeProvision = request.PorcentajeProvision;
+        categoria.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new CategoriaRiesgoCarteraDto(
+            categoria.Id, categoria.Codigo, categoria.Nombre, categoria.DiasMoraInicio,
+            categoria.DiasMoraFin, categoria.PorcentajeProvision, categoria.Activo));
     }
 }

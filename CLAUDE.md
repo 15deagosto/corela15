@@ -172,6 +172,44 @@ código único) — CRUD directo en `ConfiguracionController`, mismo patrón
 que Países/Monedas. Pendiente: catálogos de Nivel 2 en adelante — seguir
 en el mismo orden.
 
+**Productos financieros — hecho** (agregado después de cerrar seguridad/
+regulatorio, priorizado explícitamente por ser lo que un usuario real del
+sistema — no solo el equipo de desarrollo — necesita tocar seguido):
+`Configuracion.tsx` creció a 5 pestañas más, con los componentes movidos a
+`ConfiguracionProductos.tsx` (el archivo ya rondaba 1000 líneas, separar
+por responsabilidad en vez de seguir agregando a un solo archivo).
+
+- **Productos de ahorro** (`tipos-cuenta`, Nivel 2) — catálogo simple,
+  CRUD directo: código, nombre, saldo mínimo, tasa de interés anual (%,
+  el formulario convierte automáticamente a fracción antes de mandar al
+  API), débito automático de préstamo.
+- **Productos de crédito** (`tipos-prestamo`, Nivel 3) — **sí pasa por
+  Application** (`ITipoPrestamoAdminService`/`TipoPrestamoAdminService`):
+  valida la tasa contra el techo BCE vigente del segmento elegido en el
+  mismo momento de guardar el producto, reusando el mismo chequeo que
+  `IPrestamoService.SolicitarAsync` — el error se detecta al configurar,
+  no cuando un socio ya está esperando una solicitud. El selector de
+  "Segmento BCE" en el formulario es una lista fija de los 10 segmentos
+  reales (no texto libre, evita typos que romperían la validación).
+- **Tasas techo BCE** (`tasas-techo-bce`) — hasta ahora solo eran
+  editables por migración (documentado como pendiente en la sección de
+  Tasas techo BCE más abajo) — ya no. El formulario reafirma la regla ya
+  documentada en el código: nunca se edita una tasa histórica, se agrega
+  una fila nueva con su fecha de vigencia (rechazo real de duplicado
+  exacto segmento+fecha, probado).
+- **Tablero de tasas DPF** (`tablero-tasas-dpf`, Nivel 3) — mismo patrón
+  que tasas BCE: crear un rango nuevo (plazo/monto/tipo de persona/tasa/
+  vigencia), editar solo toca la tasa y el estado activo de un rango
+  existente.
+- **Categorías de riesgo de cartera** (`categorias-riesgo-cartera`,
+  motor de provisiones) — las 9 categorías (A1-E) son fijas, no se crean
+  ni se borran desde acá (reflejan la norma, no son un catálogo abierto);
+  el formulario solo permite editar rango de días de mora y % de
+  provisión de una categoría existente.
+
+Probado end-to-end contra la API real: edición de producto de ahorro,
+creación de rango DPF nuevo, ambos verificados y limpiados después.
+
 ## Autenticación real (JWT + roles + menús)
 
 Hasta este punto el core no tenía autenticación real: `hash_contrasena` era

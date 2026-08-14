@@ -5,6 +5,13 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import {
+  TabTiposCuenta,
+  TabTiposPrestamo,
+  TabTasasTechoBce,
+  TabTableroTasasDpf,
+  TabCategoriasRiesgoCartera,
+} from './ConfiguracionProductos'
 
 type ApiError = { response?: { data?: { detail?: string } } }
 
@@ -1000,6 +1007,11 @@ const TABS = [
   { id: 'tipos-identificacion', label: 'Tipos de identificación' },
   { id: 'plan-cuentas', label: 'Plan de cuentas' },
   { id: 'tipos-comprobante', label: 'Tipos de comprobante' },
+  { id: 'tipos-cuenta', label: 'Productos de ahorro' },
+  { id: 'tipos-prestamo', label: 'Productos de crédito' },
+  { id: 'tasas-techo-bce', label: 'Tasas techo BCE' },
+  { id: 'tablero-dpf', label: 'Tasas DPF' },
+  { id: 'categorias-riesgo', label: 'Riesgo de cartera' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -1057,6 +1069,11 @@ export function Configuracion() {
           labelEntidad="el tipo de comprobante"
         />
       )}
+      {tab === 'tipos-cuenta' && <TabTiposCuenta />}
+      {tab === 'tipos-prestamo' && <TabTiposPrestamo />}
+      {tab === 'tasas-techo-bce' && <TabTasasTechoBce />}
+      {tab === 'tablero-dpf' && <TabTableroTasasDpf />}
+      {tab === 'categorias-riesgo' && <TabCategoriasRiesgoCartera />}
     </div>
   )
 }
