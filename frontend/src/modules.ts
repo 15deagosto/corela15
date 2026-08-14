@@ -9,6 +9,7 @@ import {
   Briefcase,
   Building2,
   AlertTriangle,
+  Settings,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -105,6 +106,14 @@ export const modulos: Modulo[] = [
     nombre: 'Riesgo',
     descripcion: 'Registro de eventos de riesgo (matriz impacto × probabilidad)',
     icon: AlertTriangle,
+    estado: 'en-construccion',
+  },
+  {
+    slug: 'configuracion',
+    path: '/configuracion',
+    nombre: 'Configuración',
+    descripcion: 'Parámetros y catálogos generales del sistema',
+    icon: Settings,
     estado: 'en-construccion',
   },
 ]

@@ -11,6 +11,7 @@ import { Cajas } from './pages/Cajas'
 import { Nomina } from './pages/Nomina'
 import { Tesoreria } from './pages/Tesoreria'
 import { Riesgo } from './pages/Riesgo'
+import { Configuracion } from './pages/Configuracion'
 import { ModuloPagina } from './pages/ModuloPagina'
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
         <Route path="/nomina" element={<Nomina />} />
         <Route path="/tesoreria" element={<Tesoreria />} />
         <Route path="/riesgo" element={<Riesgo />} />
+        <Route path="/configuracion" element={<Configuracion />} />
         <Route path="/:slug" element={<ModuloPagina />} />
       </Route>
     </Routes>

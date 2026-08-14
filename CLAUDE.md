@@ -113,6 +113,47 @@ nombre:
 Un nivel nunca depende de tablas/módulos de un nivel posterior. Si algo lo
 necesita, está mal clasificado — revisar antes de seguir.
 
+## Módulo Configuración (parametrización, transversal a todos los niveles)
+
+Cada nivel construido hasta ahora sembró sus catálogos configurables
+directo por migración (`tipo_transaccion`, `tipo_prestamo`, `rubro`,
+`accion_gestion`, `denominacion`, `nivel_impacto`/`probabilidad`/`riesgo`,
+etc.) — correcto para levantar el sistema, pero un core real no puede
+depender de una migración para que alguien cambie una tasa o agregue una
+agencia. **Decisión tomada**: un módulo `Configuración` centralizado en el
+sidebar (no una pestaña "Parámetros" dentro de cada módulo existente) con
+una pantalla CRUD por catálogo, empezando por Nivel 0 y avanzando en el
+mismo orden 0→8 ya establecido para los casos de uso.
+
+**Convención arquitectónica explícita para estos catálogos**: a diferencia
+de los casos de uso de negocio (comprobantes, préstamos, ventanillas...),
+que siempre van por `Application` con su propio servicio e interfaz, el
+CRUD de un catálogo de configuración simple (código+nombre, sin más regla
+que unicidad) se resuelve **directo en el controller contra el
+`DbContext`**, lanzando `Corela15.Application.Common.CodigoDuplicadoException`
+(422, vía el mismo `DomainExceptionHandler`) cuando corresponda. Escribir
+una interfaz + servicio Application por catálogo sería una capa que solo
+reenvía la llamada sin agregar lógica real — boilerplate puro. Si un
+catálogo empieza a necesitar una regla de negocio de verdad (ej. no poder
+desactivar una cuenta contable con saldo), ESE catálogo migra a
+Application con su propio caso de uso; el resto se queda en el patrón
+simple. No mezclar los dos patrones dentro del mismo catálogo.
+
+**Nivel 0 — hecho**: `Corela15.Api.Controllers.ConfiguracionController`
+(`api/configuracion/*`) con CRUD completo (crear + listar + actualizar,
+sin borrado físico — coherente con que ninguna tabla del core permite
+DELETE real, solo estados) de `paises`, `monedas`, `tipos-identificacion`,
+`agencias` (con toggle `Activa`/`EsOperativa`), `roles`, y `empresa` (fila
+única, solo `GET`/`PUT`, sin `POST`). Probado vía curl: creación,
+duplicado de código rechazado (422), actualización. Pantalla real
+(`Configuracion.tsx`) con pestañas por catálogo — `TabCatalogoCodigoNombre`
+es un componente genérico reutilizado por Países y Tipos de identificación
+(mismo shape código+nombre), evitando duplicar el formulario dos veces;
+Monedas/Agencias/Roles/Empresa tienen su propia pestaña por tener campos
+distintos. Pendiente: Nivel 1 en adelante (plan de cuentas editable,
+`tipo_comprobante_contable`, y luego los catálogos de cada nivel
+siguiente) — continuar en el mismo orden.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,
