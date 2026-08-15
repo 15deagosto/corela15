@@ -61,6 +61,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<MovimientoComprobanteContable> MovimientosComprobanteContable => Set<MovimientoComprobanteContable>();
     public DbSet<SaldoContable> SaldosContables => Set<SaldoContable>();
     public DbSet<PeriodoContable> PeriodosContables => Set<PeriodoContable>();
+    public DbSet<CierreEjercicio> CierresEjercicio => Set<CierreEjercicio>();
     public DbSet<TipoTransaccion> TiposTransaccion => Set<TipoTransaccion>();
 
     // AHORROS

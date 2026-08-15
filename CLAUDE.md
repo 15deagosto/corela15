@@ -502,7 +502,8 @@ regulatoria de esta sesión (autenticación, concurrencia, idempotencia,
 tasas techo BCE, provisiones) más devengo y cierre de período están
 completos y probados de punta a punta. Pendiente real, documentado en
 cada sección: estructura de detalle de reportes regulatorios (solo índice
-hoy), cierre de resultados del ejercicio.
+hoy). El cierre de resultados del ejercicio ✅ **hecho**, ver sección
+"Cierre de resultados del ejercicio" más abajo.
 
 ## Tests automatizados
 
@@ -957,6 +958,68 @@ Pendiente, no bloqueante: no hay un job que purgue filas viejas de
 `sesion_usuario` (crece sin límite, mismo criterio de "no borrar
 auditoría" que `accion_ingreso_usuario` — revisar si hace falta un
 archivado en un ambiente real con volumen alto de logins).
+
+## Cierre de resultados del ejercicio
+
+Último pendiente documentado desde la implementación de cierre de
+período (Nivel 1): ese cierre solo bloquea contabilizar retroactivo mes
+a mes — nunca liquidó la utilidad o pérdida del año contra patrimonio,
+el paso típico de un cierre anual real. Sin esto, las cuentas de
+Ingresos (grupo CUC 5) y Gastos (grupo CUC 4) seguían acumulando sin
+límite de un año a otro dentro del mismo diseño de `saldo_contable`.
+
+Subcuentas reales agregadas bajo `36` Resultados (ya sembrado desde
+Nivel 1 pero sin hijos): `3603` Utilidad del ejercicio y `3604`
+`(Pérdida del ejercicio)` — códigos reales del CUC, mismo criterio que
+`1499`/`4402` en el motor de provisiones (naturaleza Acreedora, la que
+trae el grupo Patrimonio, no una naturaleza "intuitiva" según si es
+utilidad o pérdida).
+
+**`ICierreEjercicioService.CerrarAsync`** (`POST /api/contabilidad/
+cierre-ejercicio/cerrar`): agrupa `saldo_contable` por cuenta, sumando
+`SaldoFinal` de todos los períodos (meses) del año a cerrar, solo para
+cuentas de grupo Ingresos o Gastos. Para cada cuenta con saldo acumulado
+distinto de cero genera una línea que la deja en cero (débito si es
+Ingresos — su saldo positivo es un crédito acumulado; crédito si es
+Gastos — su saldo positivo es un débito acumulado), y agrega una última
+línea a `3603` (crédito, si `Ingresos > Gastos`) o `3604` (débito, si
+`Gastos > Ingresos`) por la diferencia — un solo comprobante, partida
+doble real, mismo motor `ComprobanteContableService` de siempre, fechado
+31 de diciembre del año que se cierra. Único por año
+(`contabilidad.cierre_ejercicio`, índice único en `Anio`) — un segundo
+intento de cerrar el mismo año se rechaza (`EjercicioYaCerradoException`,
+422); un año sin ningún movimiento de ingresos/gastos también se rechaza
+(`EjercicioSinMovimientosException`, 422) en vez de generar un
+comprobante vacío o un cierre en cero sin sentido.
+
+**Interacción real con el cierre de período, documentada a propósito**:
+si diciembre del año a cerrar ya está bloqueado vía "Cierre de período"
+(Nivel 1), `ComprobanteContableService` rechaza el comprobante de cierre
+de resultados con `PeriodoContableCerradoException` — el orden operativo
+correcto es cerrar resultados primero, período de diciembre después,
+documentado en la propia pantalla. **No implementa cierre de resultados
+acumulados de años anteriores** (`3601`/`3602`, típico de un segundo
+paso donde la utilidad del año recién cerrado se traslada a "utilidades
+acumuladas") — cada corrida liquida solo el ejercicio que se cierra,
+fuera de alcance a propósito.
+
+Probado end-to-end contra Postgres real con datos sintéticos aislados en
+un año lejano sin ningún riesgo de tocar actividad real (2099, nunca
+puede chocar con un año calendario legítimo): ingresos $500 en `5101`,
+gastos $200 en `4101` insertados directo en `saldo_contable` para
+simular un año con actividad real acumulada → cierre calculó utilidad
+exacta de $300, `5101`/`4101` verificados en cero tras sumar sus dos
+períodos (el de la actividad original + el de la reversión del cierre),
+`3603` acreditada en $300, balance de comprobación de diciembre 2099
+cuadrado ($500 = $500). Reintentar el mismo año → 422. Año sin
+movimientos (2025) → 422. Datos sintéticos limpiados por completo
+después (cierre_ejercicio, comprobante, saldo_contable de 2099) sin
+tocar ningún dato real del ambiente de desarrollo compartido.
+
+Pantalla real: pestaña "Cierre de resultados" nueva en `Contabilidad.tsx`
+— selector de año, botón "Cerrar ejercicio", mensaje de resultado
+inmediato (ingresos/gastos/utilidad o pérdida), y tabla histórica de
+ejercicios cerrados.
 
 ## Estado actual
 

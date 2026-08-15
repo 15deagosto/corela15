@@ -278,10 +278,120 @@ function SeccionPlanCuentas() {
   )
 }
 
+interface CierreEjercicio {
+  anio: number
+  fechaCierre: string
+  totalIngresos: number
+  totalGastos: number
+  utilidad: number
+  cerradoPor: string
+}
+
+function SeccionCierreEjercicio() {
+  const queryClient = useQueryClient()
+  const [anio, setAnio] = useState(String(new Date().getFullYear()))
+
+  const { data: cierres, isLoading } = useQuery<CierreEjercicio[]>({
+    queryKey: ['contabilidad-cierre-ejercicio'],
+    queryFn: async () => (await api.get('/api/contabilidad/cierre-ejercicio')).data,
+  })
+
+  const cerrar = useMutation({
+    mutationFn: async () =>
+      (await api.post('/api/contabilidad/cierre-ejercicio/cerrar', { anio: Number(anio) })).data as CierreEjercicio,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contabilidad-cierre-ejercicio'] })
+    },
+  })
+
+  return (
+    <div>
+      <div className="glass-card mb-4 rounded-xl p-4">
+        <form
+          className="flex flex-wrap items-end gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            cerrar.mutate()
+          }}
+        >
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Año a cerrar</span>
+            <input
+              type="number"
+              min="2020"
+              max="2100"
+              value={anio}
+              onChange={(e) => setAnio(e.target.value)}
+              className="w-28 rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={cerrar.isPending}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            <Lock size={16} />
+            {cerrar.isPending ? 'Cerrando…' : 'Cerrar ejercicio'}
+          </button>
+        </form>
+
+        <p className="mt-3 text-xs text-graphite-600">
+          Liquida el saldo acumulado de todas las cuentas de ingresos y gastos del año contra patrimonio (utilidad o
+          pérdida del ejercicio). El comprobante queda fechado el 31 de diciembre del año — si ese período ya está
+          cerrado (pestaña "Cierre de período"), primero hay que revisar esa fecha.
+        </p>
+
+        {cerrar.isSuccess && (
+          <p className="mt-3 rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+            Ejercicio {cerrar.data.anio} cerrado: ingresos {formatoUsd(cerrar.data.totalIngresos)}, gastos{' '}
+            {formatoUsd(cerrar.data.totalGastos)}, {cerrar.data.utilidad >= 0 ? 'utilidad' : 'pérdida'}{' '}
+            {formatoUsd(Math.abs(cerrar.data.utilidad))}.
+          </p>
+        )}
+        {cerrar.isError && (
+          <p className="mt-3 text-sm text-red-700">{mensajeError(cerrar.error, 'No se pudo cerrar el ejercicio.')}</p>
+        )}
+      </div>
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Año</Th>
+            <Th>Ingresos</Th>
+            <Th>Gastos</Th>
+            <Th>Resultado</Th>
+            <Th>Fecha de cierre</Th>
+            <Th>Cerrado por</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (cierres?.length ?? 0) === 0 && <EmptyState>Todavía no se ha cerrado ningún ejercicio</EmptyState>}
+          {cierres?.map((c) => (
+            <tr key={c.anio} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{c.anio}</Td>
+              <Td className="tabular-nums">{formatoUsd(c.totalIngresos)}</Td>
+              <Td className="tabular-nums">{formatoUsd(c.totalGastos)}</Td>
+              <Td className="tabular-nums font-medium">
+                <Badge variant={c.utilidad >= 0 ? 'exito' : 'peligro'}>
+                  {c.utilidad >= 0 ? 'Utilidad' : 'Pérdida'} {formatoUsd(Math.abs(c.utilidad))}
+                </Badge>
+              </Td>
+              <Td>{new Date(c.fechaCierre).toLocaleString('es-EC')}</Td>
+              <Td>{c.cerradoPor}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
 const TABS = [
   { id: 'plan-cuentas', label: 'Plan de cuentas' },
   { id: 'balance', label: 'Balance de comprobación' },
   { id: 'cierre', label: 'Cierre de período' },
+  { id: 'cierre-ejercicio', label: 'Cierre de resultados' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -312,6 +422,7 @@ export function Contabilidad() {
       {tab === 'plan-cuentas' && <SeccionPlanCuentas />}
       {tab === 'balance' && <SeccionBalanceComprobacion />}
       {tab === 'cierre' && <SeccionCierrePeriodo />}
+      {tab === 'cierre-ejercicio' && <SeccionCierreEjercicio />}
     </div>
   )
 }

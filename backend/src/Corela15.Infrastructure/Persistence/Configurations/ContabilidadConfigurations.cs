@@ -133,3 +133,21 @@ public class PeriodoContableConfiguration : IEntityTypeConfiguration<PeriodoCont
         b.HasIndex(x => x.Periodo).IsUnique();
     }
 }
+
+public class CierreEjercicioConfiguration : IEntityTypeConfiguration<CierreEjercicio>
+{
+    public void Configure(EntityTypeBuilder<CierreEjercicio> b)
+    {
+        b.ToTable("cierre_ejercicio", "contabilidad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.TotalIngresos).HasColumnType("numeric(18,2)");
+        b.Property(x => x.TotalGastos).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Utilidad).HasColumnType("numeric(18,2)");
+        b.Property(x => x.CerradoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.ComprobanteContable).WithMany().HasForeignKey(x => x.IdComprobanteContable)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.Anio).IsUnique();
+    }
+}
