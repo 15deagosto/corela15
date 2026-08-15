@@ -19,6 +19,22 @@ interface PrestamoParaCobranza {
   socio: string
   saldo: number
   estado: string
+  diasMora: number
+  codigoPeriodoMora: string
+  nombrePeriodoMora: string
+}
+
+interface ResumenMoraTramo {
+  codigo: string
+  nombre: string
+  cantidadPrestamos: number
+  saldoTotal: number
+}
+
+function tramoVariant(codigo: string) {
+  if (codigo === 'PREV') return 'neutral' as const
+  if (codigo === 'GEST') return 'alerta' as const
+  return 'peligro' as const
 }
 
 interface Gestion {
@@ -98,7 +114,7 @@ function RegistrarGestionForm({
             <option value="">Seleccionar…</option>
             {prestamos.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.numero} — {p.socio} (saldo {formatoUsd(p.saldo)})
+                {p.numero} — {p.socio} (saldo {formatoUsd(p.saldo)}, {p.diasMora} días de mora — {p.nombrePeriodoMora})
               </option>
             ))}
           </select>
@@ -160,18 +176,59 @@ function RegistrarGestionForm({
   )
 }
 
-export function CobranzasCumplimiento() {
+function SeccionCarteraEnMora({ prestamos }: { prestamos: PrestamoParaCobranza[] | undefined }) {
+  const { data: resumen, isLoading } = useQuery<ResumenMoraTramo[]>({
+    queryKey: ['cobranzas-mora-resumen'],
+    queryFn: async () => (await api.get('/api/cobranzas/mora/resumen')).data,
+  })
+
+  return (
+    <div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {resumen?.map((r) => (
+          <div key={r.codigo} className="glass-card rounded-xl p-3">
+            <Badge variant={tramoVariant(r.codigo)}>{r.nombre}</Badge>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-graphite-100">{r.cantidadPrestamos}</p>
+            <p className="text-xs text-graphite-600">{formatoUsd(r.saldoTotal)} en saldo</p>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-graphite-600">Préstamos vencidos</h2>
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Préstamo</Th>
+            <Th>Socio</Th>
+            <Th>Saldo</Th>
+            <Th>Días de mora</Th>
+            <Th>Tramo</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (prestamos?.length ?? 0) === 0 && (
+            <EmptyState>Ningún préstamo vigente está vencido — cartera al día</EmptyState>
+          )}
+          {prestamos?.map((p) => (
+            <tr key={p.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{p.numero}</Td>
+              <Td>{p.socio}</Td>
+              <Td className="tabular-nums">{formatoUsd(p.saldo)}</Td>
+              <Td className="tabular-nums">{p.diasMora}</Td>
+              <Td>
+                <Badge variant={tramoVariant(p.codigoPeriodoMora)}>{p.nombrePeriodoMora}</Badge>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
+function SeccionGestiones({ prestamos, acciones }: { prestamos: PrestamoParaCobranza[] | undefined; acciones: Accion[] | undefined }) {
   const [mostrarForm, setMostrarForm] = useState(false)
-
-  const { data: acciones } = useQuery<Accion[]>({
-    queryKey: ['cobranzas-acciones'],
-    queryFn: async () => (await api.get('/api/cobranzas/acciones')).data,
-  })
-
-  const { data: prestamos } = useQuery<PrestamoParaCobranza[]>({
-    queryKey: ['cobranzas-prestamos'],
-    queryFn: async () => (await api.get('/api/cobranzas/prestamos')).data,
-  })
 
   const { data: gestiones, isLoading } = useQuery<Gestion[]>({
     queryKey: ['cobranzas-gestiones'],
@@ -179,26 +236,28 @@ export function CobranzasCumplimiento() {
   })
 
   return (
-    <div className="animate-fade-in">
-      <PageHeader
-        icon={ShieldAlert}
-        title="Cobranzas y Cumplimiento"
-        subtitle="Gestión de mora y prevención de lavado de activos"
-        actions={
-          !mostrarForm && (
-            <button
-              type="button"
-              onClick={() => setMostrarForm(true)}
-              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
-            >
-              <Plus size={16} /> Registrar gestión
-            </button>
-          )
-        }
-      />
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-graphite-600">Gestiones registradas</h2>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={() => setMostrarForm(true)}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
+          >
+            <Plus size={16} /> Registrar gestión
+          </button>
+        )}
+      </div>
 
       {mostrarForm && prestamos && acciones && (
         <RegistrarGestionForm prestamos={prestamos} acciones={acciones} onClose={() => setMostrarForm(false)} />
+      )}
+
+      {mostrarForm && (prestamos?.length ?? 0) === 0 && (
+        <p className="mb-4 rounded-lg bg-gold-500/10 px-3 py-2 text-sm text-gold-300">
+          No hay préstamos vencidos ahora mismo — no hay nada que gestionar en cobranza.
+        </p>
       )}
 
       <TableContainer>
@@ -231,6 +290,56 @@ export function CobranzasCumplimiento() {
           ))}
         </tbody>
       </TableContainer>
+    </div>
+  )
+}
+
+const TABS = [
+  { id: 'mora', label: 'Cartera en mora' },
+  { id: 'gestiones', label: 'Gestiones' },
+] as const
+type TabId = (typeof TABS)[number]['id']
+
+export function CobranzasCumplimiento() {
+  const [tab, setTab] = useState<TabId>('mora')
+
+  const { data: acciones } = useQuery<Accion[]>({
+    queryKey: ['cobranzas-acciones'],
+    queryFn: async () => (await api.get('/api/cobranzas/acciones')).data,
+  })
+
+  const { data: prestamos } = useQuery<PrestamoParaCobranza[]>({
+    queryKey: ['cobranzas-prestamos'],
+    queryFn: async () => (await api.get('/api/cobranzas/prestamos')).data,
+  })
+
+  return (
+    <div className="animate-fade-in">
+      <PageHeader
+        icon={ShieldAlert}
+        title="Cobranzas y Cumplimiento"
+        subtitle="Gestión de mora y prevención de lavado de activos"
+      />
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-black/[0.06]">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-t-lg px-3 py-2 text-sm font-medium transition ${
+              tab === t.id
+                ? 'border-b-2 border-gold-500 text-graphite-100'
+                : 'text-graphite-600 hover:text-graphite-100'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'mora' && <SeccionCarteraEnMora prestamos={prestamos} />}
+      {tab === 'gestiones' && <SeccionGestiones prestamos={prestamos} acciones={acciones} />}
     </div>
   )
 }

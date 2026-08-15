@@ -1,4 +1,5 @@
 using Corela15.Application.Contabilidad;
+using Corela15.Domain.Contabilidad;
 using Corela15.Infrastructure.Persistence;
 using Corela15.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -26,12 +27,42 @@ public class ComprobanteContableServiceTests : IAsyncLifetime
     {
         if (_comprobantesCreados.Count > 0)
         {
+            // Nunca borrar la fila entera de saldo_contable: en un ambiente
+            // de desarrollo compartido esa cuenta/período puede tener
+            // actividad real ajena a este test (bug real encontrado: esto
+            // borró silenciosamente el saldo real de un usuario que estaba
+            // probando la app en paralelo). Se revierte SOLO el delta que
+            // este test agregó, calculado a partir de sus propias líneas.
+            var lineasDeTest = await _db.MovimientosComprobanteContable
+                .Where(m => _comprobantesCreados.Contains(m.IdComprobante))
+                .Select(m => new { m.IdCuentaContable, m.Debito, m.Credito })
+                .ToListAsync();
+
             await _db.MovimientosComprobanteContable.Where(m => _comprobantesCreados.Contains(m.IdComprobante)).ExecuteDeleteAsync();
             await _db.ComprobantesContables.Where(c => _comprobantesCreados.Contains(c.Id)).ExecuteDeleteAsync();
-            await _db.SaldosContables
-                .Where(s => (s.IdCuentaContable == _idCuentaCaja || s.IdCuentaContable == _idCuentaDepositos)
-                    && s.Periodo == new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1))
-                .ExecuteDeleteAsync();
+
+            var periodo = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            foreach (var grupo in lineasDeTest.GroupBy(l => l.IdCuentaContable))
+            {
+                var deltaDebitos = grupo.Sum(l => l.Debito);
+                var deltaCreditos = grupo.Sum(l => l.Credito);
+                var saldo = await _db.SaldosContables
+                    .FirstOrDefaultAsync(s => s.IdCuentaContable == grupo.Key && s.Periodo == periodo);
+                if (saldo is null) continue;
+
+                saldo.TotalDebitos -= deltaDebitos;
+                saldo.TotalCreditos -= deltaCreditos;
+                var cuenta = await _db.CuentasContables.FirstAsync(c => c.Id == grupo.Key);
+                saldo.SaldoFinal = cuenta.Naturaleza == NaturalezaCuenta.Deudora
+                    ? saldo.TotalDebitos - saldo.TotalCreditos
+                    : saldo.TotalCreditos - saldo.TotalDebitos;
+
+                if (saldo.TotalDebitos == 0 && saldo.TotalCreditos == 0)
+                {
+                    _db.SaldosContables.Remove(saldo);
+                }
+            }
+            await _db.SaveChangesAsync();
         }
         await _db.DisposeAsync();
     }

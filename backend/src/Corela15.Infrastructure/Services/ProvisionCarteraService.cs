@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Corela15.Infrastructure.Services;
 
-public class ProvisionCarteraService(Corela15DbContext db, IComprobanteContableService comprobantes) : IProvisionCarteraService
+public class ProvisionCarteraService(
+    Corela15DbContext db, IComprobanteContableService comprobantes, IMoraCarteraService moraCartera) : IProvisionCarteraService
 {
     private const string CodigoCuentaProvision = "1499";
     private const string CodigoTipoTransaccionProvision = "PROV-CART";
@@ -22,26 +23,14 @@ public class ProvisionCarteraService(Corela15DbContext db, IComprobanteContableS
             .OrderBy(c => c.DiasMoraInicio)
             .ToListAsync(cancellationToken);
 
-        var prestamosVigentes = await db.Prestamos
-            .Where(p => p.Estado == EstadoPrestamo.Vigente)
-            .Select(p => new { p.Id, p.Saldo })
-            .ToListAsync(cancellationToken);
+        var moras = await moraCartera.CalcularAsync(cancellationToken);
 
         var acumuladoPorCategoria = new Dictionary<string, (int Cantidad, decimal Saldo, decimal Provision)>();
         var totalRequerido = 0m;
 
-        foreach (var prestamo in prestamosVigentes)
+        foreach (var prestamo in moras)
         {
-            var cuotaVencidaMasAntigua = await db.PrestamosRubros
-                .Where(r => r.IdPrestamo == prestamo.Id && r.Rubro.Codigo == "CAP"
-                    && r.Estado == "Pendiente" && r.FechaFin < hoy)
-                .OrderBy(r => r.FechaFin)
-                .Select(r => (DateOnly?)r.FechaFin)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            var diasMora = cuotaVencidaMasAntigua is null ? 0 : hoy.DayNumber - cuotaVencidaMasAntigua.Value.DayNumber;
-
-            var categoria = categorias.FirstOrDefault(c => diasMora >= c.DiasMoraInicio && diasMora <= c.DiasMoraFin)
+            var categoria = categorias.FirstOrDefault(c => prestamo.DiasMora >= c.DiasMoraInicio && prestamo.DiasMora <= c.DiasMoraFin)
                 ?? categorias[^1];
 
             var provisionPrestamo = prestamo.Saldo * categoria.PorcentajeProvision;

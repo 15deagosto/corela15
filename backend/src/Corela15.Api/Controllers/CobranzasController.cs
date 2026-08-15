@@ -1,5 +1,5 @@
 using Corela15.Application.Cobranza;
-using Corela15.Domain.Colocacion;
+using Corela15.Application.Colocacion;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,12 +12,16 @@ public record AccionGestionListItem(int Id, string Codigo, string Nombre);
 public record GestionCobranzaListItem(
     Guid Id, string PrestamoNumero, string Socio, string Accion, bool TieneCompromisoPago, string? Observacion, DateOnly Fecha);
 
-public record PrestamoParaCobranzaListItem(Guid Id, Guid IdCliente, string Numero, string Socio, decimal Saldo, string Estado);
+public record PrestamoParaCobranzaListItem(
+    Guid Id, Guid IdCliente, string Numero, string Socio, decimal Saldo, string Estado,
+    int DiasMora, string CodigoPeriodoMora, string NombrePeriodoMora);
+
+public record ResumenMoraTramoItem(string Codigo, string Nombre, int CantidadPrestamos, decimal SaldoTotal);
 
 [ApiController]
 [Route("api/cobranzas")]
 [Authorize(Policy = "Menu:cobranzas-cumplimiento")]
-public class CobranzasController(Corela15DbContext db, IGestionCobranzaService gestionService) : ControllerBase
+public class CobranzasController(Corela15DbContext db, IGestionCobranzaService gestionService, IMoraCarteraService moraCartera) : ControllerBase
 {
     [HttpGet("acciones")]
     public async Task<ActionResult<IReadOnlyList<AccionGestionListItem>>> Acciones(CancellationToken cancellationToken)
@@ -31,21 +35,57 @@ public class CobranzasController(Corela15DbContext db, IGestionCobranzaService g
         return Ok(resultado);
     }
 
+    // Solo préstamos con mora real (DiasMora > 0) — antes mostraba TODOS
+    // los préstamos vigentes por igual, sin distinguir cuáles realmente
+    // necesitan gestión de cobranza. El tramo (PeriodoMora, sembrado desde
+    // Nivel 4 pero sin usar hasta ahora) sale del mismo cálculo real de
+    // mora que usa el motor de provisiones — una sola fuente de verdad.
     [HttpGet("prestamos")]
     public async Task<ActionResult<IReadOnlyList<PrestamoParaCobranzaListItem>>> PrestamosVigentes(CancellationToken cancellationToken)
     {
-        var resultado = await db.Prestamos
-            .Where(p => p.Estado == EstadoPrestamo.Vigente)
-            .Select(p => new PrestamoParaCobranzaListItem(
-                p.Id,
-                db.PrestamosClientes.Where(pc => pc.IdPrestamo == p.Id && pc.Principal).Select(pc => pc.IdCliente).FirstOrDefault(),
-                p.Numero,
-                db.PrestamosClientes
-                    .Where(pc => pc.IdPrestamo == p.Id && pc.Principal)
-                    .Select(pc => pc.Cliente.Persona.Nombre)
-                    .FirstOrDefault() ?? "—",
-                p.Saldo, p.Estado.ToString()))
+        var moras = await moraCartera.CalcularAsync(cancellationToken);
+        var tramos = await db.PeriodosMora
+            .Where(t => t.Activo)
+            .OrderBy(t => t.DiasInicio)
             .ToListAsync(cancellationToken);
+
+        var titulares = await db.PrestamosClientes
+            .Where(pc => pc.Principal)
+            .Select(pc => new { pc.IdPrestamo, pc.IdCliente, Nombre = pc.Cliente.Persona.Nombre })
+            .ToDictionaryAsync(x => x.IdPrestamo, cancellationToken);
+
+        var resultado = moras
+            .Where(m => m.DiasMora > 0)
+            .OrderByDescending(m => m.DiasMora)
+            .Select(m =>
+            {
+                var tramo = tramos.FirstOrDefault(t => m.DiasMora >= t.DiasInicio && m.DiasMora <= t.DiasFin) ?? tramos[^1];
+                titulares.TryGetValue(m.IdPrestamo, out var titular);
+                return new PrestamoParaCobranzaListItem(
+                    m.IdPrestamo, titular?.IdCliente ?? Guid.Empty, m.Numero, titular?.Nombre ?? "—",
+                    m.Saldo, "Vigente", m.DiasMora, tramo.Codigo, tramo.Nombre);
+            })
+            .ToList();
+
+        return Ok(resultado);
+    }
+
+    [HttpGet("mora/resumen")]
+    public async Task<ActionResult<IReadOnlyList<ResumenMoraTramoItem>>> ResumenMora(CancellationToken cancellationToken)
+    {
+        var moras = await moraCartera.CalcularAsync(cancellationToken);
+        var tramos = await db.PeriodosMora
+            .Where(t => t.Activo)
+            .OrderBy(t => t.DiasInicio)
+            .ToListAsync(cancellationToken);
+
+        var resultado = tramos
+            .Select(t =>
+            {
+                var enTramo = moras.Where(m => m.DiasMora >= t.DiasInicio && m.DiasMora <= t.DiasFin).ToList();
+                return new ResumenMoraTramoItem(t.Codigo, t.Nombre, enTramo.Count, enTramo.Sum(m => m.Saldo));
+            })
+            .ToList();
 
         return Ok(resultado);
     }

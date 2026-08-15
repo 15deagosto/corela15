@@ -1396,15 +1396,86 @@ cobranzas/gestiones` valida que el préstamo, el cliente y la acción de
 gestión existan y estén activos, y registra el contacto (llamada, visita,
 acuerdo de pago...) con `TieneCompromisoPago` y observación libre — sin
 asiento contable, es un registro de seguimiento, no un movimiento de
-dinero. Pantalla real (`CobranzasCumplimiento.tsx`, reemplaza el placeholder
-"Próximamente"): selector de préstamo vigente + acción, tabla de
-gestiones registradas.
+dinero. Pantalla real (`CobranzasCumplimiento.tsx`): pestañas "Cartera en
+mora" / "Gestiones" (ver sección "Motor de mora real" más abajo — el
+selector de préstamo vigente ya no muestra todos los vigentes por
+igual).
 
-Pendiente dentro de Nivel 4: `PrestamoConsolidado`/días de mora reales
-(hoy no hay cálculo de mora automático — el selector de préstamos para
-cobranza muestra todos los vigentes, no solo los vencidos, porque ese
-cálculo no existe todavía), motor de scoring PLA (`CalificacionCliente`
-tiene la entidad pero no el caso de uso de cálculo).
+Pendiente dentro de Nivel 4: motor de scoring PLA (`CalificacionCliente`
+tiene la entidad pero no el caso de uso de cálculo). Días de mora reales
+✅ **hecho**, ver sección siguiente.
+
+## Motor de mora real (`IMoraCarteraService`)
+
+Gap operativo real identificado en la auditoría de profundidad del
+sistema (no un incidente puntual como los tres de
+`01-contexto-origen.md`, sino una revisión completa módulo por módulo):
+el cálculo de días de mora existía, pero **solo vivía escondido dentro
+de `ProvisionCarteraService`**, calculado inline y nunca expuesto a
+nada más. Cobranza tenía su propio catálogo de tramos
+(`cobranza.periodo_mora`, sembrado desde Nivel 4: Preventiva/Gestión/
+Comité I/Comité II/Judicial) sin ningún caso de uso que lo alimentara —
+el selector de préstamos para registrar una gestión mostraba **todos**
+los préstamos vigentes mezclados, vencidos o no, porque no había forma
+de saber cuáles realmente estaban en mora.
+
+`Corela15.Application.Colocacion.IMoraCarteraService` /
+`MoraCarteraService.CalcularAsync()`: única fuente de verdad para "días
+de mora de un préstamo" en todo el sistema — hoy menos la fecha de
+vencimiento (`PrestamoRubro.FechaFin`) de la cuota de capital impaga más
+antigua, 0 si no tiene ninguna vencida. `ProvisionCarteraService` se
+refactorizó para consumir este mismo servicio en vez de tener su propio
+cálculo duplicado (mismo resultado exacto, verificado: préstamo con
+cuota vencida hace 45 días → categoría B2, $100 de provisión sobre
+$1,000, idéntico antes y después del refactor).
+
+`CobranzasController.PrestamosVigentes` (`GET /api/cobranzas/prestamos`)
+ahora filtra a solo préstamos con `DiasMora > 0` — el fix real del gap
+documentado — y expone el tramo (`cobranza.periodo_mora`) de cada uno.
+`GET /api/cobranzas/mora/resumen` agrega cantidad de préstamos y saldo
+total por tramo, incluyendo los que están al día (tramo `PREV`), para
+una vista completa de la distribución de cartera.
+
+Probado end-to-end contra Postgres real usando el préstamo real del
+ambiente de desarrollo (no datos sintéticos aislados esta vez, porque
+`Prestamo`/`PrestamoRubro` no se pueden fabricar sin pasar por el ciclo
+completo de solicitud→desembolso, y el préstamo real ya existía):
+backdate temporal de la fecha de vencimiento de la cuota 1 a 45 días
+atrás → `GET /api/cobranzas/prestamos` mostró el préstamo con
+`diasMora: 45`, tramo "Comité de mora I"; `GET /api/cobranzas/mora/
+resumen` lo contó correctamente en `CM1`; `POST /api/creditos/
+provision-cartera/calcular` clasificó el mismo préstamo en B2 ($100 de
+provisión), confirmando que ambos consumidores ven exactamente la misma
+mora. Fecha de vencimiento restaurada a su valor original después.
+
+**Bug real encontrado y corregido durante esta prueba, más serio que el
+motor de mora en sí**: `ComprobanteContableServiceTests.DisposeAsync()`
+borraba la fila **completa** de `saldo_contable` de las cuentas
+`1101`/`2101` del período actual al terminar, asumiendo que el ambiente
+de desarrollo siempre arranca vacío para esas cuentas — una asunción que
+dejó de ser cierta en cuanto hubo actividad real de un usuario probando
+la app en paralelo. Correr `dotnet test` borró en silencio el saldo real
+de esas dos cuentas (detectado porque el balance de comprobación pasó de
+cuadrado a descuadrado sin que nadie tocara nada). Mismo problema en
+`ProvisionCarteraServiceTests`: `EjecutarCalculoAsync_SinCarteraVigente_
+NoRequiereProvision` corre contra **toda** la cartera vigente real del
+ambiente compartido (no solo préstamos de prueba) y no revertía el
+comprobante que podía generar. Ambos tests se corrigieron para revertir
+solo el delta exacto que ellos mismos aportaron (calculado a partir de
+sus propias líneas de movimiento), nunca la fila completa — el mismo
+principio de limpieza quirúrgica que se viene aplicando manualmente en
+cada sesión de pruebas contra este ambiente, ahora también dentro de los
+tests automatizados. Datos reales del usuario reconstruidos exactamente
+después de detectar el borrado accidental, verificados contra las líneas
+de los comprobantes reales que seguían intactos.
+
+Pantalla real: nueva pestaña "Cartera en mora" en
+`CobranzasCumplimiento.tsx` (antes solo tenía "Gestiones") con tarjetas
+resumen por tramo (cantidad + saldo) y tabla de préstamos vencidos con
+días de mora y badge de tramo coloreado; el selector de préstamo dentro
+de "Registrar gestión" ahora muestra días de mora y tramo en cada
+opción, y avisa explícitamente si no hay ningún préstamo vencido en vez
+de mostrar un selector vacío sin explicación.
 
 **Periféricos con núcleo modelado** (`Perifericos_Auditoria_CallCenter_Marketing_Planificacion_Rural`):
 - `auditoria` (`area_auditoria`, `seguimiento`) — **reusa `riesgo.nivel_riesgo` de Nivel 8** en vez de duplicar el catálogo de impacto/probabilidad que Softbank sí duplica entre `AUDITORIA` y `RIESGOOPERATIVO` (mismo patrón matriz, declarado una sola vez acá).
