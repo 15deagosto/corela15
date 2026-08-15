@@ -134,43 +134,88 @@ public class ReportesController(Corela15DbContext db) : ControllerBase
         var empresa = await db.Empresas.FirstOrDefaultAsync(cancellationToken);
         var ruc = empresa?.Ruc ?? string.Empty;
 
-        var saldosHastaElPeriodo = await db.SaldosContables
+        var saldosLeaf = await db.SaldosContables
             .Where(s => s.Periodo <= periodo)
             .GroupBy(s => s.IdCuentaContable)
             .Select(g => new { IdCuentaContable = g.Key, SaldoAcumulado = g.Sum(s => s.SaldoFinal) })
             .ToDictionaryAsync(x => x.IdCuentaContable, x => x.SaldoAcumulado, cancellationToken);
 
-        var cuentas = await db.CuentasContables
-            .Where(c => c.EsMayor)
+        var todasLasCuentas = await db.CuentasContables
+            .Where(c => c.Activa)
             .OrderBy(c => c.Codigo)
             .ToListAsync(cancellationToken);
+
+        // El "cuadre jerárquico" que el manual exige (elemento = suma de sus
+        // grupos, grupo = suma de sus cuentas, cuenta = suma de sus
+        // subcuentas) solo es posible de validar del lado de SEPS si las
+        // filas de agrupación TAMBIÉN van en el archivo — no solo las hojas.
+        // Confirmado con el conteo real: 1.194 cuentas activas − 3 de los
+        // grupos excluidos (62/63/73) = 1.191, prácticamente exacto contra
+        // el 1.192 esperado del manual (la única cuenta de diferencia es el
+        // código anómalo de 3 dígitos "671" que se excluyó de la siembra
+        // por no encajar en ningún nivel válido de la jerarquía). El saldo
+        // de una cuenta de agrupación es la suma de TODOS sus descendientes
+        // hoja, calculado bottom-up con memoización sobre el árbol real de
+        // IdCuentaPadre — no una lectura directa de saldo_contable, que solo
+        // existe para las cuentas de detalle donde se postea de verdad.
+        var porId = todasLasCuentas.ToDictionary(c => c.Id);
+        var hijosPorPadre = todasLasCuentas
+            .Where(c => c.IdCuentaPadre.HasValue)
+            .GroupBy(c => c.IdCuentaPadre!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var saldoCalculado = new Dictionary<Guid, decimal>();
+
+        decimal CalcularSaldo(CuentaContable cuenta)
+        {
+            if (saldoCalculado.TryGetValue(cuenta.Id, out var yaCalculado))
+            {
+                return yaCalculado;
+            }
+
+            decimal resultado;
+            if (cuenta.EsMayor)
+            {
+                resultado = saldosLeaf.GetValueOrDefault(cuenta.Id, 0m);
+            }
+            else
+            {
+                var hijos = hijosPorPadre.GetValueOrDefault(cuenta.Id, []);
+                resultado = hijos.Sum(h => CalcularSaldo(h));
+            }
+
+            saldoCalculado[cuenta.Id] = resultado;
+            return resultado;
+        }
 
         var detalle = new List<EstadoFinancieroDetalleItem>();
         var advertencias = new List<string>();
 
-        foreach (var cuenta in cuentas)
+        foreach (var cuenta in todasLasCuentas)
         {
             if (GruposExcluidos.Any(g => cuenta.Codigo.StartsWith(g)))
             {
                 continue;
             }
 
-            // A diferencia del Balance de Comprobación (que omite cuentas sin
-            // movimiento), B11/B13 exige TODAS las cuentas de detalle del
-            // catálogo, con saldo 0 donde no hay actividad — el control de
-            // "Número de registros" del manual valida un conteo fijo (1.192
-            // para COAC), no "cuentas con saldo".
-            var saldo = saldosHastaElPeriodo.GetValueOrDefault(cuenta.Id, 0m);
+            var saldo = CalcularSaldo(cuenta);
 
-            var puedeSerNegativo = cuenta.Grupo == GrupoCuc.Patrimonio
-                || cuenta.Codigo.StartsWith("35") || cuenta.Codigo.StartsWith("36")
-                || cuenta.Codigo is "3502" or "3504"
-                || CuentasNegativasPermitidas.Contains(cuenta.Codigo);
-
-            if (saldo < 0 && !puedeSerNegativo)
+            // El control de saldo positivo/negativo del manual aplica al
+            // nivel de detalle real (donde se postea) — las cuentas de
+            // agrupación heredan el signo que resulte de sus hijas sin
+            // validarlas aparte, para no duplicar la misma advertencia en
+            // cada nivel de la jerarquía.
+            if (cuenta.EsMayor)
             {
-                advertencias.Add(
-                    $"Cuenta {cuenta.Codigo} ({cuenta.Nombre}) tiene saldo negativo ({saldo:0.00}) pero el manual no la autoriza a reportarse en negativo.");
+                var puedeSerNegativo = cuenta.Grupo == GrupoCuc.Patrimonio
+                    || cuenta.Codigo.StartsWith("35") || cuenta.Codigo.StartsWith("36")
+                    || cuenta.Codigo is "3502" or "3504"
+                    || CuentasNegativasPermitidas.Contains(cuenta.Codigo);
+
+                if (saldo < 0 && !puedeSerNegativo)
+                {
+                    advertencias.Add(
+                        $"Cuenta {cuenta.Codigo} ({cuenta.Nombre}) tiene saldo negativo ({saldo:0.00}) pero el manual no la autoriza a reportarse en negativo.");
+                }
             }
 
             detalle.Add(new EstadoFinancieroDetalleItem(cuenta.Codigo, cuenta.Nombre, saldo));
@@ -178,11 +223,15 @@ public class ReportesController(Corela15DbContext db) : ControllerBase
 
         var valorCuadre = detalle.Sum(d => d.SaldoCuentaContable);
 
-        advertencias.Add(
-            $"Número de registros ({detalle.Count}) no corresponde exactamente al esperado oficial para COAC " +
-            "(1.192, Manual Técnico v10.0). El catálogo sembrado incluye cuentas de los 5 segmentos + Caja Central + " +
-            "CONAFIPS sin filtrar por aplicabilidad de segmento (columna SEG del catálogo oficial no se usó todavía) " +
-            "— probable causa principal del desfase; filtrar el catálogo a Segmento 2 específicamente es trabajo aparte.");
+        const int registrosEsperadosCoac = 1192;
+        if (detalle.Count != registrosEsperadosCoac)
+        {
+            advertencias.Add(
+                $"Número de registros ({detalle.Count}) no coincide exacto con el esperado oficial para COAC " +
+                $"({registrosEsperadosCoac}, Manual Técnico v10.0) — diferencia de {Math.Abs(detalle.Count - registrosEsperadosCoac)}. " +
+                "El código '671' del catálogo oficial (3 dígitos, no encaja en la jerarquía elemento/grupo/cuenta/subcuenta) " +
+                "se excluyó de la siembra en vez de adivinar su posición — ver CLAUDE.md.");
+        }
 
         if (string.IsNullOrEmpty(ruc))
         {

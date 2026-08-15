@@ -1071,14 +1071,14 @@ subcuentas, `1699`, `1899`, `1999`, `3602`, `3604`, etc., transcrita tal
 cual del manual) — si una cuenta viola esto, se reporta como advertencia
 explícita, no se oculta ni se bloquea el reporte.
 
-**Limitación real, documentada en el código y en la UI, no oculta**: el
-catálogo completo ya está sembrado (ver sección "Catálogo de cuentas
-oficial completo (CUC)" más abajo — 983 cuentas de detalle), pero el
-número de registros todavía no coincide exacto con el oficial (1.192)
-porque ese catálogo no está filtrado por aplicabilidad de segmento
-(Segmento 2, el real de esta cooperativa) — sigue incluyendo cuentas de
-los 5 segmentos + Caja Central + CONAFIPS. B13 (diario) solo puede
-generarse **a la fecha de hoy**: el modelo de saldos de este core es
+**Precisión lograda**: con el catálogo completo sembrado (ver sección
+"Catálogo de cuentas oficial completo (CUC)" más abajo) y el cálculo
+jerárquico bottom-up de saldos (cuentas de agrupación = suma de sus
+hijas, no solo las hojas), el número de registros llega a **1.191 contra
+los 1.192 oficiales — una diferencia de exactamente 1, con causa
+identificada y documentada** (el código anómalo `671` del Excel fuente,
+ver esa sección). No queda como una brecha abierta. B13 (diario) solo
+puede generarse **a la fecha de hoy**: el modelo de saldos de este core es
 mensual (`saldo_contable` por período-mes), no diario, así que no existe
 una foto exacta reconstruible de un día pasado arbitrario — limitación
 real del diseño de datos, no del reporte.
@@ -1098,15 +1098,17 @@ reportes/b11?periodo=2026-08-01` y `GET /api/contabilidad/reportes/b13`
 sobre la actividad real del usuario en el ambiente de desarrollo (no
 datos sintéticos) — devolvió cabecera correcta (RUC de la empresa
 sembrada, fecha de corte = último día de agosto para B11 / hoy para
-B13), 983 registros de detalle (todas las cuentas de detalle del
-catálogo completo, con saldo 0 donde no hay actividad — solo 3 con saldo
-real: `1101`, `1401`, `2101`), y **encontró una advertencia real, no
-fabricada para la prueba**: `1101` Caja General tenía saldo `-900.00`
-(más desembolsos de préstamo que depósitos reales en el ambiente de
-prueba), y el manual no autoriza esa cuenta a reportarse en negativo —
-exactamente el tipo de inconsistencia que este control está diseñado
-para atrapar antes de un envío real a SEPS. Verificado también que el
-Balance de Comprobación (que sí sigue omitiendo cuentas sin movimiento,
+B13), **1.191 registros** (el catálogo completo con jerarquía — elemento,
+grupo, cuenta y subcuenta — con saldo 0 donde no hay actividad; solo 8
+cuentas con saldo real distinto de cero contando los niveles de
+agrupación afectados: `1`, `11`, `1101`, `14`, `1401`, `2`, `21`, `2101`),
+y **encontró una advertencia real, no fabricada para la prueba**: `1101`
+Caja General tenía saldo `-900.00` (más desembolsos de préstamo que
+depósitos reales en el ambiente de prueba), y el manual no autoriza esa
+cuenta a reportarse en negativo — exactamente el tipo de inconsistencia
+que este control está diseñado para atrapar antes de un envío real a
+SEPS. Verificado también que el Balance de Comprobación (que sí sigue
+omitiendo cuentas sin movimiento,
 a propósito, es un reporte distinto) no se vio afectado por la siembra
 del catálogo completo — mismas 3 líneas, mismo cuadre exacto.
 
@@ -1166,24 +1168,51 @@ opción más segura — la alternativa (migrar todo el motor contable a
 postear a nivel de subcuenta de 6 dígitos) es un cambio de diseño
 mucho más grande, fuera de alcance de esta sesión.
 
-**Anomalía real encontrada y excluida**: el código `671` ("Contingentes")
-aparece en el Excel con 3 dígitos — no encaja en ningún nivel válido
-(1/2/4/6) de la jerarquía documentada. Se excluyó de la siembra en vez de
-adivinar su jerarquía real (¿es un típo de `67`? ¿un código legítimo de
-3 dígitos que el manual no documenta?) — un solo código, impacto
-mínimo, pendiente de aclarar contra la fuente si se necesita.
+**Anomalía real encontrada, investigada a fondo y descartada de la
+siembra (no ignorada)**: el código `671` ("Contingentes") aparece en el
+Excel con 3 dígitos — no encaja en ningún nivel válido (1/2/4/6) de la
+jerarquía documentada. Antes de excluirlo se buscó su contexto real: no
+existe ningún grupo `67` (2 dígitos) en todo el catálogo, el manual
+técnico no lo menciona en ningún punto (búsqueda directa contra el texto
+extraído del PDF), y no hay ningún otro código de 3 dígitos en las 1.191
+filas restantes — es una anomalía real y aislada del archivo fuente de
+SEPS, no un error de este proyecto. Se dejó fuera de la siembra en vez de
+inventarle una jerarquía (¿hijo de `67`? ¿de `6`? ¿typo de `61`?) — con
+esto, la única cuenta que falta contra el total oficial (1.192) está
+100% identificada y trazada a su causa exacta, no es una brecha abierta.
 
-`B11`/`B13` ya no filtran cuentas con saldo cero (a diferencia del
-Balance de Comprobación) — el manual exige el conteo fijo de registros,
-no solo las cuentas con actividad. **La brecha contra el "1.192" oficial
-sigue sin cerrar del todo** (983 vs. 1.192, ~209 de diferencia): la causa
-más probable es que el catálogo sembrado incluye cuentas de los 5
-segmentos + Caja Central + CONAFIPS sin filtrar por la columna de
-aplicabilidad real (`SEG 1`...`SEG 5`, `CAJA CENTRAL`, `CONAFIPS` — sí
-están en el Excel, no se procesaron todavía). Filtrar el catálogo a
-Segmento 2 específicamente (el segmento real de esta cooperativa) es el
-siguiente paso lógico para cerrar esa brecha, documentado como pendiente
-explícito en la propia respuesta del endpoint, no oculto.
+**Corrección real de diseño, no un ajuste cosmético**: la primera versión
+de `GenerarEstadoFinancieroAsync` reportaba solo las cuentas de detalle
+(`es_mayor=true`, 983 en ese momento) con saldo propio de
+`saldo_contable`, dejando fuera las cuentas de agrupación (elemento/
+grupo/cuenta intermedia) — de ahí salía un conteo de 983 contra 1.192
+esperados, una brecha de ~209 que en un primer intento se atribuyó
+(incorrectamente) a falta de filtro por segmento. Investigar esa hipótesis
+a fondo (se extrajeron las columnas `SEG 1`...`SEG 5` reales del Excel y
+se cruzaron contra las cuentas hoja sembradas) la descartó: filtrar por
+Segmento 2 daba 939, **peor** que 983, no mejor — la hipótesis del
+segmento estaba mal. La causa real, encontrada al releer la sección 4.1
+del manual con más cuidado: el "cuadre jerárquico" que SEPS valida
+(elemento = suma de sus grupos, grupo = suma de sus cuentas, cuenta =
+suma de sus subcuentas) **solo es posible del lado de SEPS si las filas
+de agrupación también viajan en el archivo** — B11/B13 no es "solo las
+cuentas donde se postea", es el catálogo completo, con las cuentas de
+agrupación llevando la suma de sus descendientes.
+
+`GenerarEstadoFinancieroAsync` ahora recorre **todas** las cuentas
+activas (no solo `EsMayor`), calculando el saldo de cada una
+bottom-up sobre el árbol real de `IdCuentaPadre` (memoizado en un
+diccionario para no recalcular): una hoja usa su propio
+`saldo_contable`; una cuenta de agrupación es la suma de sus hijos
+directos (recursivo). Verificado con la actividad real del usuario: el
+elemento `1` ACTIVO quedó en `$100` (grupo `11` Fondos disponibles
+`-$900` + grupo `14` Cartera de créditos `$1.000`), exactamente la suma
+correcta, sin tocar `saldo_contable` para nada que no sea una hoja real.
+Conteo final: **1.191 registros contra los 1.192 esperados — una
+diferencia de exactamente 1, la del código `671` ya documentado**, no
+una brecha sin explicar. El control de saldo negativo/positivo del
+manual solo se valida a nivel de hoja (`EsMayor`), para no repetir la
+misma advertencia en cada nivel de la jerarquía que la contiene.
 
 Migración: `Contabilidad_CatalogoCucCompleto` — el SQL generado
 (~1.130 `INSERT ... ON CONFLICT DO NOTHING`) se guardó como recurso
