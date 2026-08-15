@@ -1072,15 +1072,12 @@ cual del manual) — si una cuenta viola esto, se reporta como advertencia
 explícita, no se oculta ni se bloquea el reporte.
 
 **Limitación real, documentada en el código y en la UI, no oculta**: el
-número de registros nunca va a coincidir con el oficial (1.192 para
-COAC/Caja Central/CONAFIPS, según el propio manual) porque el catálogo
-de cuentas sembrado en este core es un subconjunto operativo (~30-40
-cuentas realmente usadas por los casos de uso construidos), no el
-Catálogo Único de Cuentas oficial completo — sembrar ese catálogo
-completo (con aplicabilidad por segmento, ya disponible en
-`Catálogo-B11-y-B13.xlsx` provisto por el usuario) es trabajo aparte,
-declarado como advertencia explícita en cada respuesta del endpoint en
-vez de fingir que el reporte ya está completo. B13 (diario) solo puede
+catálogo completo ya está sembrado (ver sección "Catálogo de cuentas
+oficial completo (CUC)" más abajo — 983 cuentas de detalle), pero el
+número de registros todavía no coincide exacto con el oficial (1.192)
+porque ese catálogo no está filtrado por aplicabilidad de segmento
+(Segmento 2, el real de esta cooperativa) — sigue incluyendo cuentas de
+los 5 segmentos + Caja Central + CONAFIPS. B13 (diario) solo puede
 generarse **a la fecha de hoy**: el modelo de saldos de este core es
 mensual (`saldo_contable` por período-mes), no diario, así que no existe
 una foto exacta reconstruible de un día pasado arbitrario — limitación
@@ -1101,12 +1098,17 @@ reportes/b11?periodo=2026-08-01` y `GET /api/contabilidad/reportes/b13`
 sobre la actividad real del usuario en el ambiente de desarrollo (no
 datos sintéticos) — devolvió cabecera correcta (RUC de la empresa
 sembrada, fecha de corte = último día de agosto para B11 / hoy para
-B13), 3 cuentas con saldo (`1101`, `1401`, `2101`), y **encontró una
-advertencia real, no fabricada para la prueba**: `1101` Caja General
-tenía saldo `-900.00` (más desembolsos de préstamo que depósitos reales
-en el ambiente de prueba), y el manual no autoriza esa cuenta a
-reportarse en negativo — exactamente el tipo de inconsistencia que este
-control está diseñado para atrapar antes de un envío real a SEPS.
+B13), 983 registros de detalle (todas las cuentas de detalle del
+catálogo completo, con saldo 0 donde no hay actividad — solo 3 con saldo
+real: `1101`, `1401`, `2101`), y **encontró una advertencia real, no
+fabricada para la prueba**: `1101` Caja General tenía saldo `-900.00`
+(más desembolsos de préstamo que depósitos reales en el ambiente de
+prueba), y el manual no autoriza esa cuenta a reportarse en negativo —
+exactamente el tipo de inconsistencia que este control está diseñado
+para atrapar antes de un envío real a SEPS. Verificado también que el
+Balance de Comprobación (que sí sigue omitiendo cuentas sin movimiento,
+a propósito, es un reporte distinto) no se vio afectado por la siembra
+del catálogo completo — mismas 3 líneas, mismo cuadre exacto.
 
 Pantalla real: pestaña "B11 / B13 SEPS" en `Contabilidad.tsx` — selector
 de estructura (B11 mensual / B13 diario), selector de mes para B11,
@@ -1115,15 +1117,83 @@ nunca oculto), y tabla de detalle con los tres campos exactos del
 manual.
 
 **Pendiente real para retomar esta línea de trabajo** (documentado a
-propósito, no una lista aspiracional): sembrar el CUC completo desde
-`Catálogo-B11-y-B13.xlsx` (incluye aplicabilidad por segmento SEG1-SEG5);
-procesar el resto de manuales ya descargados en `manuales seps/`
-(Depósitos, Socios, Cartera de Créditos y Contingentes, Servicios
-Financieros, Riesgo de Liquidez L02, Indicadores de Género IG01, Cobros
-Indebidos CI01, Obligaciones Financieras, Tablas de Información) con el
-mismo método (`pdftotext -enc UTF-8`, evitando el problema de nombres de
-archivo con tildes); conseguir o construir el XSD real para el empaquetado
-XML+hash+zip final si se necesita enviar de verdad a SEPS.
+propósito, no una lista aspiracional): sembrar el CUC completo ✅ **hecho**
+(ver sección siguiente); procesar el resto de manuales ya descargados en
+`manuales seps/` (Depósitos, Socios, Cartera de Créditos y Contingentes,
+Servicios Financieros, Riesgo de Liquidez L02, Indicadores de Género
+IG01, Cobros Indebidos CI01, Obligaciones Financieras, Tablas de
+Información) con el mismo método (`pdftotext -enc UTF-8`, evitando el
+problema de nombres de archivo con tildes); conseguir o construir el XSD
+real para el empaquetado XML+hash+zip final si se necesita enviar de
+verdad a SEPS.
+
+## Catálogo de cuentas oficial completo (CUC)
+
+Sembrado desde `Catálogo-B11-y-B13.xlsx` (provisto por el usuario,
+descargado directo de SEPS) — 1.130 cuentas nuevas agregadas a las ~64
+que ya existían desde Nivel 1 (que cubrían solo elemento + grupo +
+un puñado de cuentas de detalle realmente usadas por los casos de uso
+construidos). Total actual: **1.194 cuentas**, de las cuales **983** son
+de detalle (`es_mayor=true`).
+
+**Metodología real** (no una simple carga de Excel): el archivo `.xlsx`
+no se pudo leer con herramientas estándar de Node/Python (no hay Python
+en el entorno) — se parseó directo el XML interno (`xl/sharedStrings.xml`
++ `xl/worksheets/sheet1.xml`) vía PowerShell, forzando lectura UTF-8
+explícita (`[System.IO.File]::ReadAllText(..., [System.Text.Encoding]::UTF8)`
+— sin esto, los caracteres acentuados salían corruptos). Con 1.191 filas
+(código + nombre) extraídas, se calculó en PowerShell:
+- **Jerarquía**: nivel por longitud de código (1=elemento, 2=grupo,
+  4=cuenta, 6=subcuenta — confirmado contra la sección 4 del Manual
+  Técnico), padre = código truncado al nivel anterior.
+- **Naturaleza**: heredada del padre (no del elemento) — necesario porque
+  los grupos de contrapartida (`62`/`63` bajo Cuentas Contingentes, ya
+  sembrados desde Nivel 1) invierten la naturaleza real respecto a su
+  elemento, y la herencia por padre lo respeta automáticamente.
+- **`EsMayor` (hoja)**: `true` si ningún otro código del catálogo
+  combinado (existente + nuevo) lo tiene como padre inmediato.
+
+**Cuentas ya operativas (1101, 1401, 1425, 1449, 1499, 1601, 2101, 2103,
+2503, 3603, 3604, 4101, 4402, 5101, 5601) nunca se tocaron** — la
+migración usa `ON CONFLICT (codigo) DO NOTHING`, así que si el catálogo
+oficial dice que una de ellas ahora tiene subcuentas hijas (ej. `1101`
+Caja tiene `110105` Efectivo, `110110` Caja chica en el catálogo real),
+esa cuenta operativa se queda exactamente como está (`es_mayor=true`,
+usada activamente por todo el motor contable) y sus "hijas oficiales" se
+siembran igual como hojas nuevas en `$0`, nunca reciben posteos reales
+todavía. **Inconsistencia estructural aceptada a propósito**: es la
+opción más segura — la alternativa (migrar todo el motor contable a
+postear a nivel de subcuenta de 6 dígitos) es un cambio de diseño
+mucho más grande, fuera de alcance de esta sesión.
+
+**Anomalía real encontrada y excluida**: el código `671` ("Contingentes")
+aparece en el Excel con 3 dígitos — no encaja en ningún nivel válido
+(1/2/4/6) de la jerarquía documentada. Se excluyó de la siembra en vez de
+adivinar su jerarquía real (¿es un típo de `67`? ¿un código legítimo de
+3 dígitos que el manual no documenta?) — un solo código, impacto
+mínimo, pendiente de aclarar contra la fuente si se necesita.
+
+`B11`/`B13` ya no filtran cuentas con saldo cero (a diferencia del
+Balance de Comprobación) — el manual exige el conteo fijo de registros,
+no solo las cuentas con actividad. **La brecha contra el "1.192" oficial
+sigue sin cerrar del todo** (983 vs. 1.192, ~209 de diferencia): la causa
+más probable es que el catálogo sembrado incluye cuentas de los 5
+segmentos + Caja Central + CONAFIPS sin filtrar por la columna de
+aplicabilidad real (`SEG 1`...`SEG 5`, `CAJA CENTRAL`, `CONAFIPS` — sí
+están en el Excel, no se procesaron todavía). Filtrar el catálogo a
+Segmento 2 específicamente (el segmento real de esta cooperativa) es el
+siguiente paso lógico para cerrar esa brecha, documentado como pendiente
+explícito en la propia respuesta del endpoint, no oculto.
+
+Migración: `Contabilidad_CatalogoCucCompleto` — el SQL generado
+(~1.130 `INSERT ... ON CONFLICT DO NOTHING`) se guardó como recurso
+embebido en `Corela15.Infrastructure/Persistence/Seeds/
+CatalogoCucCompleto.sql` (referenciado en el `.csproj` como
+`EmbeddedResource`) en vez de inline en el archivo de migración — 422KB
+de SQL generado no es practicable como string literal C#. La migración
+lee el recurso embebido vía `Assembly.GetManifestResourceStream` y lo
+ejecuta con `migrationBuilder.Sql(...)`. `Down()` revierte por
+`creado_por = 'seed:catalogo_seps_oficial'`, no por lista de IDs.
 
 ## Estado actual
 

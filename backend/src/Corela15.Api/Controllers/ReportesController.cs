@@ -155,11 +155,12 @@ public class ReportesController(Corela15DbContext db) : ControllerBase
                 continue;
             }
 
+            // A diferencia del Balance de Comprobación (que omite cuentas sin
+            // movimiento), B11/B13 exige TODAS las cuentas de detalle del
+            // catálogo, con saldo 0 donde no hay actividad — el control de
+            // "Número de registros" del manual valida un conteo fijo (1.192
+            // para COAC), no "cuentas con saldo".
             var saldo = saldosHastaElPeriodo.GetValueOrDefault(cuenta.Id, 0m);
-            if (saldo == 0m)
-            {
-                continue;
-            }
 
             var puedeSerNegativo = cuenta.Grupo == GrupoCuc.Patrimonio
                 || cuenta.Codigo.StartsWith("35") || cuenta.Codigo.StartsWith("36")
@@ -178,9 +179,10 @@ public class ReportesController(Corela15DbContext db) : ControllerBase
         var valorCuadre = detalle.Sum(d => d.SaldoCuentaContable);
 
         advertencias.Add(
-            $"Número de registros ({detalle.Count}) no corresponde al esperado oficial para COAC (1.192, Manual Técnico v10.0) " +
-            "— el catálogo de cuentas sembrado en este core es un subconjunto operativo del CUC completo, no lo reemplaza. " +
-            "Sembrar el catálogo oficial completo es trabajo aparte antes de poder enviar esta estructura real a SEPS.");
+            $"Número de registros ({detalle.Count}) no corresponde exactamente al esperado oficial para COAC " +
+            "(1.192, Manual Técnico v10.0). El catálogo sembrado incluye cuentas de los 5 segmentos + Caja Central + " +
+            "CONAFIPS sin filtrar por aplicabilidad de segmento (columna SEG del catálogo oficial no se usó todavía) " +
+            "— probable causa principal del desfase; filtrar el catálogo a Segmento 2 específicamente es trabajo aparte.");
 
         if (string.IsNullOrEmpty(ruc))
         {
