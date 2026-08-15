@@ -66,7 +66,8 @@ public record ActualizarTipoCuentaRequest(
 
 public record TipoPrestamoDto(
     int Id, string Codigo, string Nombre, decimal MontoMinimo, decimal MontoMaximo,
-    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo);
+    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo,
+    string? CodigoTipoCreditoSeps);
 
 public record TasaTechoBceDto(int Id, string Segmento, decimal TasaMaxima, DateOnly FechaVigenciaDesde, bool Activo);
 public record CrearTasaTechoBceRequest(string Segmento, decimal TasaMaxima, DateOnly FechaVigenciaDesde);
@@ -551,7 +552,8 @@ public class ConfiguracionController(
             .OrderBy(t => t.Nombre)
             .Select(t => new TipoPrestamoDto(
                 t.Id, t.Codigo, t.Nombre, t.MontoMinimo, t.MontoMaximo,
-                t.PlazoMinimoDias, t.PlazoMaximoDias, t.TasaAnual, t.SegmentoBce, t.Activo))
+                t.PlazoMinimoDias, t.PlazoMaximoDias, t.TasaAnual, t.SegmentoBce, t.Activo,
+                t.CodigoTipoCreditoSeps))
             .ToListAsync(ct);
 
         return Ok(resultado);

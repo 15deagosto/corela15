@@ -35,5 +35,19 @@ public class TipoPrestamo
     /// </summary>
     public string SegmentoBce { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Código real de 2 letras de la Tabla 13 "Tipo de Crédito" del Manual
+    /// Técnico de Tablas de Información de SEPS (v34.0, vigente desde
+    /// 01/03/2024): CP/EP/PY (Productivo Corporativo/Empresarial/PYMES),
+    /// CO (Consumo), EC/ES (Educativo/Educativo Social), VI/VS (Vivienda
+    /// interés público/social), IN (Inmobiliario), MI/AS/AA (Microcrédito
+    /// Minorista/Acum. Simple/Acum. Ampliada), NA (No aplica). Es el
+    /// código que exige el campo 14 de la estructura C01 "Operaciones
+    /// concedidas" — se agrega ahora, aditivo, para no tener que
+    /// retrofittearlo cuando se construya el reporte C01 real. Nulo
+    /// mientras no se haya clasificado un producto contra la tabla oficial.
+    /// </summary>
+    public string? CodigoTipoCreditoSeps { get; set; }
+
     public bool Activo { get; set; } = true;
 }

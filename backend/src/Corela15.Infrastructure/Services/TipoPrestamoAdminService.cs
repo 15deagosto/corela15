@@ -28,6 +28,7 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
             PlazoMaximoDias = request.PlazoMaximoDias,
             TasaAnual = request.TasaAnual,
             SegmentoBce = request.SegmentoBce,
+            CodigoTipoCreditoSeps = request.CodigoTipoCreditoSeps,
             Activo = true,
         };
         db.TiposPrestamo.Add(tipo);
@@ -53,6 +54,7 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
         tipo.PlazoMaximoDias = request.PlazoMaximoDias;
         tipo.TasaAnual = request.TasaAnual;
         tipo.SegmentoBce = request.SegmentoBce;
+        tipo.CodigoTipoCreditoSeps = request.CodigoTipoCreditoSeps;
         tipo.Activo = request.Activo;
 
         await db.SaveChangesAsync(cancellationToken);

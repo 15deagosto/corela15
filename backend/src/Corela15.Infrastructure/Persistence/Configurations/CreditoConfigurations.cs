@@ -16,6 +16,7 @@ public class TipoPrestamoConfiguration : IEntityTypeConfiguration<TipoPrestamo>
         b.Property(x => x.MontoMaximo).HasColumnType("numeric(18,2)");
         b.Property(x => x.TasaAnual).HasColumnType("numeric(9,4)");
         b.Property(x => x.SegmentoBce).HasMaxLength(60).IsRequired();
+        b.Property(x => x.CodigoTipoCreditoSeps).HasMaxLength(2);
         b.HasIndex(x => x.Codigo).IsUnique();
     }
 }

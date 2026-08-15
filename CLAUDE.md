@@ -1301,6 +1301,51 @@ Pantalla real: el mensaje de éxito al pagar una cuota en `Creditos.tsx`
 cobrado y los días de atraso cuando aplica, en el mismo lugar, sin
 navegar a otra pantalla.
 
+## Tipo de crédito real (Tabla 13 SEPS) en productos de crédito
+
+Segundo hallazgo accionable del mismo manual de Cartera de Créditos:
+la estructura C01 "Operaciones concedidas" exige en su campo 14 el
+código de **Tabla 13 "Tipo de Crédito"** (Manual Técnico de Tablas de
+Información v34.0, vigente desde 01/03/2024) — un catálogo cerrado de
+13 códigos reales de 2 letras (`CP`/`EP`/`PY` Productivo Corporativo/
+Empresarial/PYMES, `CO` Consumo, `EC`/`ES` Educativo/Educativo Social,
+`VI`/`VS` Vivienda interés público/social, `IN` Inmobiliario, `MI`/`AS`/
+`AA` Microcrédito Minorista/Acum. Simple/Acum. Ampliada, `NA` No
+aplica). `TipoPrestamo.SegmentoBce` (el campo que ya existía, usado
+para validar contra el techo BCE) es un **nombre descriptivo libre**
+("Productivo PYMES"), no este código oficial — dos conceptos
+relacionados pero distintos que no se debían fusionar en un solo campo
+(el primero determina el techo de tasa activa; el segundo es la
+clasificación exacta que exige el reporte C01).
+
+`TipoPrestamo.CodigoTipoCreditoSeps` (nullable, aditivo — no reemplaza
+`SegmentoBce`, migración `Credito_CodigoTipoCreditoSeps`): sembrado para
+los 3 productos ya existentes por mapeo directo desde su `SegmentoBce`
+actual (`CONS`→`CO`, `MICRO`→`AA`, `PROD`→`PY`). Expuesto en
+`ITipoPrestamoAdminService` (crear/actualizar) como parámetro opcional,
+sin romper compatibilidad con nada que ya llamaba al servicio sin este
+campo. Probado end-to-end: `GET /api/configuracion/tipos-prestamo`
+devuelve el código correcto para los 3 productos; `PUT` de actualización
+lo preserva/actualiza correctamente.
+
+Pantalla real: nuevo selector "Tipo de crédito SEPS (Tabla 13, para
+C01)" en la pestaña "Productos de crédito" de `Configuracion.tsx`
+(componente `ConfiguracionProductos.tsx`), con las 13 opciones reales
+del catálogo oficial (nunca texto libre, evita typos que romperían un
+futuro envío real). Columna "Tipo SEPS" nueva en la tabla de productos.
+
+**Alcance consciente, no una lista pendiente aspiracional**: la
+estructura C01 completa tiene 46+ campos (incluye actividad económica
+CIIU, destino geográfico provincia/cantón/parroquia, nivel de estudios,
+condonaciones, catálogos socioeconómicos) — la mayoría son catálogos de
+referencia externos (INEC/SRI) con cientos o miles de códigos, no datos
+que el flujo de originación de crédito de este core genera hoy. Se
+seedeó únicamente lo que es un catálogo cerrado y pequeño, directamente
+reutilizable (`Tabla 13`), y se documenta explícitamente que el resto de
+C01 (además de las estructuras completas `C03` garantes/codeudores y
+`C04` bienes adjudicados) queda fuera de esta ronda — no se modeló nada
+a medias ni se inventó estructura para esos campos.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,

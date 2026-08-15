@@ -28,6 +28,28 @@ const SEGMENTOS_BCE = [
   'Microcrédito Acumulación Ampliada',
 ]
 
+// Tabla 13 "Tipo de Crédito" real de SEPS (Manual Técnico de Tablas de
+// Información v34.0, vigente desde 01/03/2024) — el código que exige el
+// campo 14 de la estructura C01 "Operaciones concedidas". Opcional acá
+// (todavía no se envía C01 a SEPS), pero clasificar el producto contra
+// la tabla oficial desde ahora evita retrofittearlo después.
+const TIPOS_CREDITO_SEPS = [
+  { codigo: '', nombre: 'Sin clasificar' },
+  { codigo: 'CP', nombre: 'CP — Productivo corporativo' },
+  { codigo: 'EP', nombre: 'EP — Productivo empresarial' },
+  { codigo: 'PY', nombre: 'PY — Productivo pymes' },
+  { codigo: 'CO', nombre: 'CO — Consumo' },
+  { codigo: 'EC', nombre: 'EC — Educativo' },
+  { codigo: 'ES', nombre: 'ES — Educativo social' },
+  { codigo: 'VI', nombre: 'VI — Vivienda interés público' },
+  { codigo: 'VS', nombre: 'VS — Vivienda interés social' },
+  { codigo: 'IN', nombre: 'IN — Inmobiliario' },
+  { codigo: 'MI', nombre: 'MI — Microcrédito minorista' },
+  { codigo: 'AS', nombre: 'AS — Microcrédito acumulación simple' },
+  { codigo: 'AA', nombre: 'AA — Microcrédito acumulación ampliada' },
+  { codigo: 'NA', nombre: 'NA — No aplica' },
+]
+
 // ---------- Tipos de cuenta (productos de Ahorros) ----------
 
 interface TipoCuenta {
@@ -262,6 +284,7 @@ interface TipoPrestamo {
   tasaAnual: number
   segmentoBce: string
   activo: boolean
+  codigoTipoCreditoSeps: string | null
 }
 
 export function TabTiposPrestamo() {
@@ -276,6 +299,7 @@ export function TabTiposPrestamo() {
   const [plazoMaximoDias, setPlazoMaximoDias] = useState('360')
   const [tasaAnual, setTasaAnual] = useState('0')
   const [segmentoBce, setSegmentoBce] = useState(SEGMENTOS_BCE[4])
+  const [codigoTipoCreditoSeps, setCodigoTipoCreditoSeps] = useState('')
   const [activo, setActivo] = useState(true)
 
   const { data, isLoading } = useQuery<TipoPrestamo[]>({
@@ -293,6 +317,7 @@ export function TabTiposPrestamo() {
         plazoMaximoDias: Number(plazoMaximoDias) || 0,
         tasaAnual: Number(tasaAnual) / 100 || 0,
         segmentoBce,
+        codigoTipoCreditoSeps: codigoTipoCreditoSeps || null,
       }
       return editando
         ? (await api.put(`/api/configuracion/tipos-prestamo/${editando.id}`, { ...payload, activo })).data
@@ -314,6 +339,7 @@ export function TabTiposPrestamo() {
     setPlazoMaximoDias('360')
     setTasaAnual('0')
     setSegmentoBce(SEGMENTOS_BCE[4])
+    setCodigoTipoCreditoSeps('')
     setActivo(true)
     setMostrarForm(true)
   }
@@ -327,6 +353,7 @@ export function TabTiposPrestamo() {
     setPlazoMaximoDias(String(item.plazoMaximoDias))
     setTasaAnual(String(item.tasaAnual * 100))
     setSegmentoBce(item.segmentoBce)
+    setCodigoTipoCreditoSeps(item.codigoTipoCreditoSeps ?? '')
     setActivo(item.activo)
     setMostrarForm(true)
   }
@@ -412,6 +439,15 @@ export function TabTiposPrestamo() {
                 ))}
               </select>
             </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs text-graphite-600">Tipo de crédito SEPS (Tabla 13, para C01)</span>
+              <select value={codigoTipoCreditoSeps} onChange={(e) => setCodigoTipoCreditoSeps(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50">
+                {TIPOS_CREDITO_SEPS.map((t) => (
+                  <option key={t.codigo} value={t.codigo}>{t.nombre}</option>
+                ))}
+              </select>
+            </label>
 
             {editando && (
               <label className="flex items-center gap-2 text-sm">
@@ -450,6 +486,7 @@ export function TabTiposPrestamo() {
             <Th>Plazo</Th>
             <Th>Tasa</Th>
             <Th>Segmento BCE</Th>
+            <Th>Tipo SEPS</Th>
             <Th>Estado</Th>
             <Th></Th>
           </tr>
@@ -465,6 +502,9 @@ export function TabTiposPrestamo() {
               <Td>{item.plazoMinimoDias}–{item.plazoMaximoDias}d</Td>
               <Td>{pct(item.tasaAnual)}</Td>
               <Td className="text-xs">{item.segmentoBce}</Td>
+              <Td>
+                {item.codigoTipoCreditoSeps ? <Badge>{item.codigoTipoCreditoSeps}</Badge> : <span className="text-graphite-700">—</span>}
+              </Td>
               <Td>
                 <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
               </Td>

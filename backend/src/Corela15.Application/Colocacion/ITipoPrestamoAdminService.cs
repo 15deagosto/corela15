@@ -4,11 +4,13 @@ namespace Corela15.Application.Colocacion;
 
 public record CrearTipoPrestamoRequest(
     string Codigo, string Nombre, decimal MontoMinimo, decimal MontoMaximo,
-    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce);
+    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce,
+    string? CodigoTipoCreditoSeps = null);
 
 public record ActualizarTipoPrestamoRequest(
     string Nombre, decimal MontoMinimo, decimal MontoMaximo,
-    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo);
+    int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo,
+    string? CodigoTipoCreditoSeps = null);
 
 public record TipoPrestamoAdminResult(int Id, string Codigo);
 
