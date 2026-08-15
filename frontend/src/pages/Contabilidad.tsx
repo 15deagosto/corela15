@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calculator, Lock } from 'lucide-react'
+import { Calculator, Lock, AlertTriangle, FileBarChart } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -387,9 +387,159 @@ function SeccionCierreEjercicio() {
   )
 }
 
+interface EstadoFinancieroDetalleItem {
+  codigoCuentaContable: string
+  nombreCuentaContable: string
+  saldoCuentaContable: number
+}
+
+interface EstadoFinancieroCabecera {
+  codigoEstructura: string
+  ruc: string
+  fechaCorte: string
+  numeroTotalRegistros: number
+  valorCuadre: number
+}
+
+interface EstadoFinancieroResult {
+  cabecera: EstadoFinancieroCabecera
+  detalle: EstadoFinancieroDetalleItem[]
+  advertencias: string[]
+}
+
+function SeccionEstadosFinancieros() {
+  const [estructura, setEstructura] = useState<'B11' | 'B13'>('B11')
+  const hoy = new Date()
+  const [periodo, setPeriodo] = useState(
+    `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`,
+  )
+
+  const { data, isLoading } = useQuery<EstadoFinancieroResult>({
+    queryKey: ['contabilidad-estado-financiero', estructura, periodo],
+    queryFn: async () =>
+      (
+        await api.get(`/api/contabilidad/reportes/${estructura.toLowerCase()}`, {
+          params: estructura === 'B11' ? { periodo: `${periodo}-01` } : undefined,
+        })
+      ).data,
+  })
+
+  return (
+    <div>
+      <div className="glass-card mb-4 rounded-xl p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <FileBarChart size={16} className="text-graphite-600" />
+          <p className="text-xs text-graphite-600">
+            Estructura real del "Manual Técnico de Estructuras de Datos - Estados Financieros" v10.0 de SEPS —
+            cabecera, detalle y controles de validación tal como los define el manual oficial.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex gap-1.5">
+            {(['B11', 'B13'] as const).map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => setEstructura(e)}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  estructura === e
+                    ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                    : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                }`}
+              >
+                {e} — {e === 'B11' ? 'Mensual' : 'Diario'}
+              </button>
+            ))}
+          </div>
+          {estructura === 'B11' && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-graphite-600">Mes de corte</span>
+              <input
+                type="month"
+                value={periodo}
+                onChange={(e) => setPeriodo(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+          )}
+          {estructura === 'B13' && (
+            <p className="text-xs text-graphite-600">
+              B13 solo puede generarse a la fecha de hoy — el modelo de saldos de este core es mensual, no diario, así
+              que no existe una foto exacta de un día pasado arbitrario.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {data && (
+        <div className="glass-card mb-4 rounded-xl p-4">
+          <h3 className="mb-2 text-sm font-medium text-graphite-100">Cabecera</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+            <div>
+              <p className="text-xs text-graphite-600">Código</p>
+              <p className="font-medium text-graphite-100">{data.cabecera.codigoEstructura}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">RUC</p>
+              <p className="font-medium text-graphite-100">{data.cabecera.ruc || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">Fecha de corte</p>
+              <p className="font-medium text-graphite-100">{data.cabecera.fechaCorte}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">N.º de registros</p>
+              <p className="font-medium text-graphite-100">{data.cabecera.numeroTotalRegistros}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">Valor de cuadre</p>
+              <p className="font-medium text-graphite-100">{formatoUsd(data.cabecera.valorCuadre)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {data && data.advertencias.length > 0 && (
+        <div className="glass-card mb-4 rounded-xl border border-gold-500/30 p-4">
+          <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gold-300">
+            <AlertTriangle size={15} /> Advertencias de validación
+          </div>
+          <ul className="list-inside list-disc space-y-1 text-xs text-graphite-600">
+            {data.advertencias.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código de cuenta contable</Th>
+            <Th>Nombre de la cuenta contable</Th>
+            <Th>Saldo de la cuenta contable</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (data?.detalle.length ?? 0) === 0 && <EmptyState>Sin cuentas con saldo en esta fecha de corte</EmptyState>}
+          {data?.detalle.map((d) => (
+            <tr key={d.codigoCuentaContable} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-mono text-xs font-medium">{d.codigoCuentaContable}</Td>
+              <Td>{d.nombreCuentaContable}</Td>
+              <Td className="tabular-nums">{formatoUsd(d.saldoCuentaContable)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
 const TABS = [
   { id: 'plan-cuentas', label: 'Plan de cuentas' },
   { id: 'balance', label: 'Balance de comprobación' },
+  { id: 'estados-financieros', label: 'B11 / B13 SEPS' },
   { id: 'cierre', label: 'Cierre de período' },
   { id: 'cierre-ejercicio', label: 'Cierre de resultados' },
 ] as const
@@ -421,6 +571,7 @@ export function Contabilidad() {
 
       {tab === 'plan-cuentas' && <SeccionPlanCuentas />}
       {tab === 'balance' && <SeccionBalanceComprobacion />}
+      {tab === 'estados-financieros' && <SeccionEstadosFinancieros />}
       {tab === 'cierre' && <SeccionCierrePeriodo />}
       {tab === 'cierre-ejercicio' && <SeccionCierreEjercicio />}
     </div>

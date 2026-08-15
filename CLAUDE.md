@@ -1021,6 +1021,110 @@ Pantalla real: pestaña "Cierre de resultados" nueva en `Contabilidad.tsx`
 inmediato (ingresos/gastos/utilidad o pérdida), y tabla histórica de
 ejercicios cerrados.
 
+## Estados financieros B11/B13 (SEPS) — primer reporte con estructura oficial real
+
+Primer reporte regulatorio construido a partir de la fuente real (no
+inferido de Softbank ni inventado): el usuario descargó directamente los
+manuales técnicos oficiales desde la página de SEPS
+(`https://www.seps.gob.ec/manuales-para-la-gestion-de-envio-de-informacion-esfps/`)
+a `C:\Users\ksantana\Documents\manuales seps\` — a diferencia de los PDF
+de la web pública (binarios/escaneados, `pdftotext`/WebFetch fallaban
+siempre), estos son PDF con texto real extraíble. Fuente exacta usada acá:
+**"Manual Técnico de Estructuras de Datos - Sistema de Acopio de
+Información 'Estados Financieros'", versión 10.0, actualizado al
+15/07/2025** (sección 3: Definición de Estructuras, sección 4.1:
+Controles de Validación).
+
+**Hallazgo operativo real, no de código**: los nombres de archivo
+originales (con tildes/eñes) no se podían leer ni con el `Read` tool ni
+con PowerShell (`Copy-Item`/`Get-ChildItem` con el nombre tipeado
+fallaban con "no se encuentra la ruta") — normalización Unicode NFD vs
+NFC en el sistema de archivos. Se resolvió renombrando todos los
+PDF/XLSX de esa carpeta a nombres sin tildes vía `Get-ChildItem` +
+`Rename-Item` (que sí puede iterar el objeto `FileInfo` sin re-tipear el
+nombre acentuado). El contenido de los archivos no cambió, solo el
+nombre. `pdftotext` (de `mingw64/bin`, ya presente en el entorno) con
+`-enc UTF-8` extrae el texto correctamente.
+
+Estructura real B11 (mensual) / B13 (diario) — idéntica entre ambas,
+solo cambia la periodicidad de la fecha de corte:
+
+- **Cabecera**: Código de estructura (Carácter 3, "B11"/"B13"), Número de
+  RUC (Numérico 13), Fecha de corte (dd/mm/aaaa), Número total de
+  registros (Numérico 6), Valor de cuadre (Numérico 15.2 — suma
+  algebraica de todos los saldos reportados).
+- **Detalle** (una fila por cuenta): Código de cuenta contable (Carácter
+  6), Nombre de la cuenta contable (Carácter 200), Saldo de la cuenta
+  contable (Numérico 15.2).
+
+Controles de validación reales implementados en
+`ReportesController.GenerarEstadoFinancieroAsync` (mismo patrón directo
+contra `Corela15DbContext` que el resto de `ReportesController`, sin
+Application — es agregación de lectura, no un caso de uso con
+invariante): excluye los grupos CUC `62`/`63`/`72`/`73` (contrapartidas
+de cuentas de orden/contingentes, el manual las excluye explícitamente);
+valida que el saldo de cada cuenta sea positivo salvo la lista real de
+excepciones del manual (elemento 3 Patrimonio, grupos `35`/`36`, cuentas
+`3502`/`3504`, y la lista textual completa de subcuentas de provisión/
+depreciación que sí pueden ser negativas — `1399`, `1499` y sus
+subcuentas, `1699`, `1899`, `1999`, `3602`, `3604`, etc., transcrita tal
+cual del manual) — si una cuenta viola esto, se reporta como advertencia
+explícita, no se oculta ni se bloquea el reporte.
+
+**Limitación real, documentada en el código y en la UI, no oculta**: el
+número de registros nunca va a coincidir con el oficial (1.192 para
+COAC/Caja Central/CONAFIPS, según el propio manual) porque el catálogo
+de cuentas sembrado en este core es un subconjunto operativo (~30-40
+cuentas realmente usadas por los casos de uso construidos), no el
+Catálogo Único de Cuentas oficial completo — sembrar ese catálogo
+completo (con aplicabilidad por segmento, ya disponible en
+`Catálogo-B11-y-B13.xlsx` provisto por el usuario) es trabajo aparte,
+declarado como advertencia explícita en cada respuesta del endpoint en
+vez de fingir que el reporte ya está completo. B13 (diario) solo puede
+generarse **a la fecha de hoy**: el modelo de saldos de este core es
+mensual (`saldo_contable` por período-mes), no diario, así que no existe
+una foto exacta reconstruible de un día pasado arbitrario — limitación
+real del diseño de datos, no del reporte.
+
+**No se generó el archivo de envío real** (XML + TXT-hash de seguridad,
+comprimidos en `.zip`, con el nombre obligatorio `B11_RUC_dd-mm-aaaa.zip`
+según el manual) — el manual describe el formato de contenido pero no
+incluye el XSD con los nombres de tag XML exactos entre los archivos que
+se descargaron (si aparece en otro manual/paquete, se puede agregar
+después); construir un XML con nombres de tag inventados sería el mismo
+error que se viene evitando con reportes regulatorios desde el principio
+del proyecto. Lo que sí se construyó es correcto y verificable: los
+datos, la estructura de campos, y los controles de validación reales.
+
+Probado end-to-end contra Postgres real: `GET /api/contabilidad/
+reportes/b11?periodo=2026-08-01` y `GET /api/contabilidad/reportes/b13`
+sobre la actividad real del usuario en el ambiente de desarrollo (no
+datos sintéticos) — devolvió cabecera correcta (RUC de la empresa
+sembrada, fecha de corte = último día de agosto para B11 / hoy para
+B13), 3 cuentas con saldo (`1101`, `1401`, `2101`), y **encontró una
+advertencia real, no fabricada para la prueba**: `1101` Caja General
+tenía saldo `-900.00` (más desembolsos de préstamo que depósitos reales
+en el ambiente de prueba), y el manual no autoriza esa cuenta a
+reportarse en negativo — exactamente el tipo de inconsistencia que este
+control está diseñado para atrapar antes de un envío real a SEPS.
+
+Pantalla real: pestaña "B11 / B13 SEPS" en `Contabilidad.tsx` — selector
+de estructura (B11 mensual / B13 diario), selector de mes para B11,
+tarjeta de cabecera, panel de advertencias de validación (destacado,
+nunca oculto), y tabla de detalle con los tres campos exactos del
+manual.
+
+**Pendiente real para retomar esta línea de trabajo** (documentado a
+propósito, no una lista aspiracional): sembrar el CUC completo desde
+`Catálogo-B11-y-B13.xlsx` (incluye aplicabilidad por segmento SEG1-SEG5);
+procesar el resto de manuales ya descargados en `manuales seps/`
+(Depósitos, Socios, Cartera de Créditos y Contingentes, Servicios
+Financieros, Riesgo de Liquidez L02, Indicadores de Género IG01, Cobros
+Indebidos CI01, Obligaciones Financieras, Tablas de Información) con el
+mismo método (`pdftotext -enc UTF-8`, evitando el problema de nombres de
+archivo con tildes); conseguir o construir el XSD real para el empaquetado
+XML+hash+zip final si se necesita enviar de verdad a SEPS.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,
@@ -1380,15 +1484,24 @@ etapas de avance (`EVENTO_PLANACCION` en Softbank) quedan fuera de
 alcance — se agregan cuando se construya el caso de uso real de
 seguimiento, esto modela solo el registro base del evento.
 
-**Advertencia explícita, no un detalle menor**: `reporte_regulatorio` es
-solo un **índice** de qué reportes existen — NO se modeló la estructura de
-datos de ningún reporte individual (qué campos exige, con qué fórmula, en
-qué periodicidad). El propio `02-arquitectura-datos-40-modulos.md` ya
-advertía esto: hay que ir "formulario por formulario contra la web de la
-SEPS/BCE" antes de diseñar el `CABECERA_*`/`DETALLE_*` real de cada uno —
-verificar la estructura de tablas de Softbank NO sustituye verificar la
-norma oficial. No implementar el detalle de ningún reporte sin esa
-verificación regulatoria explícita primero.
+**Actualización real, ver sección "Estados financieros B11/B13 (SEPS)"
+más abajo**: la advertencia de arriba seguía siendo válida mientras la
+única fuente disponible eran los PDFs de la web pública de SEPS
+(binarios/escaneados, no legibles). El usuario descargó directamente los
+manuales técnicos reales desde
+`https://www.seps.gob.ec/manuales-para-la-gestion-de-envio-de-informacion-esfps/`
+— esos SÍ son texto extraíble, y con ellos ya se implementó B11/B13 con
+estructura, tipos de dato y controles de validación reales, citados con
+su fuente exacta. El resto de reportes del índice (D01, BCE01/02, S01,
+L01/L02, IG01, TIN, UAF, RFD, ROTEF, CRS) sigue pendiente de la misma
+verificación — los manuales de varios de ellos (Depósitos, Socios,
+Cartera de Créditos y Contingentes, Servicios Financieros, Riesgo de
+Liquidez L02, Indicadores de Género IG01, Cobros Indebidos CI01,
+Obligaciones Financieras, Tablas de Información) ya están descargados en
+`C:\Users\ksantana\Documents\manuales seps\` (con nombres renombrados sin
+tildes por un problema de normalización Unicode en las rutas — el
+contenido es el original), a procesar de la misma forma cuando se
+retome esta línea de trabajo.
 
 **Registro de gestión de cobranza implementado y probado end-to-end**
 (`Corela15.Application.Cobranza.IGestionCobranzaService`): `POST /api/
