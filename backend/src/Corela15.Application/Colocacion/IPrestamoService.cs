@@ -23,7 +23,15 @@ public interface IPrestamoService
     /// marca capital e interés de esa cuota como cobrados, reduce
     /// Prestamo.Saldo, y registra el asiento (débito Caja / crédito Cartera
     /// de créditos por el capital / crédito Intereses ganados por el
-    /// interés — tres líneas en un solo comprobante). Si era la última
+    /// interés). Si la cuota está vencida (hoy después de su fecha de
+    /// vencimiento), cobra además interés de mora real sobre el capital
+    /// vencido — `capital × 10% anual × días de mora / 365`, el techo real
+    /// vigente según la "Norma para tasas de interés por mora" del BCE
+    /// (escala de hasta 10%, calculada solo sobre el capital vencido, desde
+    /// la fecha de no pago hasta la fecha de cumplimiento — se usa el techo
+    /// fijo del 10% como simplificación consciente: la norma real gradúa el
+    /// porcentaje según el perfil de riesgo/comportamiento de pago del
+    /// socio, algo que este core no modela todavía). Si era la última
     /// cuota, el préstamo pasa a Cancelado. Todo en una sola transacción.
     /// </summary>
     Task<PagoCuotaRegistradoResult> PagarCuotaAsync(

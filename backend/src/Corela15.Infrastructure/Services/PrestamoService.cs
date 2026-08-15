@@ -16,6 +16,8 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
     private const string CodigoCuentaCaja = "1101";
     private const string CodigoCuentaCartera = "1401";
     private const string CodigoCuentaInteresesGanados = "5101";
+    private const string CodigoCuentaInteresMora = "510450"; // real, sembrada desde el CUC oficial completo
+    private const decimal TasaMoraMaximaAnual = 0.10m; // techo real BCE, "Norma para tasas de interés por mora"
     private const int IdTipoComprobanteDiario = 3; // 'DIA'
 
     public async Task<SolicitudPrestamoCreadaResult> SolicitarAsync(
@@ -221,12 +223,20 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
             .Where(c => c.Codigo == CodigoCuentaCartera).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
         var idCuentaIntereses = await db.CuentasContables
             .Where(c => c.Codigo == CodigoCuentaInteresesGanados).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+        var idCuentaInteresMora = await db.CuentasContables
+            .Where(c => c.Codigo == CodigoCuentaInteresMora).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
 
-        if (idCuentaCaja is null || idCuentaCartera is null || idCuentaIntereses is null)
+        if (idCuentaCaja is null || idCuentaCartera is null || idCuentaIntereses is null || idCuentaInteresMora is null)
         {
             throw new InvalidOperationException(
-                $"Faltan cuentas contables {CodigoCuentaCaja}/{CodigoCuentaCartera}/{CodigoCuentaInteresesGanados}.");
+                $"Faltan cuentas contables {CodigoCuentaCaja}/{CodigoCuentaCartera}/{CodigoCuentaInteresesGanados}/{CodigoCuentaInteresMora}.");
         }
+
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var diasMoraCuota = hoy > rubroCapital.FechaFin ? hoy.DayNumber - rubroCapital.FechaFin.DayNumber : 0;
+        var interesMora = diasMoraCuota > 0
+            ? Math.Round(rubroCapital.Proyectado * TasaMoraMaximaAnual * diasMoraCuota / 365m, 2, MidpointRounding.AwayFromZero)
+            : 0m;
 
         // Una sola transacción: rubros pagados, saldo del préstamo (y su
         // posible cancelación) y asiento contable, todo junto o nada.
@@ -257,7 +267,7 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
             throw new ConflictoConcurrenciaException($"El préstamo {prestamo.Numero}");
         }
 
-        var montoTotal = rubroCapital.Proyectado + rubroInteres.Proyectado;
+        var montoTotal = rubroCapital.Proyectado + rubroInteres.Proyectado + interesMora;
         var lineas = new List<LineaMovimientoRequest>
         {
             new(idCuentaCaja.Value, montoTotal, 0, $"Pago cuota {proximoNumeroCuota} préstamo {prestamo.Numero}"),
@@ -269,6 +279,10 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
         if (rubroInteres.Proyectado > 0)
         {
             lineas.Add(new LineaMovimientoRequest(idCuentaIntereses.Value, 0, rubroInteres.Proyectado, "Interés cobrado"));
+        }
+        if (interesMora > 0)
+        {
+            lineas.Add(new LineaMovimientoRequest(idCuentaInteresMora.Value, 0, interesMora, $"Interés de mora ({diasMoraCuota} días)"));
         }
 
         var resultadoComprobante = await comprobantes.RegistrarAsync(
@@ -285,7 +299,7 @@ public class PrestamoService(Corela15DbContext db, IComprobanteContableService c
 
         return new PagoCuotaRegistradoResult(
             proximoNumeroCuota, rubroCapital.Proyectado, rubroInteres.Proyectado, prestamo.Saldo,
-            prestamo.Estado == EstadoPrestamo.Cancelado, resultadoComprobante.Id);
+            prestamo.Estado == EstadoPrestamo.Cancelado, resultadoComprobante.Id, diasMoraCuota, interesMora);
     }
 
     private record CuotaAmortizacion(int NumeroCuota, DateOnly FechaInicio, DateOnly FechaFin, decimal Capital, decimal Interes);

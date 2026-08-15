@@ -38,6 +38,17 @@ interface Prestamo {
   debitoSpi: boolean
 }
 
+interface PagoCuotaResultado {
+  numeroCuota: number
+  montoCapital: number
+  montoInteres: number
+  saldoResultante: number
+  prestamoCancelado: boolean
+  idComprobanteContable: string
+  diasMoraCuota: number
+  montoInteresMora: number
+}
+
 interface AutoDebitoSpiDetalle {
   numeroPrestamo: string
   numeroCuenta: string | null
@@ -769,7 +780,7 @@ function SeccionCartera() {
         await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, undefined, {
           headers: { 'Idempotency-Key': crypto.randomUUID() },
         })
-      ).data,
+      ).data as PagoCuotaResultado,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creditos-prestamos'] })
     },
@@ -843,6 +854,20 @@ function SeccionCartera() {
           ))}
         </tbody>
       </TableContainer>
+      {pagarCuota.isSuccess && (
+        <p className="mt-2 rounded-lg bg-petrol-800/10 px-3 py-2 text-sm text-petrol-700">
+          Cuota {pagarCuota.data.numeroCuota} pagada: {formatoUsd(pagarCuota.data.montoCapital)} de capital +{' '}
+          {formatoUsd(pagarCuota.data.montoInteres)} de interés
+          {pagarCuota.data.montoInteresMora > 0 && (
+            <>
+              {' '}
+              + <strong>{formatoUsd(pagarCuota.data.montoInteresMora)} de interés de mora</strong> (
+              {pagarCuota.data.diasMoraCuota} días de atraso)
+            </>
+          )}
+          .
+        </p>
+      )}
       {pagarCuota.isError && (
         <p className="mt-2 text-sm text-red-700">
           {(pagarCuota.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??

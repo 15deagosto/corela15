@@ -18,4 +18,4 @@ public record PagarCuotaRequest(Guid IdPrestamo, string RegistradoPor);
 
 public record PagoCuotaRegistradoResult(
     int NumeroCuota, decimal MontoCapital, decimal MontoInteres, decimal SaldoResultante,
-    bool PrestamoCancelado, Guid IdComprobanteContable);
+    bool PrestamoCancelado, Guid IdComprobanteContable, int DiasMoraCuota, decimal MontoInteresMora);

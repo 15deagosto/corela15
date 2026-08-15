@@ -1224,6 +1224,83 @@ lee el recurso embebido vía `Assembly.GetManifestResourceStream` y lo
 ejecuta con `migrationBuilder.Sql(...)`. `Down()` revierte por
 `creado_por = 'seed:catalogo_seps_oficial'`, no por lista de IDs.
 
+## Interés de mora real (validado contra el Manual de Cartera de Créditos SEPS)
+
+Procesado el segundo manual real descargado por el usuario: **"Manual
+Técnico de Estructuras de Datos - Sistema de Acopio de Información
+'Operaciones de Cartera de Créditos y Contingentes', Segmentos 1, 2, 3,
+Caja Central FINANCOOP, CONAFIPS", versión 27.0**, extraído con el mismo
+método (`pdftotext -enc UTF-8`). Define 6 estructuras (`C01` Operaciones
+concedidas, `C02` Saldos de operaciones, `C03` Garantes/codeudores/
+garantías, `C04` Bienes adjudicados, `C05`/`C06` Tarjetas de crédito —
+`C05`/`C06` fuera de alcance, este core no maneja tarjetas de crédito).
+
+**Dos validaciones reales confirmadas contra la fuente oficial** (no
+solo referencia, verificación real):
+- **Definición de "días de morosidad"** (campo 4 de la estructura C02):
+  *"Indica el número de días que la operación se encuentra en mora...
+  Si la operación no se encuentra en mora se colocará 0 (cero)"* —
+  exactamente el cálculo que ya implementa `MoraCarteraService` (hoy
+  menos fecha de vencimiento de la cuota impaga más antigua, 0 si al
+  día). Sin cambios de código, solo confirmación de que el diseño ya era
+  correcto.
+- **Códigos de calificación de riesgo** (Tabla 21 del Manual Técnico de
+  Tablas de Información v34.0, el manual maestro de catálogos que
+  referencian todos los demás): `A1, A2, A3, B1, B2, C1, C2, D, E` —
+  exactamente las 9 categorías ya sembradas en
+  `colocacion.categoria_riesgo_cartera` desde el motor de provisiones.
+  Los rangos de días por categoría **siguen sin poder verificarse**
+  contra estos manuales (no están acá — son de una norma distinta, la
+  "Norma para la Gestión del Riesgo de Crédito" de la JPRF, que no se
+  descargó) — la advertencia ya documentada sobre esos rangos sigue
+  vigente, no se resolvió con este manual.
+
+**Gap real encontrado y cerrado**: la estructura C02 separa "Interés
+ordinario" (campo 34) de **"Interés de mora"** (campo 35, *"Valor del
+interés de mora que se ha acumulado desde que la operación está
+vencida"*) — dos conceptos financieros distintos que este core nunca
+distinguía. `PrestamoService.PagarCuotaAsync` no cobraba ningún interés
+adicional por atraso, sin importar cuántos días llevara vencida la
+cuota.
+
+Tasa real usada (no inventada): la "Norma para Tasas de Interés por
+Mora" del Banco Central del Ecuador — *"escala de porcentajes... de
+hasta el 10%"*, calculada *"únicamente por el monto vencido del
+capital"*, *"desde la fecha del no pago hasta el día de cumplimiento"*
+(verificado por búsqueda web contra la publicación oficial del BCE,
+`bce.fin.ec`). **Simplificación consciente y documentada**: la norma
+real gradúa el porcentaje según el perfil de riesgo/comportamiento de
+pago del socio (clientes con buen historial pagan menos que el 10%
+máximo) — este core usa el techo fijo del 10% para todos los casos,
+porque no existe todavía un motor de scoring de comportamiento de pago
+que gradúe la tasa real. Fórmula: `interés de mora = capital vencido de
+la cuota × 10% anual × días de mora de esa cuota específica / 365`.
+
+Cuenta real usada: `510450` "De mora" — **ya estaba sembrada** desde el
+Catálogo Único de Cuentas oficial completo (bajo `5104` → `51 Intereses
+y descuentos ganados`), sin necesidad de crear ninguna cuenta nueva,
+confirmando el valor de haber sembrado el catálogo completo en la ronda
+anterior. El comprobante de pago de cuota pasa de 3 a 4 líneas cuando
+hay mora: débito Caja (capital + interés + interés de mora) / crédito
+Cartera (capital) / crédito Intereses ganados (interés ordinario) /
+crédito `510450` (interés de mora, solo si es mayor a cero).
+
+Probado end-to-end con un préstamo de prueba aislado (Consumo $300, 3
+cuotas, nunca tocó los datos reales del usuario): cuota 1 con
+vencimiento retrasado 20 días → `montoInteresMora: 0.54` exacto
+(`98.58 × 0.10 × 20 / 365 = 0.5400...`), verificado en el balance de
+comprobación que `510450` quedó acreditada en `$0.54` y el comprobante
+cuadró ($203.42 = $203.42 incluyendo el resto del ciclo de prueba).
+Datos de prueba limpiados quirúrgicamente después — igual que en rondas
+anteriores, se restauró `saldo_contable` exacto a su valor previo en vez
+de un `DELETE` sin filtrar, verificado byte a byte contra el balance de
+comprobación de antes de la prueba.
+
+Pantalla real: el mensaje de éxito al pagar una cuota en `Creditos.tsx`
+(pestaña "Cartera de préstamos") ahora muestra el interés de mora
+cobrado y los días de atraso cuando aplica, en el mismo lugar, sin
+navegar a otra pantalla.
+
 ## Estado actual
 
 **Nivel 0** — esquemas `sujeto` (`persona`, `persona_natural`,
