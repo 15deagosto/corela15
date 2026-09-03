@@ -16,6 +16,10 @@ public class AutoDebitoSpiService(Corela15DbContext db, IComprobanteContableServ
     private const int IdAgenciaDefault = 1;
     private const int IdTipoComprobanteDiario = 3; // 'DIA' — el asiento tiene 3 líneas, no cabe en el motor TipoTransaccion (1 débito/1 crédito), mismo criterio que PagarCuotaAsync.
 
+    // Códigos reales de COLOCACION.ESTADO_PRESTAMORUBRO — ver PrestamoService.cs.
+    private const string CodigoEstadoPendiente = "P";
+    private const string CodigoEstadoCancelado = "C";
+
     public async Task ConfigurarAsync(
         Guid idPrestamo, bool activar, string registradoPor, CancellationToken cancellationToken = default)
     {
@@ -48,14 +52,14 @@ public class AutoDebitoSpiService(Corela15DbContext db, IComprobanteContableServ
         foreach (var prestamo in prestamosElegibles)
         {
             var rubrosCuota = await db.PrestamosRubros
-                .Include(r => r.Rubro)
-                .Where(r => r.IdPrestamo == prestamo.Id && r.Estado == "Pendiente")
+                .Include(r => r.Rubro).ThenInclude(r => r.TipoRubro)
+                .Where(r => r.IdPrestamo == prestamo.Id && r.Estado == CodigoEstadoPendiente)
                 .OrderBy(r => r.NumeroCuota)
                 .ToListAsync(cancellationToken);
             var proximoNumeroCuota = rubrosCuota.Select(r => r.NumeroCuota).DefaultIfEmpty(0).Min();
             var rubrosDeLaCuota = rubrosCuota.Where(r => r.NumeroCuota == proximoNumeroCuota).ToList();
-            var rubroCapital = rubrosDeLaCuota.FirstOrDefault(r => r.Rubro.Codigo == "CAP");
-            var rubroInteres = rubrosDeLaCuota.FirstOrDefault(r => r.Rubro.Codigo == "INT");
+            var rubroCapital = rubrosDeLaCuota.FirstOrDefault(r => r.Rubro.TipoRubro.EsCapital);
+            var rubroInteres = rubrosDeLaCuota.FirstOrDefault(r => r.Rubro.TipoRubro.EsTasa);
 
             if (rubroCapital is null || rubroInteres is null)
             {
@@ -82,11 +86,21 @@ public class AutoDebitoSpiService(Corela15DbContext db, IComprobanteContableServ
             // verdad — el bug real del incidente original: el proceso
             // legado solo miraba Prestamo.DebitoSpi (ya filtrado arriba) y
             // nunca cruzaba con las otras dos.
+            //
+            // Prioridad real cuando el socio tiene más de una cuenta
+            // elegible (antes era el orden arbitrario que devolviera la
+            // base, sin criterio — pendiente documentado): primero la
+            // cuenta donde el socio es titular principal (`Principal`),
+            // y entre varias igual de principales, la más antigua
+            // (`FechaApertura` ascendente) — la cuenta con más historial
+            // real de uso del socio, no una elegida al azar.
             var cuentaElegible = await db.CuentasClientes
                 .Include(cc => cc.Cuenta).ThenInclude(c => c.TipoCuenta)
                 .Where(cc => cc.IdCliente == idCliente
                     && cc.Cuenta.Estado == EstadoCuenta.Activa
                     && cc.Cuenta.TipoCuenta.PermiteDebitoPrestamo)
+                .OrderByDescending(cc => cc.Principal)
+                .ThenBy(cc => cc.Cuenta.FechaApertura)
                 .Select(cc => cc.Cuenta)
                 .FirstOrDefaultAsync(cancellationToken);
             if (cuentaElegible is null)
@@ -125,13 +139,15 @@ public class AutoDebitoSpiService(Corela15DbContext db, IComprobanteContableServ
             itemDisponible.ModificadoPor = registradoPor;
 
             rubroCapital.Cobrado = rubroCapital.Proyectado;
-            rubroCapital.Estado = "Pagado";
+            rubroCapital.Estado = CodigoEstadoCancelado;
+            rubroCapital.FechaCobro = hoy;
             rubroInteres.Cobrado = rubroInteres.Proyectado;
-            rubroInteres.Estado = "Pagado";
+            rubroInteres.Estado = CodigoEstadoCancelado;
+            rubroInteres.FechaCobro = hoy;
 
             prestamo.Saldo -= rubroCapital.Proyectado;
             var quedanPendientes = await db.PrestamosRubros
-                .AnyAsync(r => r.IdPrestamo == prestamo.Id && r.Estado == "Pendiente" && r.NumeroCuota != proximoNumeroCuota,
+                .AnyAsync(r => r.IdPrestamo == prestamo.Id && r.Estado == CodigoEstadoPendiente && r.NumeroCuota != proximoNumeroCuota,
                     cancellationToken);
             if (!quedanPendientes)
             {

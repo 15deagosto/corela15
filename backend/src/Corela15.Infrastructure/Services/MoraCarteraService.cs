@@ -21,8 +21,8 @@ public class MoraCarteraService(Corela15DbContext db) : IMoraCarteraService
         foreach (var prestamo in prestamosVigentes)
         {
             var cuotaVencidaMasAntigua = await db.PrestamosRubros
-                .Where(r => r.IdPrestamo == prestamo.Id && r.Rubro.Codigo == "CAP"
-                    && r.Estado == "Pendiente" && r.FechaFin < hoy)
+                .Where(r => r.IdPrestamo == prestamo.Id && r.Rubro.TipoRubro.EsCapital
+                    && r.Estado == "P" && r.FechaFin < hoy)
                 .OrderBy(r => r.FechaFin)
                 .Select(r => (DateOnly?)r.FechaFin)
                 .FirstOrDefaultAsync(cancellationToken);

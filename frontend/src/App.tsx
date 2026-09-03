@@ -2,20 +2,14 @@ import { Routes, Route } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
 import { Login } from './pages/Login'
-import { Home } from './pages/Home'
-import { Socios } from './pages/Socios'
-import { UsuariosRoles } from './pages/UsuariosRoles'
-import { Contabilidad } from './pages/Contabilidad'
-import { Ahorros } from './pages/Ahorros'
-import { Creditos } from './pages/Creditos'
-import { CobranzasCumplimiento } from './pages/CobranzasCumplimiento'
-import { Cajas } from './pages/Cajas'
-import { Nomina } from './pages/Nomina'
-import { Tesoreria } from './pages/Tesoreria'
-import { Riesgo } from './pages/Riesgo'
-import { Configuracion } from './pages/Configuracion'
-import { ModuloPagina } from './pages/ModuloPagina'
+import { modulos } from './modules'
 
+// Los módulos ya no se renderizan acá — `Layout` monta cada uno vía
+// `TabsWorkspace` (ver lib/TabsContext.tsx) para mantenerlos abiertos como
+// pestañas internas sin perder su estado al cambiar entre ellos. Estas
+// rutas solo existen para que la URL real (deep-link, recarga, atrás/
+// adelante del navegador) siga funcionando — el `element` no se usa
+// porque `Layout` no tiene `<Outlet/>`.
 function App() {
   return (
     <Routes>
@@ -27,19 +21,11 @@ function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<Home />} />
-        <Route path="/socios" element={<Socios />} />
-        <Route path="/usuarios-roles" element={<UsuariosRoles />} />
-        <Route path="/contabilidad" element={<Contabilidad />} />
-        <Route path="/ahorros" element={<Ahorros />} />
-        <Route path="/creditos" element={<Creditos />} />
-        <Route path="/cobranzas-cumplimiento" element={<CobranzasCumplimiento />} />
-        <Route path="/cajas" element={<Cajas />} />
-        <Route path="/nomina" element={<Nomina />} />
-        <Route path="/tesoreria" element={<Tesoreria />} />
-        <Route path="/riesgo" element={<Riesgo />} />
-        <Route path="/configuracion" element={<Configuracion />} />
-        <Route path="/:slug" element={<ModuloPagina />} />
+        <Route path="/" element={null} />
+        {modulos.map((m) => (
+          <Route key={m.slug} path={m.path} element={null} />
+        ))}
+        <Route path="*" element={null} />
       </Route>
     </Routes>
   )

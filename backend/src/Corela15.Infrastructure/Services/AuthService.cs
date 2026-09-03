@@ -30,21 +30,65 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             throw new UsuarioNoHabilitadoException();
         }
 
-        var roles = await db.UsuarioRoles
+        if (!await DentroDeHorarioAsync(usuario.Id, cancellationToken))
+        {
+            await RegistrarIntentoAsync(usuario.Id, exitoso: false, direccionIp, "Fuera del horario de acceso autorizado", cancellationToken);
+            throw new FueraDeHorarioException();
+        }
+
+        var ahora = DateTimeOffset.UtcNow;
+
+        // Roles efectivos = permanentes (usuario_rol) ∪ temporales vigentes
+        // (usuario_rol_temporal, no vencidos) — verificado contra SEGURIDAD.
+        // USUARIO_ROL_TEMPORAL (cubre licencia/vacaciones/reemplazo real).
+        var idsRolPermanentes = await db.UsuarioRoles
             .Where(ur => ur.IdUsuario == usuario.Id && ur.Activo)
-            .Select(ur => ur.Rol.Nombre)
+            .Select(ur => ur.IdRol)
+            .ToListAsync(cancellationToken);
+        var idsRolTemporales = await db.UsuariosRolTemporal
+            .Where(rt => rt.IdUsuario == usuario.Id && rt.Activo && rt.FechaCaducidad > ahora)
+            .Select(rt => rt.IdRol)
+            .ToListAsync(cancellationToken);
+        var idsRolEfectivos = idsRolPermanentes.Union(idsRolTemporales).ToList();
+
+        var roles = await db.Roles
+            .Where(r => idsRolEfectivos.Contains(r.Id))
+            .Select(r => r.Nombre)
             .ToListAsync(cancellationToken);
 
         var menus = await db.RolesMenu
-            .Where(rm => rm.Activo && rm.Menu.Activo
-                && db.UsuarioRoles.Any(ur => ur.IdUsuario == usuario.Id && ur.Activo && ur.IdRol == rm.IdRol))
+            .Where(rm => rm.Activo && rm.Menu.Activo && idsRolEfectivos.Contains(rm.IdRol))
             .Select(rm => rm.Menu.Codigo)
             .Distinct()
             .ToListAsync(cancellationToken);
 
+        // Mesa de Servicio es transversal por diseño — control de
+        // incidencias exigido por la SEPS, todo usuario autenticado lo ve
+        // sin importar su rol, nunca depende de rol_menu (a propósito, para
+        // no tener que acordarse de otorgárselo a cada rol nuevo/existente).
+        if (!menus.Contains("mesa-servicio")) menus.Add("mesa-servicio");
+
+        // Segundo nivel de permiso, más fino que el menú — dentro del
+        // módulo "Estructuras y Procesos Financieros", qué estructuras
+        // puntuales (OF01, y las que se sumen después) puede generar este
+        // usuario. Mismo patrón exacto que menus, tabla espejo.
+        var estructuras = await db.RolesTipoEstructura
+            .Where(re => re.Activo && re.TipoEstructura.Activo && idsRolEfectivos.Contains(re.IdRol))
+            .Select(re => re.CodigoTipoEstructura)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        // Agencia efectiva = reasignación temporal vigente (SEGURIDAD.
+        // USUARIO_AGENCIA_TEMPORAL — cubre a un cajero cubriendo otra
+        // sucursal) si existe, si no la agencia real del usuario.
+        var idAgenciaEfectiva = await db.UsuariosAgenciaTemporal
+            .Where(at => at.IdUsuario == usuario.Id && at.Activo && at.FechaCaducidad > ahora)
+            .Select(at => (int?)at.IdAgenciaActual)
+            .FirstOrDefaultAsync(cancellationToken) ?? usuario.IdAgencia;
+
         await RegistrarIntentoAsync(usuario.Id, exitoso: true, direccionIp, null, cancellationToken);
 
-        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus);
+        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus, estructuras, idAgenciaEfectiva);
 
         db.SesionesUsuario.Add(new SesionUsuario
         {
@@ -57,7 +101,47 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        return new LoginResult(token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus);
+        return new LoginResult(token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, idAgenciaEfectiva);
+    }
+
+    // Ventana real de acceso por día de la semana (ver HorarioAccesoUsuario.cs)
+    // — opt-in: si el usuario no tiene ninguna fila configurada, no aplica
+    // ninguna restricción (mismo comportamiento real observado en Softbank,
+    // donde solo una parte de los 255 usuarios tenía horario configurado).
+    // Si tiene filas de ingreso, la hora actual debe caer dentro de alguna
+    // Y no debe caer dentro de ninguna ventana de receso activa ese día.
+    private async Task<bool> DentroDeHorarioAsync(Guid idUsuario, CancellationToken cancellationToken)
+    {
+        var horarios = await db.HorariosAccesoUsuario
+            .Where(h => h.IdUsuario == idUsuario && h.Activo)
+            .ToListAsync(cancellationToken);
+        if (horarios.Count == 0)
+        {
+            return true;
+        }
+
+        // Ecuador: UTC-5 fijo, sin horario de verano — se convierte acá
+        // porque las columnas HoraInicio/HoraFin se capturan en hora local
+        // real del cajero/oficinista, no en UTC.
+        var ahoraEcuador = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-5));
+        var diaSemana = ((int)ahoraEcuador.DayOfWeek + 6) % 7 + 1; // Lunes=1 ... Domingo=7
+        var horaActual = TimeOnly.FromDateTime(ahoraEcuador.DateTime);
+
+        var ventanasIngreso = horarios.Where(h => !h.EsReceso && h.DiaSemana == diaSemana).ToList();
+        if (ventanasIngreso.Count == 0)
+        {
+            return false;
+        }
+        if (!ventanasIngreso.Any(h => horaActual >= h.HoraInicio && horaActual <= h.HoraFin))
+        {
+            return false;
+        }
+
+        var enReceso = horarios
+            .Where(h => h.EsReceso && h.DiaSemana == diaSemana)
+            .Any(h => horaActual >= h.HoraInicio && horaActual <= h.HoraFin);
+
+        return !enReceso;
     }
 
     public async Task LogoutAsync(Guid idSesion, string registradoPor, CancellationToken cancellationToken = default)
@@ -105,6 +189,229 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task CambiarClaveAsync(
+        Guid idUsuario, Guid idSesionActual, CambiarClaveRequest request, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == idUsuario, cancellationToken);
+        if (usuario is null)
+        {
+            throw new UsuarioNoExisteException(idUsuario);
+        }
+
+        if (!BCrypt.Net.BCrypt.Verify(request.ContrasenaActual, usuario.HashContrasena))
+        {
+            throw new ContrasenaActualIncorrectaException();
+        }
+
+        if (request.ContrasenaNueva.Length < 8)
+        {
+            throw new ContrasenaNuevaInvalidaException("La contraseña nueva debe tener al menos 8 caracteres");
+        }
+        if (BCrypt.Net.BCrypt.Verify(request.ContrasenaNueva, usuario.HashContrasena))
+        {
+            throw new ContrasenaNuevaInvalidaException("La contraseña nueva debe ser distinta de la actual");
+        }
+
+        usuario.HashContrasena = BCrypt.Net.BCrypt.HashPassword(request.ContrasenaNueva);
+        usuario.ModificadoEn = DateTimeOffset.UtcNow;
+        usuario.ModificadoPor = usuario.NombreUsuario;
+
+        db.AccionesUsuario.Add(new AccionUsuario
+        {
+            Id = Guid.NewGuid(),
+            CodigoAccion = "CambioClavePersonal",
+            UsuarioRegistro = usuario.NombreUsuario,
+            Fecha = DateTimeOffset.UtcNow,
+            Descripcion = $"El usuario '{usuario.NombreUsuario}' cambió su propia contraseña.",
+        });
+
+        // Otras sesiones (no esta) quedan revocadas — si alguien más tiene
+        // un token vigente con la clave anterior, deja de servir.
+        var ahora = DateTimeOffset.UtcNow;
+        var otrasSesionesActivas = await db.SesionesUsuario
+            .Where(s => s.IdUsuario == idUsuario && s.Id != idSesionActual && !s.Revocada && s.ExpiraEn > ahora)
+            .ToListAsync(cancellationToken);
+        foreach (var sesion in otrasSesionesActivas)
+        {
+            sesion.Revocada = true;
+            sesion.RevocadaEn = ahora;
+            sesion.RevocadaPor = usuario.NombreUsuario;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ConfigurarBloqueoAsync(
+        Guid idUsuario, bool bloquear, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == idUsuario, cancellationToken);
+        if (usuario is null)
+        {
+            throw new UsuarioNoExisteException(idUsuario);
+        }
+
+        usuario.TieneBloqueo = bloquear;
+        usuario.ModificadoEn = DateTimeOffset.UtcNow;
+        usuario.ModificadoPor = registradoPor;
+
+        db.AccionesUsuario.Add(new AccionUsuario
+        {
+            Id = Guid.NewGuid(),
+            CodigoAccion = "BloqueoAcceso",
+            UsuarioRegistro = registradoPor,
+            Fecha = DateTimeOffset.UtcNow,
+            Descripcion = bloquear
+                ? $"'{registradoPor}' bloqueó el acceso del usuario '{usuario.NombreUsuario}'."
+                : $"'{registradoPor}' desbloqueó el acceso del usuario '{usuario.NombreUsuario}'.",
+        });
+
+        if (bloquear)
+        {
+            var ahora = DateTimeOffset.UtcNow;
+            var sesionesActivas = await db.SesionesUsuario
+                .Where(s => s.IdUsuario == idUsuario && !s.Revocada && s.ExpiraEn > ahora)
+                .ToListAsync(cancellationToken);
+            foreach (var sesion in sesionesActivas)
+            {
+                sesion.Revocada = true;
+                sesion.RevocadaEn = ahora;
+                sesion.RevocadaPor = registradoPor;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<Guid> CrearUsuarioAsync(
+        CrearUsuarioRequest request, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        if (await db.Usuarios.AnyAsync(u => u.NombreUsuario == request.NombreUsuario, cancellationToken))
+        {
+            throw new NombreUsuarioDuplicadoException(request.NombreUsuario);
+        }
+
+        if (!await db.Agencias.AnyAsync(a => a.Id == request.IdAgencia && a.Activa, cancellationToken))
+        {
+            throw new AgenciaInvalidaException(request.IdAgencia);
+        }
+
+        if (request.ContrasenaInicial.Length < 8)
+        {
+            throw new ContrasenaNuevaInvalidaException("La contraseña inicial debe tener al menos 8 caracteres");
+        }
+
+        var usuario = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            NombreUsuario = request.NombreUsuario,
+            HashContrasena = BCrypt.Net.BCrypt.HashPassword(request.ContrasenaInicial),
+            IdAgencia = request.IdAgencia,
+            IdPersona = request.IdPersona,
+            PuedeIngresarSistema = true,
+            Activo = true,
+            UsaDispositivoMovil = request.UsaDispositivoMovil,
+            PermiteRiesgoOperativo = request.PermiteRiesgoOperativo,
+            PermiteConsultaEmpleados = request.PermiteConsultaEmpleados,
+            ValidaIp = request.ValidaIp,
+            CambiaClave = request.CambiaClave,
+            DiasCambioClave = request.DiasCambioClave,
+            CreadoEn = DateTimeOffset.UtcNow,
+            CreadoPor = registradoPor,
+        };
+        db.Usuarios.Add(usuario);
+
+        db.AccionesUsuario.Add(new AccionUsuario
+        {
+            Id = Guid.NewGuid(),
+            CodigoAccion = "CreacionSujeto",
+            UsuarioRegistro = registradoPor,
+            Fecha = DateTimeOffset.UtcNow,
+            Descripcion = $"'{registradoPor}' creó el usuario '{usuario.NombreUsuario}'.",
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        return usuario.Id;
+    }
+
+    public async Task ActualizarUsuarioAsync(
+        Guid idUsuario, ActualizarUsuarioRequest request, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == idUsuario, cancellationToken);
+        if (usuario is null)
+        {
+            throw new UsuarioNoExisteException(idUsuario);
+        }
+
+        if (!await db.Agencias.AnyAsync(a => a.Id == request.IdAgencia && a.Activa, cancellationToken))
+        {
+            throw new AgenciaInvalidaException(request.IdAgencia);
+        }
+
+        usuario.IdAgencia = request.IdAgencia;
+        usuario.IdPersona = request.IdPersona;
+        usuario.PuedeIngresarSistema = request.PuedeIngresarSistema;
+        usuario.UsaDispositivoMovil = request.UsaDispositivoMovil;
+        usuario.PermiteRiesgoOperativo = request.PermiteRiesgoOperativo;
+        usuario.PermiteConsultaEmpleados = request.PermiteConsultaEmpleados;
+        usuario.ValidaIp = request.ValidaIp;
+        usuario.CambiaClave = request.CambiaClave;
+        usuario.DiasCambioClave = request.DiasCambioClave;
+        usuario.ModificadoEn = DateTimeOffset.UtcNow;
+        usuario.ModificadoPor = registradoPor;
+
+        db.AccionesUsuario.Add(new AccionUsuario
+        {
+            Id = Guid.NewGuid(),
+            CodigoAccion = "CambioSujeto",
+            UsuarioRegistro = registradoPor,
+            Fecha = DateTimeOffset.UtcNow,
+            Descripcion = $"'{registradoPor}' editó el usuario '{usuario.NombreUsuario}'.",
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ResetearClaveAsync(
+        Guid idUsuario, string claveNueva, string registradoPor, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == idUsuario, cancellationToken);
+        if (usuario is null)
+        {
+            throw new UsuarioNoExisteException(idUsuario);
+        }
+
+        if (claveNueva.Length < 8)
+        {
+            throw new ContrasenaNuevaInvalidaException("La contraseña nueva debe tener al menos 8 caracteres");
+        }
+
+        usuario.HashContrasena = BCrypt.Net.BCrypt.HashPassword(claveNueva);
+        usuario.ModificadoEn = DateTimeOffset.UtcNow;
+        usuario.ModificadoPor = registradoPor;
+
+        db.AccionesUsuario.Add(new AccionUsuario
+        {
+            Id = Guid.NewGuid(),
+            CodigoAccion = "CambioClaveEnLote",
+            UsuarioRegistro = registradoPor,
+            Fecha = DateTimeOffset.UtcNow,
+            Descripcion = $"'{registradoPor}' reseteó la contraseña del usuario '{usuario.NombreUsuario}'.",
+        });
+
+        var ahora = DateTimeOffset.UtcNow;
+        var sesionesActivas = await db.SesionesUsuario
+            .Where(s => s.IdUsuario == idUsuario && !s.Revocada && s.ExpiraEn > ahora)
+            .ToListAsync(cancellationToken);
+        foreach (var sesion in sesionesActivas)
+        {
+            sesion.Revocada = true;
+            sesion.RevocadaEn = ahora;
+            sesion.RevocadaPor = registradoPor;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task RegistrarIntentoAsync(
         Guid? idUsuario, bool exitoso, string? direccionIp, string? detalle, CancellationToken cancellationToken)
     {
@@ -121,7 +428,8 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private (string Token, DateTimeOffset ExpiraEn, Guid Jti) GenerarToken(Usuario usuario, List<string> roles, List<string> menus)
+    private (string Token, DateTimeOffset ExpiraEn, Guid Jti) GenerarToken(
+        Usuario usuario, List<string> roles, List<string> menus, List<string> estructuras, int idAgenciaEfectiva)
     {
         var secret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Falta Jwt:Secret (revisar .env.core)");
@@ -140,6 +448,8 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         };
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
         claims.AddRange(menus.Select(m2 => new Claim("menu", m2)));
+        claims.AddRange(estructuras.Select(e => new Claim("estructura", e)));
+        claims.Add(new Claim("agencia", idAgenciaEfectiva.ToString()));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

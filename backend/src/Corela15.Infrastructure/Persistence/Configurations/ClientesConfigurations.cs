@@ -17,6 +17,7 @@ public class ClienteConfiguration : IEntityTypeConfiguration<Cliente>
 
         b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.IdPersona).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.UsuarioOficial).WithMany().HasForeignKey(x => x.IdUsuarioOficial).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.Numero).IsUnique();
 
@@ -26,5 +27,45 @@ public class ClienteConfiguration : IEntityTypeConfiguration<Cliente>
             .HasFilter("estado = 'Activo'")
             .IsUnique()
             .HasDatabaseName("ix_cliente_persona_unico_si_activo");
+
+        b.Property(x => x.CodigoCausaVinculacion).HasMaxLength(3);
+        b.HasOne(x => x.CausaVinculacion).WithMany().HasForeignKey(x => x.CodigoCausaVinculacion).OnDelete(DeleteBehavior.Restrict);
+        b.Property(x => x.CodigoCalificacionInterna).HasMaxLength(2);
+        b.HasOne(x => x.CalificacionInterna).WithMany().HasForeignKey(x => x.CodigoCalificacionInterna).OnDelete(DeleteBehavior.Restrict);
+        b.Property(x => x.CodigoSectorEconomico).HasMaxLength(2);
+        b.HasOne(x => x.SectorEconomico).WithMany().HasForeignKey(x => x.CodigoSectorEconomico).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class CausaVinculacionConfiguration : IEntityTypeConfiguration<CausaVinculacion>
+{
+    public void Configure(EntityTypeBuilder<CausaVinculacion> b)
+    {
+        b.ToTable("causa_vinculacion", "clientes");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(3);
+        b.Property(x => x.Descripcion).HasMaxLength(600).IsRequired();
+    }
+}
+
+public class CalificacionInternaConfiguration : IEntityTypeConfiguration<CalificacionInterna>
+{
+    public void Configure(EntityTypeBuilder<CalificacionInterna> b)
+    {
+        b.ToTable("calificacion_interna", "clientes");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(2);
+        b.Property(x => x.Nombre).HasMaxLength(50).IsRequired();
+    }
+}
+
+public class SectorEconomicoConfiguration : IEntityTypeConfiguration<SectorEconomico>
+{
+    public void Configure(EntityTypeBuilder<SectorEconomico> b)
+    {
+        b.ToTable("sector_economico", "clientes");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(2);
+        b.Property(x => x.Nombre).HasMaxLength(50).IsRequired();
     }
 }

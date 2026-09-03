@@ -258,8 +258,17 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
             throw new ConflictoConcurrenciaException($"El depósito {origen.Codigo}");
         }
 
+        // El origen deja de correr interés en el momento de la renovación —
+        // el interés devengado hasta hoy se liquida en efectivo, igual que
+        // en CancelarAsync (misma fórmula, mismo techo al plazo contratado).
+        // Antes de este fix, ese interés se perdía: el capital se
+        // re-papelaba bajo el destino nuevo sin pagar nada del período que
+        // sí corrió sobre el origen.
+        var diasTranscurridos = Math.Clamp(fechaRenovacion.DayNumber - origen.FechaCreacion.DayNumber, 0, origen.PlazoDias);
+        var interesDevengado = Math.Round(origen.Monto * origen.Tasa * diasTranscurridos / 365m, 2, MidpointRounding.AwayFromZero);
+
         Guid? idComprobante = null;
-        if (request.IncrementoCapital > 0)
+        if (request.IncrementoCapital > 0 || interesDevengado > 0)
         {
             var tipoTransaccion = await db.TiposTransaccion
                 .FirstOrDefaultAsync(t => t.Codigo == CodigoTipoTransaccionApertura, cancellationToken);
@@ -268,17 +277,35 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
                 throw new TipoTransaccionInvalidoException(CodigoTipoTransaccionApertura);
             }
 
+            var lineas = new List<LineaMovimientoRequest>();
+            if (request.IncrementoCapital > 0)
+            {
+                lineas.Add(new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableDebito, request.IncrementoCapital, 0, "Incremento de capital en renovación"));
+                lineas.Add(new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableCredito, 0, request.IncrementoCapital, "Incremento de capital en renovación"));
+            }
+            if (interesDevengado > 0)
+            {
+                var idCuentaIntereses = await db.CuentasContables
+                    .Where(c => c.Codigo == CodigoCuentaIntereses).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+                var idCuentaCaja = await db.CuentasContables
+                    .Where(c => c.Codigo == CodigoCuentaCaja).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+                if (idCuentaIntereses is null || idCuentaCaja is null)
+                {
+                    throw new InvalidOperationException($"Faltan las cuentas contables {CodigoCuentaIntereses}/{CodigoCuentaCaja}.");
+                }
+
+                lineas.Add(new LineaMovimientoRequest(idCuentaIntereses.Value, interesDevengado, 0, $"Interés devengado DPF {origen.Codigo} ({diasTranscurridos} días) al renovar"));
+                lineas.Add(new LineaMovimientoRequest(idCuentaCaja.Value, 0, interesDevengado, $"Pago de interés DPF {origen.Codigo} al renovar"));
+            }
+
             var resultadoComprobante = await comprobantes.RegistrarAsync(
                 new RegistrarComprobanteContableRequest(
                     fechaRenovacion,
                     tipoTransaccion.IdTipoComprobante,
                     origen.IdAgencia,
-                    $"Incremento de capital — renovación DPF {origen.Codigo} → {codigoDestino}",
+                    $"Renovación DPF {origen.Codigo} → {codigoDestino}",
                     request.RegistradoPor,
-                    [
-                        new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableDebito, request.IncrementoCapital, 0, "Incremento de capital en renovación"),
-                        new LineaMovimientoRequest(tipoTransaccion.IdCuentaContableCredito, 0, request.IncrementoCapital, "Incremento de capital en renovación"),
-                    ]),
+                    lineas),
                 cancellationToken);
 
             idComprobante = resultadoComprobante.Id;
@@ -286,6 +313,7 @@ public class DepositoService(Corela15DbContext db, IComprobanteContableService c
 
         await transaccion.CommitAsync(cancellationToken);
 
-        return new DepositoRenovadoResult(destino.Id, codigoDestino, montoNuevo, itemTasa.Tasa, destino.FechaVencimiento, idComprobante);
+        return new DepositoRenovadoResult(
+            destino.Id, codigoDestino, montoNuevo, itemTasa.Tasa, destino.FechaVencimiento, interesDevengado, idComprobante);
     }
 }

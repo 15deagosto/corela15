@@ -5,12 +5,12 @@ namespace Corela15.Application.Colocacion;
 public record CrearTipoPrestamoRequest(
     string Codigo, string Nombre, decimal MontoMinimo, decimal MontoMaximo,
     int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce,
-    string? CodigoTipoCreditoSeps = null);
+    string? CodigoTipoCreditoSeps = null, string? CodigoTipoSeguro = null);
 
 public record ActualizarTipoPrestamoRequest(
     string Nombre, decimal MontoMinimo, decimal MontoMaximo,
     int PlazoMinimoDias, int PlazoMaximoDias, decimal TasaAnual, string SegmentoBce, bool Activo,
-    string? CodigoTipoCreditoSeps = null);
+    string? CodigoTipoCreditoSeps = null, string? CodigoTipoSeguro = null);
 
 public record TipoPrestamoAdminResult(int Id, string Codigo);
 
@@ -33,3 +33,6 @@ public class TipoPrestamoNoExisteException(int id)
 
 public class SegmentoBceInvalidoException(string segmento)
     : SolicitudInvalidaException($"Segmento BCE inválido: '{segmento}' — no hay un techo configurado con ese nombre exacto");
+
+public class TipoSeguroInvalidoException(string codigo)
+    : SolicitudInvalidaException($"Tipo de seguro inválido: '{codigo}' — no existe o está inactivo");

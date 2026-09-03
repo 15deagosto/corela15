@@ -22,6 +22,12 @@ public record EstadoFinancieroDetalleItem(string CodigoCuentaContable, string No
 public record EstadoFinancieroResult(
     EstadoFinancieroCabecera Cabecera, IReadOnlyList<EstadoFinancieroDetalleItem> Detalle, IReadOnlyList<string> Advertencias);
 
+public record MayorAuxiliarLinea(DateOnly Fecha, long NumeroComprobante, string Descripcion, decimal Debito, decimal Credito, decimal SaldoCorriente);
+
+public record MayorAuxiliarResult(
+    string CodigoCuenta, string NombreCuenta, DateOnly Desde, DateOnly Hasta, decimal SaldoInicial,
+    IReadOnlyList<MayorAuxiliarLinea> Lineas, decimal SaldoFinal, decimal TotalDebitos, decimal TotalCreditos);
+
 /// <summary>
 /// Reportes derivados 100% de datos ya existentes (saldo_contable), sin
 /// estructura de ningún formulario regulatorio específico — ver la
@@ -240,6 +246,61 @@ public class ReportesController(Corela15DbContext db) : ControllerBase
 
         var cabecera = new EstadoFinancieroCabecera(codigoEstructura, ruc, fechaCorte, detalle.Count, valorCuadre);
         return new EstadoFinancieroResult(cabecera, detalle, advertencias);
+    }
+
+    // Mayor auxiliar — reporte real verificado contra el catálogo de
+    // Softbank (Contabilidad.LibroAuxilar, SEGURIDAD.MENU_REPORTE, ver
+    // 06-catalogo-reportes-softbank.md): historial de movimientos de UNA
+    // cuenta contable en un rango de fechas, con saldo corriente — a
+    // diferencia del Balance de Comprobación (agregado por período
+    // completo), este es el detalle línea por línea de una cuenta
+    // específica, el reporte que un contador usa para auditar una cuenta
+    // puntual.
+    [HttpGet("mayor-auxiliar")]
+    public async Task<ActionResult<MayorAuxiliarResult>> MayorAuxiliar(
+        [FromQuery] Guid idCuenta, [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
+    {
+        var cuenta = await db.CuentasContables.FirstOrDefaultAsync(c => c.Id == idCuenta, cancellationToken);
+        if (cuenta is null)
+        {
+            return NotFound();
+        }
+
+        var esDeudora = cuenta.Naturaleza == NaturalezaCuenta.Deudora;
+
+        var movimientosPrevios = await db.MovimientosComprobanteContable
+            .Include(m => m.Comprobante)
+            .Where(m => m.IdCuentaContable == idCuenta && m.Comprobante.Fecha < desde)
+            .ToListAsync(cancellationToken);
+        var saldoInicial = esDeudora
+            ? movimientosPrevios.Sum(m => m.Debito - m.Credito)
+            : movimientosPrevios.Sum(m => m.Credito - m.Debito);
+
+        var movimientosRango = await db.MovimientosComprobanteContable
+            .Include(m => m.Comprobante)
+            .Where(m => m.IdCuentaContable == idCuenta && m.Comprobante.Fecha >= desde && m.Comprobante.Fecha <= hasta)
+            .OrderBy(m => m.Comprobante.Fecha).ThenBy(m => m.Comprobante.Numero)
+            .Select(m => new
+            {
+                m.Comprobante.Fecha,
+                m.Comprobante.Numero,
+                Descripcion = m.Descripcion ?? m.Comprobante.Descripcion ?? string.Empty,
+                m.Debito,
+                m.Credito,
+            })
+            .ToListAsync(cancellationToken);
+
+        var saldoCorriente = saldoInicial;
+        var lineas = new List<MayorAuxiliarLinea>();
+        foreach (var m in movimientosRango)
+        {
+            saldoCorriente += esDeudora ? m.Debito - m.Credito : m.Credito - m.Debito;
+            lineas.Add(new MayorAuxiliarLinea(m.Fecha, m.Numero, m.Descripcion, m.Debito, m.Credito, saldoCorriente));
+        }
+
+        return Ok(new MayorAuxiliarResult(
+            cuenta.Codigo, cuenta.Nombre, desde, hasta, saldoInicial, lineas, saldoCorriente,
+            lineas.Sum(l => l.Debito), lineas.Sum(l => l.Credito)));
     }
 
     [HttpGet("b11")]

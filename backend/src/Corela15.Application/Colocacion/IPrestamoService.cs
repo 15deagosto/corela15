@@ -9,7 +9,20 @@ public interface IPrestamoService
         SolicitarPrestamoRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Aprueba la solicitud y desembolsa: crea el Prestamo, la tabla de
+    /// Comité de Crédito: aprueba la solicitud (EnAnalisis→Aprobada) con el
+    /// monto que autoriza — puede ser distinto al solicitado, siempre
+    /// dentro del rango del producto. Solo después de este paso se puede
+    /// desembolsar; antes, DesembolsarAsync no distinguía este estado.
+    /// </summary>
+    Task<SolicitudAprobadaResult> AprobarSolicitudAsync(
+        AprobarSolicitudRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Comité de Crédito: rechaza la solicitud (EnAnalisis→Rechazada), con motivo obligatorio.</summary>
+    Task RechazarSolicitudAsync(
+        RechazarSolicitudRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Desembolsa una solicitud ya aprobada por Comité: crea el Prestamo, la tabla de
     /// amortización (sistema francés, sobre la tasa del producto) en
     /// PrestamoRubro, y registra el asiento contable (débito Cartera de
     /// créditos / crédito Caja) vía TipoTransaccion — todo en una sola
@@ -36,10 +49,89 @@ public interface IPrestamoService
     /// </summary>
     Task<PagoCuotaRegistradoResult> PagarCuotaAsync(
         PagarCuotaRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Carga un rubro manual (ej. Gastos Judiciales, Notificaciones,
+    /// Certificado de Gravamen) a un préstamo vigente — verificado contra
+    /// el motor real de Softbank (FINANCIERO.TRANSACCION_COLOCACION id=63
+    /// "CUENTAS POR COBRAR RUBROS CARTERA", código PRA). Se agrega como
+    /// una fila más de PrestamoRubro (fuera de la tabla de amortización
+    /// normal, en el próximo número de cuota disponible) y, si el rubro
+    /// está marcado <c>EsCuentaPorCobrar</c> (7 rubros reales lo tienen:
+    /// Certificado de Gravamen, Notificaciones, Inicio/Demanda Judicial,
+    /// Cobranzas, Gastos, Gastos Judiciales), genera automáticamente una
+    /// cuenta por cobrar real vinculada (mismo motor REG-CXC ya construido
+    /// para Tesorería — nunca un asiento inventado), quedando registrado el
+    /// vínculo préstamo↔rubro↔CxC en PrestamoRubroCuentaPorCobrar (espejo de
+    /// COLOCACION.PRESTAMO_RUBRO_CUENTAPORCOBRAR real). Si el rubro no
+    /// genera CxC, solo queda el cargo informativo en PrestamoRubro, sin
+    /// asiento.
+    /// </summary>
+    Task<RubroManualCargadoResult> CargarRubroManualAsync(
+        CargarRubroManualRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Lista los rubros manuales cargados a un préstamo, con su CxC vinculada si aplica.</summary>
+    Task<IReadOnlyList<RubroManualCargadoResult>> ListarRubrosManualesAsync(
+        Guid idPrestamo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Diferimiento de cuotas real (período de gracia) — verificado
+    /// contra COLOCACION.PRESTAMO_CUOTADIFERIDA_AGREGADA. Desplaza la
+    /// fecha de vencimiento de todas las cuotas de capital todavía
+    /// pendientes por la cantidad de días indicada, y deja constancia
+    /// del evento. No genera ningún asiento (no mueve dinero, solo
+    /// reprograma fechas).
+    /// </summary>
+    Task<DiferimientoCuotaResult> DiferirCuotasAsync(
+        DiferirCuotasRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Lista el historial de diferimientos de un préstamo.</summary>
+    Task<IReadOnlyList<DiferimientoCuotaResult>> ListarDiferimientosAsync(
+        Guid idPrestamo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Castigo formal real de cartera — verificado contra COLOCACION.
+    /// PRESTAMO_CASTIGADO. Marca el préstamo como Castigado, registra el
+    /// evento con el saldo transferido, y genera el asiento contable real
+    /// (débito `1499` Provisión para créditos incobrables / crédito
+    /// `1401` Cartera de créditos, reversando la cartera contra la
+    /// provisión ya constituida — partida doble estándar de castigo).
+    /// </summary>
+    Task<PrestamoCastigadoResult> CastigarAsync(
+        CastigarPrestamoRequest request, CancellationToken cancellationToken = default);
 }
 
+public record DiferirCuotasRequest(Guid IdPrestamo, int DiasDiferidos, string Comentario, string RegistradoPor);
+
+public record DiferimientoCuotaResult(Guid Id, int DiasDiferidos, string Comentario, DateOnly Fecha, string RegistradoPor);
+
+public record CastigarPrestamoRequest(Guid IdPrestamo, string Comentario, string RegistradoPor);
+
+public record PrestamoCastigadoResult(Guid Id, decimal SaldoTransferido, DateOnly Fecha, Guid IdComprobante);
+
+public class DiasDiferidosInvalidosException(int dias)
+    : SolicitudInvalidaException($"Los días a diferir ({dias}) deben ser mayores a cero");
+
+public class PrestamoYaCastigadoException(Guid idPrestamo)
+    : ReglaDeNegocioException($"El préstamo {idPrestamo} ya fue castigado");
+
+public record CargarRubroManualRequest(Guid IdPrestamo, int IdRubro, decimal Monto, string Detalle, string RegistradoPor);
+
+public record RubroManualCargadoResult(
+    Guid IdPrestamoRubro, string NombreRubro, decimal Monto, DateOnly Fecha, string Estado,
+    Guid? IdCuentaPorCobrar, Guid? IdComprobante);
+
+public class RubroInvalidoParaCargoManualException(int idRubro)
+    : ReglaDeNegocioException($"El rubro {idRubro} no existe, está inactivo, o no es un rubro manual real (COLOCACION.RUBRO)");
+
+public class MontoRubroManualInvalidoException(decimal monto)
+    : SolicitudInvalidaException($"El monto {monto:0.00} debe ser mayor a cero");
+
 public class SolicitudPrestamoInvalidaException(Guid idSolicitud)
-    : ReglaDeNegocioException($"La solicitud {idSolicitud} no existe o no está en análisis");
+    : ReglaDeNegocioException($"La solicitud {idSolicitud} no existe o no está aprobada por Comité de Crédito");
+
+public class SolicitudPrestamoNoEnAnalisisException(Guid idSolicitud)
+    : ReglaDeNegocioException($"La solicitud {idSolicitud} no existe o ya no está en análisis (ya fue aprobada/rechazada/desembolsada)");
 
 public class TipoPrestamoInvalidoException(int idTipoPrestamo)
     : ReglaDeNegocioException($"El tipo de préstamo {idTipoPrestamo} no existe o está inactivo");
@@ -60,3 +152,6 @@ public class TasaExcedeTechoBceException(decimal tasaAnual, decimal tasaMaxima, 
 
 public class SinTechoBceConfiguradoException(string segmento)
     : ReglaDeNegocioException($"No hay una tasa techo BCE vigente configurada para el segmento '{segmento}'");
+
+public class TipoConvenioInvalidoException(string codigoTipoConvenio)
+    : ReglaDeNegocioException($"El convenio '{codigoTipoConvenio}' no existe o está inactivo");

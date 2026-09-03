@@ -7,6 +7,7 @@ interface Sesion {
   nombreUsuario: string
   roles: string[]
   menus: string[]
+  estructuras: string[]
 }
 
 interface AuthContextValue {
@@ -15,6 +16,7 @@ interface AuthContextValue {
   login: (nombreUsuario: string, contrasena: string) => Promise<void>
   logout: () => Promise<void>
   tieneMenu: (codigo: string) => boolean
+  tieneEstructura: (codigo: string) => boolean
 }
 
 const STORAGE_KEY = 'corela15:sesion'
@@ -45,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         nombreUsuario: data.nombreUsuario,
         roles: data.roles,
         menus: data.menus,
+        estructuras: data.estructuras ?? [],
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nuevaSesion))
       setSesion(nuevaSesion)
@@ -70,9 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const tieneMenu = (codigo: string) => sesion?.menus.includes(codigo) ?? false
+  const tieneEstructura = (codigo: string) => sesion?.estructuras.includes(codigo) ?? false
 
   return (
-    <AuthContext.Provider value={{ sesion, cargando, login, logout, tieneMenu }}>
+    <AuthContext.Provider value={{ sesion, cargando, login, logout, tieneMenu, tieneEstructura }}>
       {children}
     </AuthContext.Provider>
   )

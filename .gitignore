@@ -22,3 +22,8 @@ pgdata/
 !.vscode/extensions.json
 *.suo
 Thumbs.db
+
+# Documentación/contexto interno del proyecto (CLAUDE.md, notas de
+# arquitectura, flujos de negocio, mapeos de Softbank) — no debe subirse
+# al repo remoto, se queda solo local.
+*.md

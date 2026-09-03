@@ -1,13 +1,22 @@
 using Corela15.Api.ExceptionHandling;
 using Corela15.Api.Idempotencia;
+using Corela15.Application.ActivoFijo;
 using Corela15.Application.Ahorros;
 using Corela15.Application.Cajas;
 using Corela15.Application.Cobranza;
+using Corela15.Application.Financiero;
+using Corela15.Application.Cumplimiento;
+using Corela15.Application.LavadoActivos;
 using Corela15.Application.Colocacion;
+using Corela15.Application.Sujeto;
 using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
+using Corela15.Application.MesaServicio;
 using Corela15.Application.Nomina;
+using Corela15.Application.Obligacion;
+using Corela15.Application.Portafolio;
+using Corela15.Application.Proveeduria;
 using Corela15.Application.Riesgo;
 using Corela15.Application.Seguridad;
 using Corela15.Infrastructure.Persistence;
@@ -48,21 +57,46 @@ builder.Services.AddScoped<ICuentaContableAdminService, CuentaContableAdminServi
 builder.Services.AddScoped<ICierrePeriodoService, CierrePeriodoService>();
 builder.Services.AddScoped<ICierreEjercicioService, CierreEjercicioService>();
 builder.Services.AddScoped<ICuentaAhorroService, CuentaAhorroService>();
+builder.Services.AddScoped<IAutorizacionTransaccionService>(sp => (CuentaAhorroService)sp.GetRequiredService<ICuentaAhorroService>());
 builder.Services.AddScoped<IDevengoInteresService, DevengoInteresService>();
 builder.Services.AddScoped<IPrestamoService, PrestamoService>();
+builder.Services.AddScoped<Corela15.Application.FlujoTrabajo.IFlujoTrabajoService, FlujoTrabajoService>();
+builder.Services.AddScoped<IGarantiaService, GarantiaService>();
 builder.Services.AddScoped<ITipoPrestamoAdminService, TipoPrestamoAdminService>();
 builder.Services.AddScoped<IScoreCrediticioService, ScoreCrediticioService>();
 builder.Services.AddScoped<IAutoDebitoSpiService, AutoDebitoSpiService>();
 builder.Services.AddScoped<IMoraCarteraService, MoraCarteraService>();
+builder.Services.AddScoped<Corela15.Application.Cobranza.IGastoCobranzaService, GastoCobranzaService>();
 builder.Services.AddScoped<IProvisionCarteraService, ProvisionCarteraService>();
 builder.Services.AddScoped<IDepositoService, DepositoService>();
 builder.Services.AddScoped<IGestionCobranzaService, GestionCobranzaService>();
 builder.Services.AddScoped<IVentanillaService, VentanillaService>();
+builder.Services.AddScoped<IPagoExternoService, PagoExternoService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
+builder.Services.AddScoped<IBeneficioSocialService, BeneficioSocialService>();
+builder.Services.AddScoped<IEmpleadoService, EmpleadoService>();
+builder.Services.AddScoped<ISolicitudAccionPersonalService, SolicitudAccionPersonalService>();
+builder.Services.AddScoped<ICalculoImpuestoRentaService, CalculoImpuestoRentaService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();
+builder.Services.AddScoped<ICuentaPorPagarService, CuentaPorPagarService>();
+builder.Services.AddScoped<IComprasService, ComprasService>();
+builder.Services.AddScoped<IActivoService, ActivoService>();
+builder.Services.AddScoped<IInversionPortafolioService, InversionPortafolioService>();
+builder.Services.AddScoped<IChequeService, ChequeService>();
+builder.Services.AddScoped<ISolicitudPedidoService, SolicitudPedidoService>();
+builder.Services.AddScoped<IObligacionFinancieraService, ObligacionFinancieraService>();
+builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
+builder.Services.AddScoped<IAvanceRiesgoService, AvanceRiesgoService>();
+builder.Services.AddScoped<IHallazgoService, HallazgoService>();
 builder.Services.AddScoped<IIndicadorLiquidezService, IndicadorLiquidezService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IListaControlService, ListaControlService>();
+builder.Services.AddScoped<IPerfilLavadoActivosService, PerfilLavadoActivosService>();
+builder.Services.AddScoped<IDatosPersonaService, DatosPersonaService>();
+builder.Services.AddScoped<IReclamoService, ReclamoService>();
+builder.Services.AddScoped<ISocioService, SocioService>();
+builder.Services.AddHostedService<AutoDebitoSpiBackgroundService>();
 builder.Services.AddScoped<IdempotenciaFilter>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
@@ -129,8 +163,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 var codigosMenu = new[]
 {
     "socios", "usuarios-roles", "contabilidad", "ahorros", "creditos",
-    "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion",
+    "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
+    "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
 };
+
+// Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —
+// dentro del módulo "Estructuras y Procesos Financieros", qué estructuras
+// puntuales puede generar cada usuario. "OF01" primero, con espacio real
+// para sumar más sin tocar este arreglo si se agregan por catálogo — acá
+// solo se declaran las policies base ya conocidas al arrancar.
+var codigosTipoEstructura = new[] { "OF01" };
+
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
@@ -140,6 +183,11 @@ builder.Services.AddAuthorization(options =>
     foreach (var codigo in codigosMenu)
     {
         options.AddPolicy($"Menu:{codigo}", policy => policy.RequireClaim("menu", codigo));
+    }
+
+    foreach (var codigo in codigosTipoEstructura)
+    {
+        options.AddPolicy($"Estructura:{codigo}", policy => policy.RequireClaim("estructura", codigo));
     }
 });
 
@@ -152,6 +200,24 @@ builder.Services.AddSwaggerGen();
 // en la misma máquina — fijar un solo puerto acá era frágil y rompía cada vez
 // que cambiaba. En producción sí se restringe a los orígenes configurados
 // explícitamente (Corela15:CorsOrigins).
+//
+// También se acepta cualquier IP de red privada (LAN) — 192.168.x.x,
+// 10.x.x.x, 172.16.x.x-172.31.x.x — para que otros equipos de la misma red
+// puedan usar la app apuntando a la IP de esta máquina (ej. compartir con
+// un compañero de oficina sin desplegar nada). Sigue siendo solo desarrollo:
+// nunca acepta un origen público/externo, solo direcciones de red privada
+// reales (RFC 1918).
+static bool EsRedPrivada(string host)
+{
+    if (host is "localhost" or "127.0.0.1") return true;
+    if (!System.Net.IPAddress.TryParse(host, out var ip)) return false;
+    var b = ip.GetAddressBytes();
+    if (b.Length != 4) return false;
+    return b[0] == 192 && b[1] == 168
+        || b[0] == 10
+        || b[0] == 172 && b[1] is >= 16 and <= 31;
+}
+
 var corsOriginsConfigurados = builder.Configuration.GetSection("Corela15:CorsOrigins").Get<string[]>();
 builder.Services.AddCors(options =>
 {
@@ -160,8 +226,7 @@ builder.Services.AddCors(options =>
         if (builder.Environment.IsDevelopment())
         {
             policy.SetIsOriginAllowed(origin =>
-                Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
-                (uri.Host is "localhost" or "127.0.0.1"));
+                Uri.TryCreate(origin, UriKind.Absolute, out var uri) && EsRedPrivada(uri.Host));
         }
         else
         {

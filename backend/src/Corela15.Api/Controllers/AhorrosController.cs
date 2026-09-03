@@ -1,5 +1,7 @@
 using Corela15.Api.Idempotencia;
 using Corela15.Application.Ahorros;
+using Corela15.Application.Common;
+using Corela15.Domain.Ahorros;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -61,6 +63,66 @@ public class AhorrosController(
         return Ok(resultado);
     }
 
+    // Reportes reales verificados contra el catálogo de Softbank
+    // (SEGURIDAD.MENU_REPORTE, ver 06-catalogo-reportes-softbank.md) —
+    // Ahorros.CuentasAperturadas, Ahorros.CuentasBloqueadas,
+    // Ahorros.TransaccionesAhorrosReport.
+    [HttpGet("reportes/cuentas-aperturadas")]
+    public async Task<ActionResult<IReadOnlyList<CuentaAperturadaItem>>> ReporteCuentasAperturadas(
+        [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
+    {
+        var resultado = await db.Cuentas
+            .Include(c => c.TipoCuenta).Include(c => c.Agencia)
+            .Where(c => c.FechaApertura >= desde && c.FechaApertura <= hasta)
+            .OrderBy(c => c.FechaApertura)
+            .Select(c => new CuentaAperturadaItem(
+                c.Numero, c.TipoCuenta.Nombre, c.Agencia.Nombre,
+                db.CuentasClientes.Where(cc => cc.IdCuenta == c.Id && cc.Principal)
+                    .Select(cc => cc.Cliente.Persona.Nombre).FirstOrDefault() ?? "—",
+                c.FechaApertura,
+                db.CuentasItemSaldo.Where(i => i.IdCuenta == c.Id && i.ItemSaldo.Codigo == "DISP")
+                    .Select(i => i.Saldo).FirstOrDefault()))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpGet("reportes/cuentas-bloqueadas")]
+    public async Task<ActionResult<IReadOnlyList<CuentaEstadoEspecialItem>>> ReporteCuentasBloqueadas(
+        CancellationToken cancellationToken)
+    {
+        var resultado = await db.Cuentas
+            .Include(c => c.TipoCuenta).Include(c => c.Agencia)
+            .Where(c => c.Estado == Corela15.Domain.Ahorros.EstadoCuenta.Bloqueada)
+            .OrderByDescending(c => c.ModificadoEn)
+            .Select(c => new CuentaEstadoEspecialItem(
+                c.Numero, c.TipoCuenta.Nombre, c.Agencia.Nombre,
+                db.CuentasClientes.Where(cc => cc.IdCuenta == c.Id && cc.Principal)
+                    .Select(cc => cc.Cliente.Persona.Nombre).FirstOrDefault() ?? "—",
+                c.ModificadoEn, c.ModificadoPor))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpGet("reportes/transacciones")]
+    public async Task<ActionResult<IReadOnlyList<TransaccionAhorroItem>>> ReporteTransacciones(
+        [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
+    {
+        var desdeUtc = new DateTimeOffset(desde.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var hastaUtc = new DateTimeOffset(hasta.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
+
+        var resultado = await db.CuentasMovimientos
+            .Include(m => m.Cuenta)
+            .Where(m => m.FechaHora >= desdeUtc && m.FechaHora <= hastaUtc)
+            .OrderByDescending(m => m.FechaHora)
+            .Select(m => new TransaccionAhorroItem(
+                m.Cuenta.Numero, m.Tipo.ToString(), m.Monto, m.SaldoResultante, m.FechaHora, m.RegistradoPor))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
     [HttpGet("tipos-transaccion")]
     public async Task<ActionResult<IReadOnlyList<TipoTransaccionListItem>>> TiposTransaccion(
         CancellationToken cancellationToken)
@@ -68,7 +130,7 @@ public class AhorrosController(
         var resultado = await db.TiposTransaccion
             .Where(t => t.Activo)
             .OrderBy(t => t.Nombre)
-            .Select(t => new TipoTransaccionListItem(t.Codigo, t.Nombre, t.SignoSaldoCuenta))
+            .Select(t => new TipoTransaccionListItem(t.Id, t.Codigo, t.Nombre, t.SignoSaldoCuenta))
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
@@ -124,12 +186,64 @@ public class AhorrosController(
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
+
+    // Bloqueo/desbloqueo/cierre real de cuenta — gap encontrado auditando
+    // el catálogo real de reportes de Softbank (Ahorros.CuentasBloqueadas/
+    // CuentasDesbloquedas): EstadoCuenta ya tenía Bloqueada/Cerrada desde
+    // el diseño original de Nivel 2, pero ningún caso de uso los activaba
+    // — toda cuenta se creaba Activa y nunca cambiaba. RegistrarMovimientoAsync
+    // ya rechaza movimientos sobre una cuenta no Activa (CuentaInvalidaException),
+    // así que el enforcement real ya existía, solo faltaba el disparador.
+    // El cambio de estado queda auditado automáticamente vía cuenta_historico
+    // (versionado real por trigger, ya construido en Nivel 2).
+    [HttpPatch("cuentas/{idCuenta:guid}/estado")]
+    public async Task<IActionResult> CambiarEstadoCuenta(
+        Guid idCuenta, [FromBody] CambiarEstadoCuentaBody body, CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<EstadoCuenta>(body.Estado, out var nuevoEstado))
+        {
+            throw new SolicitudInvalidaExceptionGenerica($"Estado de cuenta inválido: '{body.Estado}'");
+        }
+
+        var cuenta = await db.Cuentas.FirstOrDefaultAsync(c => c.Id == idCuenta, cancellationToken);
+        if (cuenta is null)
+        {
+            return NotFound();
+        }
+
+        if (nuevoEstado == EstadoCuenta.Cerrada)
+        {
+            var saldoDisponible = await db.CuentasItemSaldo
+                .Where(i => i.IdCuenta == idCuenta && i.ItemSaldo.Codigo == "DISP")
+                .Select(i => i.Saldo)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (saldoDisponible != 0)
+            {
+                throw new SolicitudInvalidaExceptionGenerica(
+                    $"No se puede cerrar la cuenta con saldo disponible distinto de cero ({saldoDisponible:0.00})");
+            }
+        }
+
+        cuenta.Estado = nuevoEstado;
+        cuenta.ModificadoEn = DateTimeOffset.UtcNow;
+        cuenta.ModificadoPor = User.Identity!.Name!;
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
 }
 
 public record ConfigurarAcreditaPrestamoBody(bool Activar);
+
+public record CambiarEstadoCuentaBody(string Estado);
+
+public record CuentaAperturadaItem(string Numero, string Producto, string Agencia, string Cliente, DateOnly FechaApertura, decimal SaldoInicial);
+
+public record CuentaEstadoEspecialItem(string Numero, string Producto, string Agencia, string Cliente, DateTimeOffset? Fecha, string? RegistradoPor);
+
+public record TransaccionAhorroItem(string NumeroCuenta, string Tipo, decimal Monto, decimal SaldoResultante, DateTimeOffset Fecha, string RegistradoPor);
 
 public record RegistrarMovimientoBody(string CodigoTipoTransaccion, decimal Monto);
 
 public record AbrirCuentaBody(Guid IdCliente, int IdTipoCuenta, int IdAgencia, decimal MontoInicial);
 
-public record TipoTransaccionListItem(string Codigo, string Nombre, int SignoSaldoCuenta);
+public record TipoTransaccionListItem(int Id, string Codigo, string Nombre, int SignoSaldoCuenta);

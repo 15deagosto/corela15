@@ -87,6 +87,68 @@ public class IndicadorLiquidezConfiguration : IEntityTypeConfiguration<Indicador
     }
 }
 
+public class EstadoAvanceRiesgoConfiguration : IEntityTypeConfiguration<EstadoAvanceRiesgo>
+{
+    public void Configure(EntityTypeBuilder<EstadoAvanceRiesgo> b)
+    {
+        b.ToTable("estado_avance_riesgo", "riesgo");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(5);
+        b.Property(x => x.Nombre).HasMaxLength(50).IsRequired();
+    }
+}
+
+public class AvanceRiesgoConfiguration : IEntityTypeConfiguration<AvanceRiesgo>
+{
+    public void Configure(EntityTypeBuilder<AvanceRiesgo> b)
+    {
+        b.ToTable("avance_riesgo", "riesgo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CodigoEstado).HasMaxLength(5).IsRequired();
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.EventoRiesgo).WithMany().HasForeignKey(x => x.IdEventoRiesgo).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.UsuarioResponsable).WithMany().HasForeignKey(x => x.IdUsuarioResponsable).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Estado).WithMany().HasForeignKey(x => x.CodigoEstado).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.IdEventoRiesgo);
+    }
+}
+
+public class AvanceRiesgoDetalleConfiguration : IEntityTypeConfiguration<AvanceRiesgoDetalle>
+{
+    public void Configure(EntityTypeBuilder<AvanceRiesgoDetalle> b)
+    {
+        b.ToTable("avance_riesgo_detalle", "riesgo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.EventoDetectado).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.PosibleCausa).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.Tratamiento).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.Inconvenientes).HasMaxLength(500);
+        b.Property(x => x.AccionesSugeridas).HasMaxLength(500);
+
+        b.HasOne(x => x.AvanceRiesgo).WithMany().HasForeignKey(x => x.IdAvanceRiesgo).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.IdAvanceRiesgo);
+    }
+}
+
+public class AvanceRiesgoEtapaConfiguration : IEntityTypeConfiguration<AvanceRiesgoEtapa>
+{
+    public void Configure(EntityTypeBuilder<AvanceRiesgoEtapa> b)
+    {
+        b.ToTable("avance_riesgo_etapa", "riesgo");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CodigoEstado).HasMaxLength(5).IsRequired();
+        b.Property(x => x.Comentario).HasMaxLength(500);
+        b.Property(x => x.RegistradoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.AvanceRiesgoDetalle).WithMany().HasForeignKey(x => x.IdAvanceRiesgoDetalle).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Estado).WithMany().HasForeignKey(x => x.CodigoEstado).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.IdAvanceRiesgoDetalle);
+    }
+}
+
 public class ParametroLiquidezConfiguration : IEntityTypeConfiguration<ParametroLiquidez>
 {
     public void Configure(EntityTypeBuilder<ParametroLiquidez> b)

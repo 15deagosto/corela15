@@ -28,14 +28,13 @@ public class RolPagosService(Corela15DbContext db) : IRolPagosService
         }
 
         var idsEmpleados = request.Lineas.Select(l => l.IdEmpleado).ToList();
-        var empleadosActivos = await db.Empleados
+        var empleados = await db.Empleados
             .Where(e => idsEmpleados.Contains(e.Id) && e.Estado == EstadoEmpleado.Activo)
-            .Select(e => e.Id)
             .ToListAsync(cancellationToken);
 
         foreach (var linea in request.Lineas)
         {
-            if (!empleadosActivos.Contains(linea.IdEmpleado))
+            if (empleados.All(e => e.Id != linea.IdEmpleado))
             {
                 throw new EmpleadoInvalidoException(linea.IdEmpleado);
             }
@@ -62,6 +61,12 @@ public class RolPagosService(Corela15DbContext db) : IRolPagosService
                 DiasLaborados = linea.DiasLaborados,
                 Anulado = false,
             });
+
+            // Sincroniza el sueldo actual del empleado con el rol de pagos
+            // recién generado — el rol de pagos es la fuente real (ver
+            // CLAUDE.md), este campo es solo una caché siempre alineada.
+            var empleado = empleados.First(e => e.Id == linea.IdEmpleado);
+            empleado.SueldoActual = linea.Ingresos;
         }
 
         db.RolesPagos.Add(rolPagos);

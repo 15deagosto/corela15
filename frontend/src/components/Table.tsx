@@ -10,7 +10,7 @@ export function TableContainer({ children }: { children: ReactNode }) {
   )
 }
 
-export function Th({ children }: { children: ReactNode }) {
+export function Th({ children }: { children?: ReactNode }) {
   return (
     <th className="border-b border-black/[0.06] bg-black/[0.015] px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-graphite-600">
       {children}
@@ -23,14 +23,16 @@ export function Td({
   className = '',
   style,
   colSpan,
+  title,
 }: {
   children?: ReactNode
   className?: string
   style?: CSSProperties
   colSpan?: number
+  title?: string
 }) {
   return (
-    <td className={`px-4 py-3 text-graphite-100 ${className}`} style={style} colSpan={colSpan}>
+    <td className={`px-4 py-3 text-graphite-100 ${className}`} style={style} colSpan={colSpan} title={title}>
       {children}
     </td>
   )

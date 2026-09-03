@@ -71,6 +71,29 @@ public class RolMenuConfiguration : IEntityTypeConfiguration<RolMenu>
     }
 }
 
+public class TipoEstructuraConfiguration : IEntityTypeConfiguration<TipoEstructura>
+{
+    public void Configure(EntityTypeBuilder<TipoEstructura> b)
+    {
+        b.ToTable("tipo_estructura", "seguridad");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(20);
+        b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
+    }
+}
+
+public class RolTipoEstructuraConfiguration : IEntityTypeConfiguration<RolTipoEstructura>
+{
+    public void Configure(EntityTypeBuilder<RolTipoEstructura> b)
+    {
+        b.ToTable("rol_tipo_estructura", "seguridad");
+        b.HasKey(x => new { x.IdRol, x.CodigoTipoEstructura });
+
+        b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.IdRol).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.TipoEstructura).WithMany().HasForeignKey(x => x.CodigoTipoEstructura).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<AccionIngresoUsuario>
 {
     public void Configure(EntityTypeBuilder<AccionIngresoUsuario> b)
@@ -99,6 +122,20 @@ public class SesionUsuarioConfiguration : IEntityTypeConfiguration<SesionUsuario
     }
 }
 
+public class AccionUsuarioConfiguration : IEntityTypeConfiguration<AccionUsuario>
+{
+    public void Configure(EntityTypeBuilder<AccionUsuario> b)
+    {
+        b.ToTable("accion_usuario", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CodigoAccion).HasMaxLength(20).IsRequired();
+        b.Property(x => x.UsuarioRegistro).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Descripcion).HasMaxLength(500).IsRequired();
+
+        b.HasIndex(x => x.Fecha);
+    }
+}
+
 public class SolicitudIdempotenteConfiguration : IEntityTypeConfiguration<SolicitudIdempotente>
 {
     public void Configure(EntityTypeBuilder<SolicitudIdempotente> b)
@@ -111,5 +148,46 @@ public class SolicitudIdempotenteConfiguration : IEntityTypeConfiguration<Solici
 
         b.HasOne<Usuario>().WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.Clave, x.IdUsuario, x.Ruta }).IsUnique();
+    }
+}
+
+public class HorarioAccesoUsuarioConfiguration : IEntityTypeConfiguration<HorarioAccesoUsuario>
+{
+    public void Configure(EntityTypeBuilder<HorarioAccesoUsuario> b)
+    {
+        b.ToTable("horario_acceso_usuario", "seguridad");
+        b.HasKey(x => x.Id);
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.IdUsuario, x.DiaSemana });
+    }
+}
+
+public class UsuarioRolTemporalConfiguration : IEntityTypeConfiguration<UsuarioRolTemporal>
+{
+    public void Configure(EntityTypeBuilder<UsuarioRolTemporal> b)
+    {
+        b.ToTable("usuario_rol_temporal", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.IdRol).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.IdUsuario, x.Activo });
+    }
+}
+
+public class UsuarioAgenciaTemporalConfiguration : IEntityTypeConfiguration<UsuarioAgenciaTemporal>
+{
+    public void Configure(EntityTypeBuilder<UsuarioAgenciaTemporal> b)
+    {
+        b.ToTable("usuario_agencia_temporal", "seguridad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.AgenciaOrigen).WithMany().HasForeignKey(x => x.IdAgenciaOrigen).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.AgenciaActual).WithMany().HasForeignKey(x => x.IdAgenciaActual).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.IdUsuario, x.Activo });
     }
 }

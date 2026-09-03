@@ -17,6 +17,7 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
         }
 
         await ValidarTasaContraTechoAsync(request.TasaAnual, request.SegmentoBce, cancellationToken);
+        await ValidarTipoSeguroAsync(request.CodigoTipoSeguro, cancellationToken);
 
         var tipo = new TipoPrestamo
         {
@@ -29,6 +30,7 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
             TasaAnual = request.TasaAnual,
             SegmentoBce = request.SegmentoBce,
             CodigoTipoCreditoSeps = request.CodigoTipoCreditoSeps,
+            CodigoTipoSeguro = request.CodigoTipoSeguro,
             Activo = true,
         };
         db.TiposPrestamo.Add(tipo);
@@ -46,6 +48,7 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
         }
 
         await ValidarTasaContraTechoAsync(request.TasaAnual, request.SegmentoBce, cancellationToken);
+        await ValidarTipoSeguroAsync(request.CodigoTipoSeguro, cancellationToken);
 
         tipo.Nombre = request.Nombre;
         tipo.MontoMinimo = request.MontoMinimo;
@@ -55,9 +58,20 @@ public class TipoPrestamoAdminService(Corela15DbContext db) : ITipoPrestamoAdmin
         tipo.TasaAnual = request.TasaAnual;
         tipo.SegmentoBce = request.SegmentoBce;
         tipo.CodigoTipoCreditoSeps = request.CodigoTipoCreditoSeps;
+        tipo.CodigoTipoSeguro = request.CodigoTipoSeguro;
         tipo.Activo = request.Activo;
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ValidarTipoSeguroAsync(string? codigoTipoSeguro, CancellationToken cancellationToken)
+    {
+        if (codigoTipoSeguro is null) return;
+        var existe = await db.TiposSeguro.AnyAsync(t => t.Codigo == codigoTipoSeguro && t.Activo, cancellationToken);
+        if (!existe)
+        {
+            throw new TipoSeguroInvalidoException(codigoTipoSeguro);
+        }
     }
 
     private async Task ValidarTasaContraTechoAsync(decimal tasaAnual, string segmentoBce, CancellationToken cancellationToken)

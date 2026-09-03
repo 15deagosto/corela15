@@ -6,4 +6,5 @@ public record RegistrarMovimientoCuentaRequest(
     decimal Monto,
     string RegistradoPor);
 
-public record MovimientoCuentaRegistradoResult(Guid IdMovimiento, decimal SaldoResultante, Guid IdComprobanteContable);
+public record MovimientoCuentaRegistradoResult(
+    Guid? IdMovimiento, decimal? SaldoResultante, Guid? IdComprobanteContable, Guid? IdAutorizacionPendiente);

@@ -44,9 +44,25 @@ public class VentanillaService(Corela15DbContext db) : IVentanillaService
             throw new VentanillaInvalidaException(request.IdVentanilla);
         }
 
+        // Saldo esperado real (ver VentanillaItemCaja/ComprobanteContableService)
+        // — antes el cuadre solo registraba el conteo declarado como
+        // "cuadrado" por definición, sin nada real contra qué compararlo.
+        // Sin movimientos de efectivo reales todavía (ventanilla recién
+        // abierta y cerrada sin transacciones), el saldo esperado es 0.
+        var itemCajaEfectivo = await db.VentanillasItemCaja
+            .Include(v => v.ItemCaja)
+            .FirstOrDefaultAsync(v => v.IdVentanilla == ventanilla.Id && v.ItemCaja.Codigo == "EFE", cancellationToken);
+        var saldoEsperado = itemCajaEfectivo?.Saldo ?? 0;
+        var diferenciaEfectivo = request.TotalEfectivoContado - saldoEsperado;
+
         ventanilla.Cerrada = true;
-        ventanilla.Cuadrada = true;
+        ventanilla.Cuadrada = diferenciaEfectivo == 0;
         ventanilla.PuedeTransaccionar = false;
+
+        if (itemCajaEfectivo is not null)
+        {
+            itemCajaEfectivo.SaldoCuadre = request.TotalEfectivoContado;
+        }
 
         var cuadre = new VentanillaCuadre
         {
@@ -56,9 +72,9 @@ public class VentanillaService(Corela15DbContext db) : IVentanillaService
             TotalEfectivo = request.TotalEfectivoContado,
             TotalCheque = request.TotalCheque,
             Total = request.TotalEfectivoContado + request.TotalCheque,
-            DiferenciaEfectivo = 0,
+            DiferenciaEfectivo = diferenciaEfectivo,
             DiferenciaCheque = 0,
-            EstaCuadrado = true,
+            EstaCuadrado = diferenciaEfectivo == 0,
             Aprobada = false,
             Activa = true,
         };
@@ -73,6 +89,6 @@ public class VentanillaService(Corela15DbContext db) : IVentanillaService
             throw new ConflictoConcurrenciaException($"La ventanilla {ventanilla.Id}");
         }
 
-        return new VentanillaCerradaResult(cuadre.Id, cuadre.EstaCuadrado);
+        return new VentanillaCerradaResult(cuadre.Id, cuadre.EstaCuadrado, saldoEsperado, diferenciaEfectivo);
     }
 }

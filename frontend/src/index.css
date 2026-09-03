@@ -29,6 +29,24 @@ body {
 
 .tabular-nums { font-variant-numeric: tabular-nums; }
 
+/* Bug real de responsive encontrado en toda la app (no solo Login): un
+   <input>/<select>/<textarea> sin `w-full` explícito tiene un ancho
+   mínimo intrínseco del navegador (basado en `size`, ~20 caracteres) que
+   NO se encoge dentro de un contenedor flex/grid — el hijo se desborda
+   en vez de ajustarse, rompiendo el layout en pantallas angostas. En vez
+   de agregar `w-full` a cada campo de cada formulario (decenas de
+   archivos), se corrige acá una sola vez: todo campo de formulario ocupa
+   el 100% de su contenedor por defecto, salvo que se le dé un ancho
+   explícito (`w-24`, `w-56`, etc., que sigue ganando por especificidad). */
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),
+  select,
+  textarea {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* Scrollbar discreto, a tono con la paleta */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -56,8 +74,14 @@ body {
     @apply bg-graphite-950/70 backdrop-blur-xl border border-black/[0.06] shadow-xl shadow-black/10;
   }
 
+  /* Fondo sólido claro con blur — antes degradaba a graphite-950/60 hacia
+     abajo, que en tarjetas altas (formularios/modales con varios campos)
+     volvía el contenido inferior ilegible porque el degradado escala con
+     la altura del propio elemento, no del viewport. Un fondo blanco
+     consistente evita ese problema sin importar cuánto contenido tenga
+     la tarjeta. */
   .glass-card {
-    @apply bg-gradient-to-b from-white/80 to-graphite-950/60 backdrop-blur-md border border-black/[0.06] hover:border-gold-500/40 transition-all duration-300;
+    @apply bg-white/95 backdrop-blur-md border border-black/[0.06] hover:border-gold-500/40 transition-all duration-300;
   }
 
   .transition-spring {

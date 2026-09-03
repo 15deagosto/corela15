@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PiggyBank, Plus, X, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
+import { PiggyBank, Plus, X, ArrowDownCircle, ArrowUpCircle, TrendingUp, Lock, Unlock, FileBarChart } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
+import { BotonesExportar } from '../components/BotonesExportar'
+import { ModalPortal } from '../components/ModalPortal'
+import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
 
 interface Producto {
@@ -173,10 +176,11 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
           { codigoTipoTransaccion, monto: Number(monto) || 0 },
           { headers: { 'Idempotency-Key': crypto.randomUUID() } },
         )
-      ).data,
-    onSuccess: () => {
+      ).data as { idAutorizacionPendiente: string | null },
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
-      onClose()
+      queryClient.invalidateQueries({ queryKey: ['cajas-autorizaciones-pendientes'] })
+      if (!data.idAutorizacionPendiente) onClose()
     },
   })
 
@@ -196,6 +200,23 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
           </button>
         </div>
 
+        {registrar.isSuccess && registrar.data.idAutorizacionPendiente && (
+          <div className="flex flex-col gap-3">
+            <p className="rounded-lg bg-gold-500/10 px-3 py-2 text-sm text-gold-300">
+              El titular está marcado PEP — la transacción queda en espera de autorización de un supervisor (Cajas →
+              Autorizaciones pendientes) y todavía no se ejecutó, el saldo no cambió.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+
+        {!(registrar.isSuccess && registrar.data.idAutorizacionPendiente) && (
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
@@ -246,6 +267,7 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
             <p className="text-sm text-red-700">{mensajeError ?? 'No se pudo registrar el movimiento.'}</p>
           )}
         </form>
+        )}
       </div>
     </div>
   )
@@ -271,6 +293,14 @@ export function Ahorros() {
   const toggleAcreditaPrestamo = useMutation({
     mutationFn: async ({ idCuenta, activar }: { idCuenta: string; activar: boolean }) =>
       api.patch(`/api/ahorros/cuentas/${idCuenta}/acredita-prestamo`, { activar }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
+    },
+  })
+
+  const cambiarEstado = useMutation({
+    mutationFn: async ({ idCuenta, estado }: { idCuenta: string; estado: string }) =>
+      api.patch(`/api/ahorros/cuentas/${idCuenta}/estado`, { estado }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ahorros-cuentas'] })
     },
@@ -326,7 +356,9 @@ export function Ahorros() {
 
       {mostrarForm && productos && <AbrirCuentaForm productos={productos} onClose={() => setMostrarForm(false)} />}
       {cuentaMovimiento && (
-        <MovimientoModal cuenta={cuentaMovimiento} onClose={() => setCuentaMovimiento(null)} />
+        <ModalPortal>
+          <MovimientoModal cuenta={cuentaMovimiento} onClose={() => setCuentaMovimiento(null)} />
+        </ModalPortal>
       )}
 
       <div className="mb-6 flex flex-wrap gap-2">
@@ -368,7 +400,9 @@ export function Ahorros() {
               <Td>{c.agencia}</Td>
               <Td className="tabular-nums">{formatoUsd(c.saldoDisponible)}</Td>
               <Td>
-                <Badge variant={c.estado === 'Activa' ? 'exito' : 'neutral'}>{c.estado}</Badge>
+                <Badge variant={c.estado === 'Activa' ? 'exito' : c.estado === 'Bloqueada' ? 'peligro' : 'neutral'}>
+                  {c.estado}
+                </Badge>
               </Td>
               <Td>
                 {!c.permiteDebitoPrestamo ? (
@@ -388,20 +422,284 @@ export function Ahorros() {
                 )}
               </Td>
               <Td>
-                {c.estado === 'Activa' && (
-                  <button
-                    type="button"
-                    onClick={() => setCuentaMovimiento(c)}
-                    className="text-sm font-medium text-gold-400 hover:underline"
-                  >
-                    Movimiento
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {c.estado === 'Activa' && (
+                    <button
+                      type="button"
+                      onClick={() => setCuentaMovimiento(c)}
+                      className="text-sm font-medium text-gold-400 hover:underline"
+                    >
+                      Movimiento
+                    </button>
+                  )}
+                  {(c.estado === 'Activa' || c.estado === 'Bloqueada') && (
+                    <button
+                      type="button"
+                      disabled={cambiarEstado.isPending}
+                      onClick={() => cambiarEstado.mutate({ idCuenta: c.id, estado: c.estado === 'Activa' ? 'Bloqueada' : 'Activa' })}
+                      className="flex items-center gap-1 text-xs font-medium text-graphite-600 hover:underline disabled:opacity-50"
+                    >
+                      {c.estado === 'Activa' ? (
+                        <>
+                          <Lock size={13} /> Bloquear
+                        </>
+                      ) : (
+                        <>
+                          <Unlock size={13} /> Desbloquear
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </Td>
             </tr>
           ))}
         </tbody>
       </TableContainer>
+
+      <SeccionReportesAhorros />
+    </div>
+  )
+}
+
+interface CuentaAperturadaFila {
+  numero: string
+  producto: string
+  agencia: string
+  cliente: string
+  fechaApertura: string
+  saldoInicial: number
+}
+
+interface CuentaBloqueadaFila {
+  numero: string
+  producto: string
+  agencia: string
+  cliente: string
+  fecha: string | null
+  registradoPor: string | null
+}
+
+interface TransaccionAhorroFila {
+  numeroCuenta: string
+  tipo: string
+  monto: number
+  saldoResultante: number
+  fecha: string
+  registradoPor: string
+}
+
+const COLUMNAS_APERTURADAS: ColumnaExportable<CuentaAperturadaFila>[] = [
+  { header: 'Número', accessor: (c) => c.numero },
+  { header: 'Producto', accessor: (c) => c.producto },
+  { header: 'Agencia', accessor: (c) => c.agencia },
+  { header: 'Socio', accessor: (c) => c.cliente },
+  { header: 'Fecha apertura', accessor: (c) => c.fechaApertura },
+  { header: 'Saldo inicial', accessor: (c) => c.saldoInicial },
+]
+
+const COLUMNAS_BLOQUEADAS: ColumnaExportable<CuentaBloqueadaFila>[] = [
+  { header: 'Número', accessor: (c) => c.numero },
+  { header: 'Producto', accessor: (c) => c.producto },
+  { header: 'Agencia', accessor: (c) => c.agencia },
+  { header: 'Socio', accessor: (c) => c.cliente },
+  { header: 'Fecha', accessor: (c) => c.fecha ?? '' },
+  { header: 'Registrado por', accessor: (c) => c.registradoPor ?? '' },
+]
+
+const COLUMNAS_TRANSACCIONES: ColumnaExportable<TransaccionAhorroFila>[] = [
+  { header: 'Cuenta', accessor: (t) => t.numeroCuenta },
+  { header: 'Tipo', accessor: (t) => t.tipo },
+  { header: 'Monto', accessor: (t) => t.monto },
+  { header: 'Saldo resultante', accessor: (t) => t.saldoResultante },
+  { header: 'Fecha', accessor: (t) => t.fecha },
+  { header: 'Registrado por', accessor: (t) => t.registradoPor },
+]
+
+function SeccionReportesAhorros() {
+  const [reporte, setReporte] = useState<'aperturadas' | 'bloqueadas' | 'transacciones'>('aperturadas')
+  const [desde, setDesde] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
+  const [hasta, setHasta] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const { data: aperturadas } = useQuery<CuentaAperturadaFila[]>({
+    queryKey: ['ahorros-reporte-aperturadas', desde, hasta],
+    queryFn: async () => (await api.get('/api/ahorros/reportes/cuentas-aperturadas', { params: { desde, hasta } })).data,
+    enabled: reporte === 'aperturadas',
+  })
+
+  const { data: bloqueadas } = useQuery<CuentaBloqueadaFila[]>({
+    queryKey: ['ahorros-reporte-bloqueadas'],
+    queryFn: async () => (await api.get('/api/ahorros/reportes/cuentas-bloqueadas')).data,
+    enabled: reporte === 'bloqueadas',
+  })
+
+  const { data: transacciones } = useQuery<TransaccionAhorroFila[]>({
+    queryKey: ['ahorros-reporte-transacciones', desde, hasta],
+    queryFn: async () => (await api.get('/api/ahorros/reportes/transacciones', { params: { desde, hasta } })).data,
+    enabled: reporte === 'transacciones',
+  })
+
+  return (
+    <div className="mt-8">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-graphite-600">
+          <FileBarChart size={15} /> Reportes
+        </h2>
+        {reporte === 'aperturadas' && (
+          <BotonesExportar
+            nombreArchivo="ahorros_cuentas_aperturadas"
+            titulo="Cuentas aperturadas"
+            subtitulo={`Del ${desde} al ${hasta}`}
+            columnas={COLUMNAS_APERTURADAS}
+            filas={aperturadas ?? []}
+          />
+        )}
+        {reporte === 'bloqueadas' && (
+          <BotonesExportar
+            nombreArchivo="ahorros_cuentas_bloqueadas"
+            titulo="Cuentas bloqueadas"
+            columnas={COLUMNAS_BLOQUEADAS}
+            filas={bloqueadas ?? []}
+          />
+        )}
+        {reporte === 'transacciones' && (
+          <BotonesExportar
+            nombreArchivo="ahorros_transacciones"
+            titulo="Transacciones de ahorros"
+            subtitulo={`Del ${desde} al ${hasta}`}
+            columnas={COLUMNAS_TRANSACCIONES}
+            filas={transacciones ?? []}
+          />
+        )}
+      </div>
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="flex gap-1 rounded-lg border border-black/[0.08] p-1">
+          {(
+            [
+              ['aperturadas', 'Cuentas aperturadas'],
+              ['bloqueadas', 'Cuentas bloqueadas'],
+              ['transacciones', 'Transacciones'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setReporte(id)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                reporte === id ? 'bg-gold-500 text-white' : 'text-graphite-600 hover:bg-black/[0.02]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {reporte !== 'bloqueadas' && (
+          <>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-graphite-600">Desde</span>
+              <input
+                type="date"
+                value={desde}
+                onChange={(e) => setDesde(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-2 py-1.5 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-graphite-600">Hasta</span>
+              <input
+                type="date"
+                value={hasta}
+                onChange={(e) => setHasta(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-2 py-1.5 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+          </>
+        )}
+      </div>
+
+      {reporte === 'aperturadas' && (
+        <TableContainer>
+          <thead>
+            <tr>
+              <Th>Número</Th>
+              <Th>Producto</Th>
+              <Th>Agencia</Th>
+              <Th>Socio</Th>
+              <Th>Fecha apertura</Th>
+              <Th>Saldo inicial</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {(aperturadas?.length ?? 0) === 0 && <EmptyState>Sin cuentas aperturadas en el rango</EmptyState>}
+            {aperturadas?.map((c, i) => (
+              <tr key={i} className="border-b border-black/[0.04] last:border-0">
+                <Td className="font-medium">{c.numero}</Td>
+                <Td>{c.producto}</Td>
+                <Td>{c.agencia}</Td>
+                <Td>{c.cliente}</Td>
+                <Td>{c.fechaApertura}</Td>
+                <Td className="tabular-nums">{formatoUsd(c.saldoInicial)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableContainer>
+      )}
+
+      {reporte === 'bloqueadas' && (
+        <TableContainer>
+          <thead>
+            <tr>
+              <Th>Número</Th>
+              <Th>Producto</Th>
+              <Th>Agencia</Th>
+              <Th>Socio</Th>
+              <Th>Fecha</Th>
+              <Th>Bloqueado por</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {(bloqueadas?.length ?? 0) === 0 && <EmptyState>Sin cuentas bloqueadas actualmente</EmptyState>}
+            {bloqueadas?.map((c, i) => (
+              <tr key={i} className="border-b border-black/[0.04] last:border-0">
+                <Td className="font-medium">{c.numero}</Td>
+                <Td>{c.producto}</Td>
+                <Td>{c.agencia}</Td>
+                <Td>{c.cliente}</Td>
+                <Td>{c.fecha ? new Date(c.fecha).toLocaleString('es-EC') : '—'}</Td>
+                <Td>{c.registradoPor ?? '—'}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableContainer>
+      )}
+
+      {reporte === 'transacciones' && (
+        <TableContainer>
+          <thead>
+            <tr>
+              <Th>Cuenta</Th>
+              <Th>Tipo</Th>
+              <Th>Monto</Th>
+              <Th>Saldo resultante</Th>
+              <Th>Fecha</Th>
+              <Th>Registrado por</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {(transacciones?.length ?? 0) === 0 && <EmptyState>Sin transacciones en el rango</EmptyState>}
+            {transacciones?.map((t, i) => (
+              <tr key={i} className="border-b border-black/[0.04] last:border-0">
+                <Td className="font-medium">{t.numeroCuenta}</Td>
+                <Td>{t.tipo}</Td>
+                <Td className="tabular-nums">{formatoUsd(t.monto)}</Td>
+                <Td className="tabular-nums">{formatoUsd(t.saldoResultante)}</Td>
+                <Td>{new Date(t.fecha).toLocaleString('es-EC')}</Td>
+                <Td>{t.registradoPor}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableContainer>
+      )}
     </div>
   )
 }

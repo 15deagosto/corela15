@@ -2,6 +2,7 @@ using Corela15.Application.Ahorros;
 using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
+using Corela15.Domain.Colocacion;
 using Corela15.Domain.CuentasPorCobrar;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -100,6 +101,24 @@ public class CuentaPorCobrarService(Corela15DbContext db, IComprobanteContableSe
         {
             cuentaPorCobrar.Estado = EstadoCuentaPorCobrar.Cancelada;
         }
+
+        // Si esta CxC nació de un rubro manual cargado a un préstamo (ver
+        // PrestamoService.CargarRubroManualAsync), el abono también debe
+        // reflejarse en el PrestamoRubro real — sin esto, la cartera de
+        // Créditos seguiría mostrando el cargo como pendiente aunque ya se
+        // cobró desde Tesorería. Mismo criterio real de Softbank: ambas
+        // vistas (Colocación y CxC) del mismo cargo real.
+        var prestamoRubro = await db.PrestamosRubrosCuentasPorCobrar
+            .Where(b => b.IdCuentaPorCobrar == cuentaPorCobrar.Id)
+            .Select(b => b.PrestamoRubro)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (prestamoRubro is not null)
+        {
+            prestamoRubro.Cobrado += request.Monto;
+            prestamoRubro.Estado = cancelada ? "C" : "P";
+            if (cancelada) prestamoRubro.FechaCobro = DateOnly.FromDateTime(DateTime.UtcNow);
+        }
+
         try
         {
             await db.SaveChangesAsync(cancellationToken);

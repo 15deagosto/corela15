@@ -23,4 +23,4 @@ public record RenovarDepositoRequest(
 
 public record DepositoRenovadoResult(
     Guid IdDepositoDestino, string CodigoDestino, decimal MontoNuevo, decimal TasaAplicada,
-    DateOnly FechaVencimiento, Guid? IdComprobanteContable);
+    DateOnly FechaVencimiento, decimal InteresPagado, Guid? IdComprobanteContable);

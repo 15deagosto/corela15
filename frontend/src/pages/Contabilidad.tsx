@@ -5,6 +5,8 @@ import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
+import { BotonesExportar } from '../components/BotonesExportar'
+import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
 
 interface CuentaContable {
@@ -539,6 +541,7 @@ function SeccionEstadosFinancieros() {
 const TABS = [
   { id: 'plan-cuentas', label: 'Plan de cuentas' },
   { id: 'balance', label: 'Balance de comprobación' },
+  { id: 'mayor-auxiliar', label: 'Mayor auxiliar' },
   { id: 'estados-financieros', label: 'B11 / B13 SEPS' },
   { id: 'cierre', label: 'Cierre de período' },
   { id: 'cierre-ejercicio', label: 'Cierre de resultados' },
@@ -571,9 +574,187 @@ export function Contabilidad() {
 
       {tab === 'plan-cuentas' && <SeccionPlanCuentas />}
       {tab === 'balance' && <SeccionBalanceComprobacion />}
+      {tab === 'mayor-auxiliar' && <SeccionMayorAuxiliar />}
       {tab === 'estados-financieros' && <SeccionEstadosFinancieros />}
       {tab === 'cierre' && <SeccionCierrePeriodo />}
       {tab === 'cierre-ejercicio' && <SeccionCierreEjercicio />}
+    </div>
+  )
+}
+
+interface MayorAuxiliarLinea {
+  fecha: string
+  numeroComprobante: number
+  descripcion: string
+  debito: number
+  credito: number
+  saldoCorriente: number
+}
+
+interface MayorAuxiliarResult {
+  codigoCuenta: string
+  nombreCuenta: string
+  desde: string
+  hasta: string
+  saldoInicial: number
+  lineas: MayorAuxiliarLinea[]
+  saldoFinal: number
+  totalDebitos: number
+  totalCreditos: number
+}
+
+function formatoUsdMayor(monto: number) {
+  return monto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })
+}
+
+const COLUMNAS_MAYOR_AUXILIAR: ColumnaExportable<MayorAuxiliarLinea>[] = [
+  { header: 'Fecha', accessor: (l) => l.fecha },
+  { header: 'Comprobante', accessor: (l) => l.numeroComprobante },
+  { header: 'Descripción', accessor: (l) => l.descripcion },
+  { header: 'Débito', accessor: (l) => l.debito },
+  { header: 'Crédito', accessor: (l) => l.credito },
+  { header: 'Saldo', accessor: (l) => l.saldoCorriente },
+]
+
+function SeccionMayorAuxiliar() {
+  const [q, setQ] = useState('')
+  const [cuenta, setCuenta] = useState<CuentaContable | null>(null)
+  const [desde, setDesde] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
+  const [hasta, setHasta] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const { data: resultados } = useQuery<CuentaContable[]>({
+    queryKey: ['mayor-auxiliar-buscar-cuenta', q],
+    queryFn: async () => (await api.get('/api/contabilidad/cuentas', { params: { q: q || undefined } })).data,
+    enabled: q.length >= 2,
+  })
+
+  const { data: reporte, isLoading } = useQuery<MayorAuxiliarResult>({
+    queryKey: ['mayor-auxiliar', cuenta?.id, desde, hasta],
+    queryFn: async () =>
+      (await api.get('/api/contabilidad/reportes/mayor-auxiliar', { params: { idCuenta: cuenta!.id, desde, hasta } })).data,
+    enabled: !!cuenta,
+  })
+
+  return (
+    <div>
+      <p className="mb-4 text-sm text-graphite-600">
+        Historial de movimientos de una cuenta contable específica en un rango de fechas, con saldo corriente — el
+        detalle que complementa al Balance de Comprobación (que agrega por período completo).
+      </p>
+
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="relative min-w-[280px] flex-1">
+          <SearchBar value={q} onChange={setQ} placeholder="Buscar cuenta contable (código o nombre)…" />
+          {q.length >= 2 && (resultados?.length ?? 0) > 0 && !cuenta && (
+            <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-black/[0.08] bg-white shadow-lg">
+              {resultados?.filter((r) => r.esMayor).map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => {
+                    setCuenta(r)
+                    setQ('')
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-black/[0.03]"
+                >
+                  {r.codigo} — {r.nombre}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-graphite-600">Desde</span>
+          <input
+            type="date"
+            value={desde}
+            onChange={(e) => setDesde(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-2 py-1.5 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-graphite-600">Hasta</span>
+          <input
+            type="date"
+            value={hasta}
+            onChange={(e) => setHasta(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-2 py-1.5 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+          />
+        </label>
+      </div>
+
+      {cuenta && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-graphite-600">
+            Cuenta seleccionada: <strong>{cuenta.codigo} — {cuenta.nombre}</strong>{' '}
+            <button type="button" onClick={() => setCuenta(null)} className="ml-2 text-xs text-gold-400 hover:underline">
+              Cambiar
+            </button>
+          </p>
+          {reporte && (
+            <BotonesExportar
+              nombreArchivo={`mayor_auxiliar_${cuenta.codigo}`}
+              titulo={`Mayor auxiliar — ${cuenta.codigo} ${cuenta.nombre}`}
+              subtitulo={`Del ${desde} al ${hasta} — Saldo inicial ${formatoUsdMayor(reporte.saldoInicial)}`}
+              columnas={COLUMNAS_MAYOR_AUXILIAR}
+              filas={reporte.lineas}
+            />
+          )}
+        </div>
+      )}
+
+      {!cuenta && <EmptyState>Buscá y seleccioná una cuenta contable de detalle para ver su mayor auxiliar</EmptyState>}
+
+      {cuenta && isLoading && <EmptyState>Cargando…</EmptyState>}
+
+      {cuenta && reporte && (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="glass-card rounded-lg px-3 py-2">
+              <p className="text-xs text-graphite-600">Saldo inicial</p>
+              <p className="text-sm font-semibold text-graphite-100">{formatoUsdMayor(reporte.saldoInicial)}</p>
+            </div>
+            <div className="glass-card rounded-lg px-3 py-2">
+              <p className="text-xs text-graphite-600">Total débitos</p>
+              <p className="text-sm font-semibold text-graphite-100">{formatoUsdMayor(reporte.totalDebitos)}</p>
+            </div>
+            <div className="glass-card rounded-lg px-3 py-2">
+              <p className="text-xs text-graphite-600">Total créditos</p>
+              <p className="text-sm font-semibold text-graphite-100">{formatoUsdMayor(reporte.totalCreditos)}</p>
+            </div>
+            <div className="glass-card rounded-lg px-3 py-2">
+              <p className="text-xs text-graphite-600">Saldo final</p>
+              <p className="text-sm font-semibold text-graphite-100">{formatoUsdMayor(reporte.saldoFinal)}</p>
+            </div>
+          </div>
+
+          <TableContainer>
+            <thead>
+              <tr>
+                <Th>Fecha</Th>
+                <Th>Comprobante</Th>
+                <Th>Descripción</Th>
+                <Th>Débito</Th>
+                <Th>Crédito</Th>
+                <Th>Saldo</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporte.lineas.length === 0 && <EmptyState>Sin movimientos en el rango</EmptyState>}
+              {reporte.lineas.map((l, i) => (
+                <tr key={i} className="border-b border-black/[0.04] last:border-0">
+                  <Td>{l.fecha}</Td>
+                  <Td className="tabular-nums">{l.numeroComprobante}</Td>
+                  <Td>{l.descripcion}</Td>
+                  <Td className="tabular-nums">{l.debito > 0 ? formatoUsdMayor(l.debito) : '—'}</Td>
+                  <Td className="tabular-nums">{l.credito > 0 ? formatoUsdMayor(l.credito) : '—'}</Td>
+                  <Td className="tabular-nums font-medium">{formatoUsdMayor(l.saldoCorriente)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableContainer>
+        </>
+      )}
     </div>
   )
 }

@@ -6,9 +6,16 @@ public record SolicitarPrestamoRequest(
     int IdAgencia,
     decimal MontoSolicitado,
     int Cuotas,
-    string RegistradoPor);
+    string RegistradoPor,
+    string? CodigoTipoConvenio = null);
 
 public record SolicitudPrestamoCreadaResult(Guid IdSolicitud, string Numero);
+
+public record AprobarSolicitudRequest(Guid IdSolicitud, decimal MontoAprobado, string? Comentario, string RegistradoPor);
+
+public record SolicitudAprobadaResult(Guid IdSolicitud, decimal MontoAprobado);
+
+public record RechazarSolicitudRequest(Guid IdSolicitud, string Comentario, string RegistradoPor);
 
 public record DesembolsarPrestamoRequest(Guid IdSolicitud, string RegistradoPor);
 

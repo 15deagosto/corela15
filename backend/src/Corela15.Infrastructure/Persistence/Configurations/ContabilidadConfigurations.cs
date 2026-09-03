@@ -100,6 +100,26 @@ public class TipoTransaccionConfiguration : IEntityTypeConfiguration<TipoTransac
     }
 }
 
+public class TipoTransaccionCuentaProductoConfiguration : IEntityTypeConfiguration<TipoTransaccionCuentaProducto>
+{
+    public void Configure(EntityTypeBuilder<TipoTransaccionCuentaProducto> b)
+    {
+        b.ToTable("tipo_transaccion_cuenta_producto", "contabilidad");
+        b.HasKey(x => x.Id);
+
+        b.HasOne(x => x.TipoTransaccion).WithMany().HasForeignKey(x => x.IdTipoTransaccion)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.TipoCuenta).WithMany().HasForeignKey(x => x.IdTipoCuenta)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.CuentaContableDebito).WithMany().HasForeignKey(x => x.IdCuentaContableDebito)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.CuentaContableCredito).WithMany().HasForeignKey(x => x.IdCuentaContableCredito)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => new { x.IdTipoTransaccion, x.IdTipoCuenta }).IsUnique();
+    }
+}
+
 public class SaldoContableConfiguration : IEntityTypeConfiguration<SaldoContable>
 {
     public void Configure(EntityTypeBuilder<SaldoContable> b)
@@ -149,5 +169,94 @@ public class CierreEjercicioConfiguration : IEntityTypeConfiguration<CierreEjerc
             .OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.Anio).IsUnique();
+    }
+}
+
+public class FormaCancelacionConfiguration : IEntityTypeConfiguration<FormaCancelacion>
+{
+    public void Configure(EntityTypeBuilder<FormaCancelacion> b)
+    {
+        b.ToTable("forma_cancelacion", "contabilidad");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(5);
+        b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+    }
+}
+
+public class ProveedorConfiguration : IEntityTypeConfiguration<Proveedor>
+{
+    public void Configure(EntityTypeBuilder<Proveedor> b)
+    {
+        b.ToTable("proveedor", "contabilidad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Identificacion).HasMaxLength(20).IsRequired();
+        b.Property(x => x.Nombre).HasMaxLength(300).IsRequired();
+        b.Property(x => x.Direccion).HasMaxLength(300);
+        b.Property(x => x.Telefono).HasMaxLength(40);
+        b.Property(x => x.Email).HasMaxLength(200);
+
+        b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.IdPersona).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.TipoIdentificacion).WithMany().HasForeignKey(x => x.IdTipoIdentificacion).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Identificacion).IsUnique();
+    }
+}
+
+public class TipoComprobanteCompraConfiguration : IEntityTypeConfiguration<TipoComprobanteCompra>
+{
+    public void Configure(EntityTypeBuilder<TipoComprobanteCompra> b)
+    {
+        b.ToTable("tipo_comprobante_compra", "contabilidad");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(5);
+        b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
+    }
+}
+
+public class CompraConfiguration : IEntityTypeConfiguration<Compra>
+{
+    public void Configure(EntityTypeBuilder<Compra> b)
+    {
+        b.ToTable("compra", "contabilidad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Numero).HasMaxLength(15).IsRequired();
+        b.Property(x => x.CodigoSustento).HasMaxLength(5).IsRequired();
+        b.Property(x => x.CodigoTipoComprobante).HasMaxLength(5).IsRequired();
+        b.Property(x => x.Establecimiento).HasMaxLength(12).IsRequired();
+        b.Property(x => x.PuntoEmision).HasMaxLength(12).IsRequired();
+        b.Property(x => x.Secuencial).HasMaxLength(18).IsRequired();
+        b.Property(x => x.Autorizacion).HasMaxLength(60).IsRequired();
+        b.Property(x => x.Concepto).HasMaxLength(500).IsRequired();
+        b.Property(x => x.Subtotal).HasColumnType("numeric(18,2)");
+        b.Property(x => x.MontoIva).HasColumnType("numeric(18,2)");
+        b.Property(x => x.MontoRetencion).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Total).HasColumnType("numeric(18,2)");
+        b.Property(x => x.MontoInicial).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Saldo).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.RegistradoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Proveedor).WithMany().HasForeignKey(x => x.IdProveedor).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.TipoComprobante).WithMany().HasForeignKey(x => x.CodigoTipoComprobante).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Detalle).WithOne(x => x.Compra).HasForeignKey(x => x.IdCompra).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.Numero).IsUnique();
+    }
+}
+
+public class CompraDetalleConfiguration : IEntityTypeConfiguration<CompraDetalle>
+{
+    public void Configure(EntityTypeBuilder<CompraDetalle> b)
+    {
+        b.ToTable("compra_detalle", "contabilidad");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Detalle).HasMaxLength(500).IsRequired();
+        b.Property(x => x.Cantidad).HasColumnType("numeric(18,4)");
+        b.Property(x => x.ValorUnitario).HasColumnType("numeric(18,4)");
+        b.Property(x => x.PorcentajeIva).HasColumnType("numeric(6,4)");
+        b.Property(x => x.Subtotal).HasColumnType("numeric(18,2)");
+        b.Property(x => x.MontoIva).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Total).HasColumnType("numeric(18,2)");
+
+        b.HasOne(x => x.CuentaContable).WithMany().HasForeignKey(x => x.IdCuentaContable).OnDelete(DeleteBehavior.Restrict);
     }
 }

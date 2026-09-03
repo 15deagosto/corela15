@@ -26,8 +26,10 @@ public class AuthController(IAuthService authService) : ControllerBase
         var nombreUsuario = User.Identity!.Name!;
         var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
         var menus = User.FindAll("menu").Select(c => c.Value).ToList();
+        var estructuras = User.FindAll("estructura").Select(c => c.Value).ToList();
+        var idAgenciaEfectiva = int.Parse(User.FindFirstValue("agencia") ?? "0");
 
-        return Ok(new SesionActualResult(idUsuario, nombreUsuario, roles, menus));
+        return Ok(new SesionActualResult(idUsuario, nombreUsuario, roles, menus, estructuras, idAgenciaEfectiva));
     }
 
     [HttpPost("logout")]
@@ -35,6 +37,15 @@ public class AuthController(IAuthService authService) : ControllerBase
     {
         var jti = Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Jti)!);
         await authService.LogoutAsync(jti, User.Identity!.Name!, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("cambiar-clave")]
+    public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveRequest request, CancellationToken cancellationToken)
+    {
+        var idUsuario = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+        var jti = Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Jti)!);
+        await authService.CambiarClaveAsync(idUsuario, jti, request, cancellationToken);
         return NoContent();
     }
 }

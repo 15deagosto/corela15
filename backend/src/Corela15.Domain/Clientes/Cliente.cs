@@ -30,6 +30,19 @@ public class Cliente : AuditableEntity
     public Agencia Agencia { get; set; } = null!;
 
     public Guid? IdUsuarioOficial { get; set; }
+    public Seguridad.Usuario? UsuarioOficial { get; set; }
 
     public EstadoCliente Estado { get; set; } = EstadoCliente.Activo;
+
+    /// <summary>Exento de impuestos/comisiones — verificado contra CLIENTES.CLIENTE.ESEXCENTO.</summary>
+    public bool EsExento { get; set; }
+
+    // Catálogos reales de CLIENTES.CLIENTE sin caso de uso hasta la sección
+    // "CRUD real de Socios y Usuarios y roles" — ver CLAUDE.md.
+    public string? CodigoCausaVinculacion { get; set; }
+    public CausaVinculacion? CausaVinculacion { get; set; }
+    public string? CodigoCalificacionInterna { get; set; }
+    public CalificacionInterna? CalificacionInterna { get; set; }
+    public string? CodigoSectorEconomico { get; set; }
+    public SectorEconomico? SectorEconomico { get; set; }
 }

@@ -1,5 +1,6 @@
 using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
+using Corela15.Domain.Cajas;
 using Corela15.Domain.Contabilidad;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,9 @@ namespace Corela15.Infrastructure.Services;
 public class ComprobanteContableService(Corela15DbContext db) : IComprobanteContableService
 {
     private const int MaxReintentosPorConcurrencia = 3;
+    private const string CodigoCuentaCaja = "1101";
+    private const string CodigoItemCajaEfectivo = "EFE";
+    private const string CodigoMonedaUsd = "USD";
 
     public async Task<ComprobanteContableRegistradoResult> RegistrarAsync(
         RegistrarComprobanteContableRequest request, CancellationToken cancellationToken = default)
@@ -97,6 +101,13 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
 
         db.ComprobantesContables.Add(comprobante);
 
+        // Enganche real al saldo vivo de ventanilla (ver VentanillaItemCaja.cs) —
+        // si esta operación mueve efectivo real (toca la cuenta 1101 Caja)
+        // y quien la registra tiene una ventanilla abierta hoy, se refleja
+        // acá mismo, en la misma transacción del comprobante. Cierra el gap
+        // real "el cuadre no compara contra un monto esperado calculado".
+        await RegistrarMovimientoEfectivoAsync(request, comprobante.Id, cuentas, cancellationToken);
+
         // saldo_contable es el punto de mayor contención del sistema —
         // toda cuenta/período puede recibir comprobantes concurrentes
         // legítimos (dos depósitos distintos a la misma hora). Con xmin
@@ -177,5 +188,74 @@ public class ComprobanteContableService(Corela15DbContext db) : IComprobanteCont
                 ? saldo.TotalDebitos - saldo.TotalCreditos
                 : saldo.TotalCreditos - saldo.TotalDebitos;
         }
+    }
+
+    private async Task RegistrarMovimientoEfectivoAsync(
+        RegistrarComprobanteContableRequest request, Guid idComprobante,
+        Dictionary<Guid, CuentaContable> cuentas, CancellationToken cancellationToken)
+    {
+        var valorEfectivo = request.Lineas
+            .Where(l => cuentas[l.IdCuentaContable].Codigo == CodigoCuentaCaja)
+            .Sum(l => l.Debito - l.Credito);
+        if (valorEfectivo == 0)
+        {
+            return;
+        }
+
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.NombreUsuario == request.RegistradoPor, cancellationToken);
+        if (usuario is null)
+        {
+            return;
+        }
+
+        var ventanilla = await db.Ventanillas
+            .FirstOrDefaultAsync(v => v.IdUsuario == usuario.Id && !v.Cerrada, cancellationToken);
+        if (ventanilla is null)
+        {
+            // Operación real de efectivo sin ventanilla abierta (ej. un
+            // administrador ejecutando un caso de uso desde back-office,
+            // no un cajero en su puesto) — no es un error, simplemente no
+            // hay drawer físico que actualizar.
+            return;
+        }
+
+        var idItemCajaEfectivo = await db.ItemsCaja
+            .Where(i => i.Codigo == CodigoItemCajaEfectivo).Select(i => (int?)i.Id).FirstOrDefaultAsync(cancellationToken);
+        var idMonedaUsd = await db.Monedas
+            .Where(m => m.Codigo == CodigoMonedaUsd).Select(m => (int?)m.Id).FirstOrDefaultAsync(cancellationToken);
+        if (idItemCajaEfectivo is null || idMonedaUsd is null)
+        {
+            return;
+        }
+
+        var ventanillaItemCaja = await db.VentanillasItemCaja.FirstOrDefaultAsync(
+            v => v.IdVentanilla == ventanilla.Id && v.IdItemCaja == idItemCajaEfectivo && v.IdMoneda == idMonedaUsd,
+            cancellationToken);
+        if (ventanillaItemCaja is null)
+        {
+            ventanillaItemCaja = new VentanillaItemCaja
+            {
+                Id = Guid.NewGuid(),
+                IdVentanilla = ventanilla.Id,
+                IdItemCaja = idItemCajaEfectivo.Value,
+                IdMoneda = idMonedaUsd.Value,
+                Saldo = 0,
+            };
+            db.VentanillasItemCaja.Add(ventanillaItemCaja);
+        }
+
+        ventanillaItemCaja.Saldo += valorEfectivo;
+
+        db.VentanillasItemCajaMovimiento.Add(new VentanillaItemCajaMovimiento
+        {
+            Id = Guid.NewGuid(),
+            IdVentanillaItemCaja = ventanillaItemCaja.Id,
+            Valor = valorEfectivo,
+            SaldoResultante = ventanillaItemCaja.Saldo,
+            Descripcion = request.Descripcion ?? "(sin descripción)",
+            IdComprobanteContable = idComprobante,
+            RegistradoPor = request.RegistradoPor,
+            Fecha = DateTimeOffset.UtcNow,
+        });
     }
 }

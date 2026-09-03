@@ -49,5 +49,14 @@ public class TipoPrestamo
     /// </summary>
     public string? CodigoTipoCreditoSeps { get; set; }
 
+    /// <summary>
+    /// Tipo de seguro de desgravamen flat que se cobra por defecto en
+    /// cada préstamo de este producto (ver <see cref="TipoSeguro"/>) —
+    /// nullable: un producto sin este campo configurado simplemente no
+    /// genera rubro de seguro al desembolsar, no es un error.
+    /// </summary>
+    public string? CodigoTipoSeguro { get; set; }
+    public TipoSeguro? TipoSeguro { get; set; }
+
     public bool Activo { get; set; } = true;
 }

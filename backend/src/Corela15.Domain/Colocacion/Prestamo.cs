@@ -45,4 +45,26 @@ public class Prestamo : AuditableEntity
     public DateOnly FechaVencimiento { get; set; }
     public bool DebitoSpi { get; set; }
     public EstadoPrestamo Estado { get; set; } = EstadoPrestamo.Vigente;
+
+    /// <summary>
+    /// El asesor real que originó la solicitud (nombre de usuario, mismo
+    /// campo real verificado en vivo contra <c>COLOCACION.PRESTAMO.
+    /// CODIGOUSUARIO</c>) — nullable y aditivo: los préstamos desembolsados
+    /// antes de este campo no tienen forma real de reconstruirlo (no existe
+    /// FK de <see cref="Prestamo"/> a <c>SolicitudPrestamo</c>), se sembró
+    /// solo hacia adelante desde <c>DesembolsarAsync</c>. Distinto de
+    /// <see cref="AuditableEntity.CreadoPor"/> del préstamo (que es quien
+    /// ejecutó el desembolso, no necesariamente el asesor que gestionó al
+    /// socio) — mismo criterio que Softbank, donde `CODIGOUSUARIO` del
+    /// préstamo no siempre coincide con quien procesa cada transacción
+    /// puntual.
+    /// </summary>
+    public string? CodigoUsuarioAsesor { get; set; }
+
+    // Convenio real bajo el que se desembolsó (copiado de
+    // SolicitudPrestamo.CodigoTipoConvenio al momento del desembolso,
+    // verificado contra COLOCACION.PRESTAMO_TIPOCONVENIO — solo 2 códigos
+    // reales tienen uso real hoy, ver migración Credito_TipoConvenio).
+    public string? CodigoTipoConvenio { get; set; }
+    public Credito.TipoConvenio? TipoConvenio { get; set; }
 }

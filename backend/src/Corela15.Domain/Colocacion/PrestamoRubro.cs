@@ -30,4 +30,14 @@ public class PrestamoRubro
     public decimal Cobrado { get; set; }
 
     public string Estado { get; set; } = string.Empty;
+
+    // Fecha real en la que se cobró (Estado pasó a 'C') — distinta de
+    // FechaFin (el vencimiento nominal de la cuota). Nullable/aditiva:
+    // nunca existía este dato, así que cuotas ya cobradas antes de este
+    // campo quedan en null, sin backfill posible (no hay ninguna otra
+    // tabla real que registre cuándo se pagó cada rubro puntual). Se
+    // completa desde ahora en los 3 puntos reales donde un rubro pasa a
+    // 'C': PrestamoService.PagarCuotaAsync, AutoDebitoSpiService, y
+    // CuentaPorCobrarService.AbonarAsync (rubros manuales).
+    public DateOnly? FechaCobro { get; set; }
 }

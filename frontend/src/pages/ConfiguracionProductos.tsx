@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Pencil } from 'lucide-react'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -252,7 +252,7 @@ export function TabTiposCuenta() {
                 <Badge variant={item.permiteDebitoPrestamo ? 'exito' : 'neutral'}>{item.permiteDebitoPrestamo ? 'Sí' : 'No'}</Badge>
               </Td>
               <Td>
-                <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
               </Td>
               <Td>
                 <button
@@ -285,6 +285,14 @@ interface TipoPrestamo {
   segmentoBce: string
   activo: boolean
   codigoTipoCreditoSeps: string | null
+  codigoTipoSeguro: string | null
+}
+
+interface TipoSeguro {
+  codigo: string
+  nombre: string
+  valorMensual: number
+  activo: boolean
 }
 
 export function TabTiposPrestamo() {
@@ -300,11 +308,17 @@ export function TabTiposPrestamo() {
   const [tasaAnual, setTasaAnual] = useState('0')
   const [segmentoBce, setSegmentoBce] = useState(SEGMENTOS_BCE[4])
   const [codigoTipoCreditoSeps, setCodigoTipoCreditoSeps] = useState('')
+  const [codigoTipoSeguro, setCodigoTipoSeguro] = useState('')
   const [activo, setActivo] = useState(true)
 
   const { data, isLoading } = useQuery<TipoPrestamo[]>({
     queryKey: ['config-tipos-prestamo'],
     queryFn: async () => (await api.get('/api/configuracion/tipos-prestamo')).data,
+  })
+
+  const { data: tiposSeguro } = useQuery<TipoSeguro[]>({
+    queryKey: ['config-tipos-seguro'],
+    queryFn: async () => (await api.get('/api/configuracion/tipos-seguro')).data,
   })
 
   const guardar = useMutation({
@@ -318,6 +332,7 @@ export function TabTiposPrestamo() {
         tasaAnual: Number(tasaAnual) / 100 || 0,
         segmentoBce,
         codigoTipoCreditoSeps: codigoTipoCreditoSeps || null,
+        codigoTipoSeguro: codigoTipoSeguro || null,
       }
       return editando
         ? (await api.put(`/api/configuracion/tipos-prestamo/${editando.id}`, { ...payload, activo })).data
@@ -340,6 +355,7 @@ export function TabTiposPrestamo() {
     setTasaAnual('0')
     setSegmentoBce(SEGMENTOS_BCE[4])
     setCodigoTipoCreditoSeps('')
+    setCodigoTipoSeguro('')
     setActivo(true)
     setMostrarForm(true)
   }
@@ -354,6 +370,7 @@ export function TabTiposPrestamo() {
     setTasaAnual(String(item.tasaAnual * 100))
     setSegmentoBce(item.segmentoBce)
     setCodigoTipoCreditoSeps(item.codigoTipoCreditoSeps ?? '')
+    setCodigoTipoSeguro(item.codigoTipoSeguro ?? '')
     setActivo(item.activo)
     setMostrarForm(true)
   }
@@ -448,6 +465,16 @@ export function TabTiposPrestamo() {
                 ))}
               </select>
             </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs text-graphite-600">Seguro de desgravamen (flat, opcional)</span>
+              <select value={codigoTipoSeguro} onChange={(e) => setCodigoTipoSeguro(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50">
+                <option value="">Sin seguro</option>
+                {tiposSeguro?.filter((t) => t.activo).map((t) => (
+                  <option key={t.codigo} value={t.codigo}>{t.nombre} (${t.valorMensual.toFixed(2)}/mes)</option>
+                ))}
+              </select>
+            </label>
 
             {editando && (
               <label className="flex items-center gap-2 text-sm">
@@ -487,6 +514,7 @@ export function TabTiposPrestamo() {
             <Th>Tasa</Th>
             <Th>Segmento BCE</Th>
             <Th>Tipo SEPS</Th>
+            <Th>Seguro</Th>
             <Th>Estado</Th>
             <Th></Th>
           </tr>
@@ -506,7 +534,12 @@ export function TabTiposPrestamo() {
                 {item.codigoTipoCreditoSeps ? <Badge>{item.codigoTipoCreditoSeps}</Badge> : <span className="text-graphite-700">—</span>}
               </Td>
               <Td>
-                <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
+                {item.codigoTipoSeguro
+                  ? <Badge variant="alerta">{tiposSeguro?.find((t) => t.codigo === item.codigoTipoSeguro)?.nombre ?? item.codigoTipoSeguro}</Badge>
+                  : <span className="text-graphite-700">—</span>}
+              </Td>
+              <Td>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
               </Td>
               <Td>
                 <button
@@ -686,7 +719,7 @@ export function TabTasasTechoBce() {
               <Td>{pct(item.tasaMaxima)}</Td>
               <Td>{item.fechaVigenciaDesde}</Td>
               <Td>
-                <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activa' : 'Inactiva'}</Badge>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activa' : 'Inactiva'}</Badge>
               </Td>
               <Td>
                 <button
@@ -900,7 +933,7 @@ export function TabTableroTasasDpf() {
               <Td>{pct(item.tasa)}</Td>
               <Td>{item.fechaVigenciaDesde}</Td>
               <Td>
-                <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
               </Td>
               <Td>
                 <button
@@ -1047,7 +1080,632 @@ export function TabCategoriasRiesgoCartera() {
               <Td>{item.diasMoraInicio}–{item.diasMoraFin === 999999 ? '∞' : item.diasMoraFin} días</Td>
               <Td>{pct(item.porcentajeProvision)}</Td>
               <Td>
-                <Badge variant={item.activo ? 'exito' : 'peligro'}>{item.activo ? 'Activa' : 'Inactiva'}</Badge>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activa' : 'Inactiva'}</Badge>
+              </Td>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => abrirEditar(item)}
+                  className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
+                >
+                  <Pencil size={13} /> Editar
+                </button>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
+// ---------- Grupos de aprobadores (motor de aprobaciones — FlujoTrabajo) ----------
+
+interface GrupoContable {
+  codigo: string
+  nombre: string
+  montoMinimo: number
+  montoMaximo: number
+  activo: boolean
+}
+
+interface GrupoContableUsuarioItem {
+  id: number
+  idUsuario: string
+  nombreUsuario: string
+  activo: boolean
+}
+
+interface UsuarioBusqueda {
+  id: string
+  nombreUsuario: string
+}
+
+function BuscarUsuario({ onSeleccionar }: { onSeleccionar: (u: UsuarioBusqueda) => void }) {
+  const [q, setQ] = useState('')
+  const { data: usuarios } = useQuery<{ id: string; nombreUsuario: string }[]>({
+    queryKey: ['config-buscar-usuario', q],
+    queryFn: async () => (await api.get('/api/usuarios', { params: { q } })).data,
+    enabled: q.length >= 2,
+  })
+
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Buscar usuario para agregar al grupo…"
+        className="rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
+      />
+      {q.length >= 2 && (usuarios?.length ?? 0) > 0 && (
+        <div className="max-h-32 overflow-y-auto rounded-lg border border-black/[0.08] bg-white">
+          {usuarios?.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => {
+                onSeleccionar(u)
+                setQ('')
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs hover:bg-black/[0.02]"
+            >
+              {u.nombreUsuario}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MiembrosDelGrupo({ codigo, onClose }: { codigo: string; onClose: () => void }) {
+  const queryClient = useQueryClient()
+
+  const { data: usuarios, isLoading } = useQuery<GrupoContableUsuarioItem[]>({
+    queryKey: ['config-grupo-contable-usuarios', codigo],
+    queryFn: async () => (await api.get(`/api/configuracion/flujo-trabajo/grupos-contables/${codigo}/usuarios`)).data,
+  })
+
+  const agregar = useMutation({
+    mutationFn: async (idUsuario: string) =>
+      api.post(`/api/configuracion/flujo-trabajo/grupos-contables/${codigo}/usuarios`, { idUsuario }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config-grupo-contable-usuarios', codigo] }),
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (id: number) => api.delete(`/api/configuracion/flujo-trabajo/grupos-contables-usuarios/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config-grupo-contable-usuarios', codigo] }),
+  })
+
+  return (
+    <tr>
+      <Td colSpan={5}>
+        <div className="glass-card animate-zoom-in rounded-xl p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="text-sm font-medium text-graphite-100">Usuarios autorizados a decidir en {codigo}</h4>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={16} />
+            </button>
+          </div>
+
+          {isLoading && <p className="text-sm text-graphite-600">Cargando…</p>}
+
+          <ul className="mb-3 flex flex-col gap-1">
+            {(usuarios?.filter((u) => u.activo).length ?? 0) === 0 && (
+              <li className="text-xs text-graphite-600">Ningún usuario activo en este grupo — nadie podrá aprobar esta etapa.</li>
+            )}
+            {usuarios?.filter((u) => u.activo).map((u) => (
+              <li key={u.id} className="flex items-center justify-between text-xs">
+                <span>{u.nombreUsuario}</span>
+                <button
+                  type="button"
+                  disabled={quitar.isPending}
+                  onClick={() => quitar.mutate(u.id)}
+                  className="text-graphite-600 hover:text-red-700 disabled:opacity-50"
+                >
+                  Quitar
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <BuscarUsuario onSeleccionar={(u) => agregar.mutate(u.id)} />
+        </div>
+      </Td>
+    </tr>
+  )
+}
+
+interface EtapaFlujo {
+  id: number
+  nombre: string
+  tipoEtapa: string
+  orden: number
+  activa: boolean
+}
+
+interface EtapaGrupoRuteo {
+  id: number
+  etapa: string
+  agencia: string
+  codigoGrupoContable: string
+  activa: boolean
+}
+
+function EtapasDelMotor() {
+  const [etapaAbierta, setEtapaAbierta] = useState<number | null>(null)
+
+  const { data: etapas, isLoading } = useQuery<EtapaFlujo[]>({
+    queryKey: ['config-flujo-trabajo-etapas'],
+    queryFn: async () => (await api.get('/api/configuracion/flujo-trabajo/etapas')).data,
+  })
+
+  const { data: ruteo } = useQuery<EtapaGrupoRuteo[]>({
+    queryKey: ['config-flujo-trabajo-etapa-grupos', etapaAbierta],
+    queryFn: async () => (await api.get(`/api/configuracion/flujo-trabajo/etapas/${etapaAbierta}/grupos`)).data,
+    enabled: etapaAbierta !== null,
+  })
+
+  return (
+    <div className="mb-6">
+      <h3 className="mb-2 text-sm font-medium text-graphite-600">Etapas del motor (estructura, solo lectura)</h3>
+      <p className="mb-3 text-xs text-graphite-600">
+        La secuencia de etapas y a qué grupo rutea cada una es estructura del motor — se ajusta por migración, no
+        desde acá (cambiarla mal rompería el flujo real). Lo que sí se administra abajo es quién integra cada grupo.
+      </p>
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Orden</Th>
+            <Th>Etapa</Th>
+            <Th>Tipo</Th>
+            <Th>Estado</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {etapas?.map((e) => (
+            <Fragment key={e.id}>
+              <tr className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+                <Td className="tabular-nums">{e.orden}</Td>
+                <Td className="font-medium">{e.nombre}</Td>
+                <Td>{e.tipoEtapa}</Td>
+                <Td>
+                  <Badge variant={e.activa ? 'exito' : 'neutral'}>{e.activa ? 'Activa' : 'Inactiva'}</Badge>
+                </Td>
+                <Td>
+                  <button
+                    type="button"
+                    onClick={() => setEtapaAbierta(etapaAbierta === e.id ? null : e.id)}
+                    className="text-xs font-medium text-gold-400 hover:underline"
+                  >
+                    Ver ruteo
+                  </button>
+                </Td>
+              </tr>
+              {etapaAbierta === e.id && (
+                <tr>
+                  <Td colSpan={5}>
+                    <div className="rounded-lg border border-black/[0.08] bg-white p-2 text-xs">
+                      {(ruteo?.length ?? 0) === 0 && <p className="text-graphite-600">Sin ruteo configurado para esta etapa.</p>}
+                      {ruteo?.map((r) => (
+                        <div key={r.id} className="flex items-center justify-between py-0.5">
+                          <span>{r.agencia} → grupo <strong>{r.codigoGrupoContable}</strong></span>
+                          <Badge variant={r.activa ? 'exito' : 'neutral'}>{r.activa ? 'Activo' : 'Inactivo'}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </Td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
+export function TabGruposContables() {
+  const queryClient = useQueryClient()
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [editando, setEditando] = useState<GrupoContable | null>(null)
+  const [codigo, setCodigo] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [montoMinimo, setMontoMinimo] = useState('0.01')
+  const [montoMaximo, setMontoMaximo] = useState('999999999')
+  const [activo, setActivo] = useState(true)
+  const [grupoAbierto, setGrupoAbierto] = useState<string | null>(null)
+
+  const { data, isLoading } = useQuery<GrupoContable[]>({
+    queryKey: ['config-grupos-contables'],
+    queryFn: async () => (await api.get('/api/configuracion/flujo-trabajo/grupos-contables')).data,
+  })
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      editando
+        ? api.put(`/api/configuracion/flujo-trabajo/grupos-contables/${editando.codigo}`, {
+            nombre, montoMinimo: Number(montoMinimo), montoMaximo: Number(montoMaximo), activo,
+          })
+        : api.post('/api/configuracion/flujo-trabajo/grupos-contables', {
+            codigo, nombre, montoMinimo: Number(montoMinimo), montoMaximo: Number(montoMaximo),
+          }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-grupos-contables'] })
+      cerrar()
+    },
+  })
+
+  const abrirNuevo = () => {
+    setEditando(null)
+    setCodigo('')
+    setNombre('')
+    setMontoMinimo('0.01')
+    setMontoMaximo('999999999')
+    setActivo(true)
+    setMostrarForm(true)
+  }
+
+  const abrirEditar = (item: GrupoContable) => {
+    setEditando(item)
+    setCodigo(item.codigo)
+    setNombre(item.nombre)
+    setMontoMinimo(item.montoMinimo.toString())
+    setMontoMaximo(item.montoMaximo.toString())
+    setActivo(item.activo)
+    setMostrarForm(true)
+  }
+
+  const cerrar = () => {
+    setMostrarForm(false)
+    setEditando(null)
+  }
+
+  return (
+    <div>
+      <p className="mb-4 text-xs text-graphite-600">
+        Motor real de aprobaciones (verificado contra FLUJOTRABAJO.GRUPO_CONTABLE de Softbank) — cada grupo autoriza
+        montos dentro de su rango. El Comité de Crédito (código <code>COM-CRED</code>) es el que valida
+        Aprobar/Rechazar en Créditos → Solicitudes: si un usuario no está en un grupo activo cuyo rango cubra el
+        monto, no puede decidir esa solicitud aunque tenga acceso al menú.
+      </p>
+
+      <EtapasDelMotor />
+
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-graphite-600">Grupos de aprobadores</h3>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={abrirNuevo}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-1.5 text-xs font-medium text-white"
+          >
+            <Plus size={14} /> Nuevo
+          </button>
+        )}
+      </div>
+
+      {mostrarForm && (
+        <div className="glass-card animate-zoom-in mb-4 rounded-xl p-4">
+          <form
+            className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-center"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!nombre || (!editando && !codigo)) return
+              guardar.mutate()
+            }}
+          >
+            <input
+              required
+              disabled={!!editando}
+              placeholder="Código"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50 disabled:opacity-50"
+            />
+            <input
+              required
+              placeholder="Nombre"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Monto mínimo"
+              value={montoMinimo}
+              onChange={(e) => setMontoMinimo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Monto máximo"
+              value={montoMaximo}
+              onChange={(e) => setMontoMaximo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+            {editando && (
+              <label className="flex items-center gap-1.5 text-sm text-graphite-600">
+                <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} /> Activo
+              </label>
+            )}
+            <div className="flex items-center gap-2 sm:col-span-4">
+              <button
+                type="submit"
+                disabled={guardar.isPending}
+                className="btn-hover rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {guardar.isPending ? 'Guardando…' : editando ? 'Actualizar' : 'Crear'}
+              </button>
+              <button type="button" onClick={cerrar} className="text-graphite-600 hover:text-graphite-100">
+                <X size={18} />
+              </button>
+            </div>
+            {guardar.isError && (
+              <p className="sm:col-span-4 text-sm text-red-700">{mensajeError(guardar.error, 'No se pudo guardar el grupo.')}</p>
+            )}
+          </form>
+        </div>
+      )}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código</Th>
+            <Th>Nombre</Th>
+            <Th>Rango de monto</Th>
+            <Th>Estado</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {data?.map((g) => (
+            <Fragment key={g.codigo}>
+              <tr className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+                <Td className="font-medium">{g.codigo}</Td>
+                <Td>{g.nombre}</Td>
+                <Td className="tabular-nums">
+                  ${g.montoMinimo.toFixed(2)} – ${g.montoMaximo.toFixed(2)}
+                </Td>
+                <Td>
+                  <Badge variant={g.activo ? 'exito' : 'neutral'}>{g.activo ? 'Activo' : 'Inactivo'}</Badge>
+                </Td>
+                <Td>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => abrirEditar(g)}
+                      className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
+                    >
+                      <Pencil size={13} /> Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGrupoAbierto(grupoAbierto === g.codigo ? null : g.codigo)}
+                      className="text-xs font-medium text-gold-400 hover:underline"
+                    >
+                      Usuarios
+                    </button>
+                  </div>
+                </Td>
+              </tr>
+              {grupoAbierto === g.codigo && (
+                <MiembrosDelGrupo codigo={g.codigo} onClose={() => setGrupoAbierto(null)} />
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
+// ---------- Tipos de convenio (empleador/sindicato con descuento vía rol de pagos) ----------
+
+interface TipoConvenio {
+  codigo: string
+  nombre: string
+  idAgencia: number
+  agencia: string
+  esCooperativa: boolean
+  valorAhorro: number
+  activo: boolean
+}
+
+interface AgenciaSimple {
+  id: number
+  nombre: string
+  activa: boolean
+}
+
+export function TabTiposConvenio() {
+  const queryClient = useQueryClient()
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [editando, setEditando] = useState<TipoConvenio | null>(null)
+  const [codigo, setCodigo] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [idAgencia, setIdAgencia] = useState('')
+  const [esCooperativa, setEsCooperativa] = useState(false)
+  const [valorAhorro, setValorAhorro] = useState('0')
+  const [activo, setActivo] = useState(true)
+
+  const { data, isLoading } = useQuery<TipoConvenio[]>({
+    queryKey: ['config-tipos-convenio'],
+    queryFn: async () => (await api.get('/api/configuracion/tipos-convenio')).data,
+  })
+
+  const { data: agencias } = useQuery<AgenciaSimple[]>({
+    queryKey: ['config-agencias-simple'],
+    queryFn: async () => (await api.get('/api/configuracion/agencias')).data,
+  })
+
+  const guardar = useMutation({
+    mutationFn: async () => {
+      const payload = { nombre, idAgencia: Number(idAgencia), esCooperativa, valorAhorro: Number(valorAhorro) || 0 }
+      return editando
+        ? (await api.put(`/api/configuracion/tipos-convenio/${editando.codigo}`, { ...payload, activo })).data
+        : (await api.post('/api/configuracion/tipos-convenio', { codigo, ...payload })).data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-tipos-convenio'] })
+      cerrar()
+    },
+  })
+
+  const abrirNuevo = () => {
+    setEditando(null)
+    setCodigo('')
+    setNombre('')
+    setIdAgencia(agencias?.[0] ? String(agencias[0].id) : '')
+    setEsCooperativa(false)
+    setValorAhorro('0')
+    setActivo(true)
+    setMostrarForm(true)
+  }
+
+  const abrirEditar = (item: TipoConvenio) => {
+    setEditando(item)
+    setNombre(item.nombre)
+    setIdAgencia(String(item.idAgencia))
+    setEsCooperativa(item.esCooperativa)
+    setValorAhorro(String(item.valorAhorro))
+    setActivo(item.activo)
+    setMostrarForm(true)
+  }
+
+  const cerrar = () => {
+    setMostrarForm(false)
+    setEditando(null)
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-graphite-600">
+          Convenios (empleador/sindicato con descuento vía rol de pagos)
+        </h3>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={abrirNuevo}
+            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-1.5 text-xs font-medium text-white"
+          >
+            <Plus size={14} /> Nuevo convenio
+          </button>
+        )}
+      </div>
+
+      {mostrarForm && (
+        <div className="glass-card animate-zoom-in mb-4 rounded-xl p-4">
+          <form
+            className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!nombre || !idAgencia || (!editando && !codigo)) return
+              guardar.mutate()
+            }}
+          >
+            <input
+              required
+              disabled={!!editando}
+              placeholder="Código"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50 disabled:opacity-60"
+            />
+            <input
+              required
+              placeholder="Nombre del convenio (empleador/sindicato)"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50 sm:col-span-2"
+            />
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs text-graphite-600">Agencia</span>
+              <select
+                required
+                value={idAgencia}
+                onChange={(e) => setIdAgencia(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+              >
+                <option value="">Seleccionar…</option>
+                {agencias?.filter((a) => a.activa).map((a) => (
+                  <option key={a.id} value={a.id}>{a.nombre}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs text-graphite-600">Valor ahorro (opcional)</span>
+              <input
+                type="number" step="0.01" min="0"
+                value={valorAhorro}
+                onChange={(e) => setValorAhorro(e.target.value)}
+                className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={esCooperativa} onChange={(e) => setEsCooperativa(e.target.checked)} className="h-4 w-4 rounded accent-[#b58e4a]" />
+              <span className="text-graphite-600">Es cooperativa</span>
+            </label>
+
+            {editando && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} className="h-4 w-4 rounded accent-[#b58e4a]" />
+                <span className="text-graphite-600">Activo</span>
+              </label>
+            )}
+
+            <div className="flex items-center gap-2 sm:col-span-3">
+              <button
+                type="submit"
+                disabled={guardar.isPending}
+                className="btn-hover rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {guardar.isPending ? 'Guardando…' : editando ? 'Actualizar' : 'Crear'}
+              </button>
+              <button type="button" onClick={cerrar} className="text-graphite-600 hover:text-graphite-100">
+                <X size={18} />
+              </button>
+            </div>
+            {guardar.isError && (
+              <p className="sm:col-span-3 text-sm text-red-700">{mensajeError(guardar.error, 'No se pudo guardar el convenio.')}</p>
+            )}
+          </form>
+        </div>
+      )}
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Código</Th>
+            <Th>Nombre</Th>
+            <Th>Agencia</Th>
+            <Th>Es cooperativa</Th>
+            <Th>Valor ahorro</Th>
+            <Th>Estado</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (data?.length ?? 0) === 0 && <EmptyState>Sin convenios registrados</EmptyState>}
+          {data?.map((item) => (
+            <tr key={item.codigo} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+              <Td className="font-medium">{item.codigo}</Td>
+              <Td>{item.nombre}</Td>
+              <Td>{item.agencia}</Td>
+              <Td>
+                <Badge variant={item.esCooperativa ? 'exito' : 'neutral'}>{item.esCooperativa ? 'Sí' : 'No'}</Badge>
+              </Td>
+              <Td>${item.valorAhorro.toFixed(2)}</Td>
+              <Td>
+                <Badge variant={item.activo ? 'exito' : 'neutral'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
               </Td>
               <Td>
                 <button
