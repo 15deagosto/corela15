@@ -239,6 +239,18 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Aplica migraciones pendientes al arrancar -- patrón estándar en
+// contenedores (nunca hay una sesión de terminal para correr `dotnet ef
+// database update` a mano en el servidor). Idempotente: si ya está al
+// día (ej. una base restaurada por pg_restore con el historial completo
+// de EFMigrationsHistory), no hace nada. Sigue sin reemplazar el flujo
+// manual documentado para desarrollo local, solo lo complementa.
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<Corela15.Infrastructure.Persistence.Corela15DbContext>()
+        .Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
