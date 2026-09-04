@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # .NET
 backend/**/bin/
@@ -27,3 +28,6 @@ Thumbs.db
 # arquitectura, flujos de negocio, mapeos de Softbank) — no debe subirse
 # al repo remoto, se queda solo local.
 *.md
+
+# Secretos reales de producción -- nunca commitear
+.env.prod

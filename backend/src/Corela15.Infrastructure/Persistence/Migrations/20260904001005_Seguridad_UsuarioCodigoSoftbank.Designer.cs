@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904001005_Seguridad_UsuarioCodigoSoftbank")]
+    partial class Seguridad_UsuarioCodigoSoftbank
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -6946,7 +6949,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_obligacion_financiera_id_cuenta_contable");
 
                     b.HasIndex("TipoIdentificacionAcreedor", "IdentificacionAcreedor", "NumeroObligacion", "IdCuentaContable")
-                        .IsUnique()
                         .HasDatabaseName("ix_obligacion_financiera_tipo_identificacion_acreedor_identifi");
 
                     b.ToTable("obligacion_financiera", "obligacion");

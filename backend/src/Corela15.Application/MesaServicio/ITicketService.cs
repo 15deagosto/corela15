@@ -77,7 +77,7 @@ public record TomarTicketRequest(Guid IdUsuarioAgente, string RegistradoPor);
 
 public record CalificarTicketRequest(int Calificacion, string? Comentario, string SolicitadoPor);
 
-public record ListarTicketsFiltro(string? CodigoEstado, Guid? IdUsuarioAsignado, string? SoloMios);
+public record ListarTicketsFiltro(string? CodigoEstado, Guid? IdUsuarioAsignado, string? CreadoPor);
 
 public record AgenteDto(Guid Id, string NombreUsuario);
 

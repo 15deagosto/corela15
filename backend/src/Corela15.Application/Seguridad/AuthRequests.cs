@@ -4,7 +4,8 @@ public record LoginRequest(string NombreUsuario, string Contrasena);
 
 public record LoginResult(
     string Token, DateTimeOffset ExpiraEn, Guid IdUsuario, string NombreUsuario,
-    IReadOnlyList<string> Roles, IReadOnlyList<string> Menus, IReadOnlyList<string> Estructuras, int IdAgenciaEfectiva);
+    IReadOnlyList<string> Roles, IReadOnlyList<string> Menus, IReadOnlyList<string> Estructuras, int IdAgenciaEfectiva,
+    bool CambiaClave);
 
 public record SesionActualResult(
     Guid IdUsuario, string NombreUsuario, IReadOnlyList<string> Roles, IReadOnlyList<string> Menus,

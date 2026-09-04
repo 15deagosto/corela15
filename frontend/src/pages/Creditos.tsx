@@ -2238,6 +2238,14 @@ interface AbonoConvenioItem {
   fecha: string
 }
 
+interface EntregaRecuperacionItem {
+  anio: number
+  mes: number
+  entregado: number
+  recuperado: number
+  diferencia: number
+}
+
 const COLUMNAS_POR_CONVENIO: ColumnaExportable<PrestamoPorConvenioItem>[] = [
   { header: 'Préstamo', accessor: (c) => c.numeroPrestamo },
   { header: 'Producto', accessor: (c) => c.producto },
@@ -2252,6 +2260,14 @@ const COLUMNAS_ABONOS_CONVENIO: ColumnaExportable<AbonoConvenioItem>[] = [
   { header: 'Cuota', accessor: (a) => a.numeroCuota },
   { header: 'Capital abonado', accessor: (a) => a.capital },
   { header: 'Fecha', accessor: (a) => a.fecha },
+]
+
+const COLUMNAS_ENTREGA_RECUPERACION: ColumnaExportable<EntregaRecuperacionItem>[] = [
+  { header: 'Año', accessor: (e) => e.anio },
+  { header: 'Mes', accessor: (e) => e.mes },
+  { header: 'Entregado (desembolsos)', accessor: (e) => e.entregado },
+  { header: 'Recuperado (capital cobrado)', accessor: (e) => e.recuperado },
+  { header: 'Diferencia', accessor: (e) => e.diferencia },
 ]
 
 function SeccionReportesCreditos() {
@@ -2275,6 +2291,7 @@ function SeccionReportesCreditos() {
     | 'vinculados'
     | 'por-convenio'
     | 'abonos-convenio'
+    | 'entrega-recuperacion'
   >('concesion')
   const [desde, setDesde] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
   const [hasta, setHasta] = useState(() => new Date().toISOString().slice(0, 10))
@@ -2406,6 +2423,12 @@ function SeccionReportesCreditos() {
     enabled: reporte === 'abonos-convenio',
   })
 
+  const { data: entregaRecuperacion } = useQuery<EntregaRecuperacionItem[]>({
+    queryKey: ['creditos-reporte-entrega-recuperacion', desde, hasta],
+    queryFn: async () => (await api.get('/api/creditos/reportes/entrega-recuperacion', { params: { desde, hasta } })).data,
+    enabled: reporte === 'entrega-recuperacion',
+  })
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -2431,6 +2454,7 @@ function SeccionReportesCreditos() {
               ['vinculados', 'Créditos vinculados'],
               ['por-convenio', 'Préstamos por convenio'],
               ['abonos-convenio', 'Abonos por convenio'],
+              ['entrega-recuperacion', 'Entrega vs recuperación'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -2611,6 +2635,15 @@ function SeccionReportesCreditos() {
             subtitulo={`Del ${desde} al ${hasta}`}
             columnas={COLUMNAS_ABONOS_CONVENIO}
             filas={abonosConvenio ?? []}
+          />
+        )}
+        {reporte === 'entrega-recuperacion' && (
+          <BotonesExportar
+            nombreArchivo="creditos_entrega_recuperacion"
+            titulo="Entrega vs recuperación"
+            subtitulo={`Del ${desde} al ${hasta}`}
+            columnas={COLUMNAS_ENTREGA_RECUPERACION}
+            filas={entregaRecuperacion ?? []}
           />
         )}
       </div>
@@ -3206,6 +3239,36 @@ function SeccionReportesCreditos() {
                 <Td>{a.numeroCuota}</Td>
                 <Td className="tabular-nums">{formatoUsd(a.capital)}</Td>
                 <Td>{a.fecha}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableContainer>
+      )}
+
+      {reporte === 'entrega-recuperacion' && (
+        <TableContainer>
+          <thead>
+            <tr>
+              <Th>Mes</Th>
+              <Th>Entregado (desembolsos)</Th>
+              <Th>Recuperado (capital cobrado)</Th>
+              <Th>Diferencia</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {(entregaRecuperacion?.length ?? 0) === 0 && (
+              <EmptyState>Sin entregas ni recuperaciones en el rango</EmptyState>
+            )}
+            {entregaRecuperacion?.map((e, i) => (
+              <tr key={i} className="border-b border-black/[0.04] last:border-0">
+                <Td className="font-medium">
+                  {e.anio}-{String(e.mes).padStart(2, '0')}
+                </Td>
+                <Td className="tabular-nums">{formatoUsd(e.entregado)}</Td>
+                <Td className="tabular-nums">{formatoUsd(e.recuperado)}</Td>
+                <Td className={`tabular-nums font-medium ${e.diferencia < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {formatoUsd(e.diferencia)}
+                </Td>
               </tr>
             ))}
           </tbody>

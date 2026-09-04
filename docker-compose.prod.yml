@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: corela15_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.prod}
+    # Sin publicar 5432 al host -- solo el backend (misma red interna de
+    # Docker) necesita hablarle. Reduce superficie de ataque real: nadie
+    # desde fuera del servidor puede conectarse directo a Postgres.
+    expose:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: corela15_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Core: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Jwt__Secret: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      Jwt__Issuer: ${JWT_ISSUER:-Corela15}
+      Jwt__Audience: ${JWT_AUDIENCE:-Corela15Api}
+      Jwt__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-480}
+      Corela15__CorsOrigins__0: ${CORS_ORIGIN:?set CORS_ORIGIN in .env.prod, ej. https://core.cooperativa15deagosto.fin.ec}
+    expose:
+      - "8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    container_name: corela15_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:

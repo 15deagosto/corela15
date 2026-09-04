@@ -463,6 +463,52 @@ public class CreditosController(
         return Ok(resultado);
     }
 
+    // Colocacion.ReporteEntregaRecuperacion ("ENTREGA VS RECUPERACION") —
+    // cuánto capital se entregó en desembolsos nuevos contra cuánto se
+    // recuperó en pagos reales de capital, por mes. Bloqueado desde el
+    // cuarto lote de reportería por falta de PrestamoRubro.FechaCobro (sin
+    // eso no había forma de saber CUÁNDO se cobró cada capital, solo que
+    // ya estaba cobrado) — el campo ya existe desde el sexto lote, así que
+    // se construye ahora. Agrupado en memoria (no en el Select de EF) por
+    // el mismo motivo ya documentado varias veces en el proyecto: Npgsql
+    // no siempre traduce bien un GroupBy por año/mes sobre DateOnly.
+    [HttpGet("reportes/entrega-recuperacion")]
+    public async Task<ActionResult<IReadOnlyList<EntregaRecuperacionItem>>> ReporteEntregaRecuperacion(
+        [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
+    {
+        var entregas = await db.Prestamos
+            .Where(p => p.FechaAdjudicacion >= desde && p.FechaAdjudicacion <= hasta)
+            .Select(p => new { p.FechaAdjudicacion, p.DeudaInicial })
+            .ToListAsync(cancellationToken);
+
+        var recuperaciones = await db.PrestamosRubros
+            .Include(r => r.Rubro).ThenInclude(ru => ru.TipoRubro)
+            .Where(r => r.Rubro.TipoRubro.EsCapital && r.Estado == "C"
+                && r.FechaCobro != null && r.FechaCobro >= desde && r.FechaCobro <= hasta)
+            .Select(r => new { Fecha = r.FechaCobro!.Value, r.Cobrado })
+            .ToListAsync(cancellationToken);
+
+        var entregadoPorMes = entregas
+            .GroupBy(e => new { e.FechaAdjudicacion.Year, e.FechaAdjudicacion.Month })
+            .ToDictionary(g => (g.Key.Year, g.Key.Month), g => g.Sum(e => e.DeudaInicial));
+        var recuperadoPorMes = recuperaciones
+            .GroupBy(r => new { r.Fecha.Year, r.Fecha.Month })
+            .ToDictionary(g => (g.Key.Year, g.Key.Month), g => g.Sum(r => r.Cobrado));
+
+        var meses = entregadoPorMes.Keys.Union(recuperadoPorMes.Keys).OrderBy(m => m.Year).ThenBy(m => m.Month);
+
+        var resultado = meses
+            .Select(m =>
+            {
+                var entregado = entregadoPorMes.GetValueOrDefault(m, 0m);
+                var recuperado = recuperadoPorMes.GetValueOrDefault(m, 0m);
+                return new EntregaRecuperacionItem(m.Year, m.Month, entregado, recuperado, recuperado - entregado);
+            })
+            .ToList();
+
+        return Ok(resultado);
+    }
+
     // Colocacion.CalificacionPrestamoDetallado — misma clasificación real
     // usada por IProvisionCarteraService.EjecutarCalculoAsync (matriz
     // A1-E, Art. 44), pero de solo lectura: nunca llama al cálculo que
@@ -924,6 +970,9 @@ public record PrestamoPorConvenioItem(
 
 public record AbonoConvenioItem(
     string NumeroPrestamo, string Convenio, int NumeroCuota, decimal Capital, DateOnly Fecha);
+
+public record EntregaRecuperacionItem(
+    int Anio, int Mes, decimal Entregado, decimal Recuperado, decimal Diferencia);
 
 public record CalificacionPrestamoItem(
     string NumeroPrestamo, string Producto, string Cliente, decimal Saldo, int DiasMora,

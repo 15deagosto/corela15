@@ -211,6 +211,7 @@ public class TicketService(Corela15DbContext db) : ITicketService
 
         if (!string.IsNullOrWhiteSpace(filtro.CodigoEstado)) query = query.Where(t => t.CodigoEstado == filtro.CodigoEstado);
         if (filtro.IdUsuarioAsignado is not null) query = query.Where(t => t.IdUsuarioAsignado == filtro.IdUsuarioAsignado);
+        if (!string.IsNullOrWhiteSpace(filtro.CreadoPor)) query = query.Where(t => t.CreadoPor == filtro.CreadoPor);
 
         var ahora = DateTimeOffset.UtcNow;
 

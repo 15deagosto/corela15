@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Corela15.Api.Controllers;
 
 public record UsuarioListItem(
-    Guid Id, string NombreUsuario, string? NombrePersona,
+    Guid Id, string NombreUsuario, string? NombrePersona, string? Email,
     string Agencia, bool Activo, bool TieneBloqueo, IReadOnlyList<string> Roles);
 
 public record ConfigurarBloqueoBody(bool Bloquear);
@@ -24,7 +24,8 @@ public record ActualizarUsuarioBody(
     bool ValidaIp, bool CambiaClave, int? DiasCambioClave);
 
 public record UsuarioDetalleDto(
-    Guid Id, string NombreUsuario, string? NombrePersona, int IdAgencia, string Agencia,
+    Guid Id, string NombreUsuario, string? NombrePersona, string? Email, string? CodigoUsuarioSoftbank,
+    int IdAgencia, string Agencia,
     bool PuedeIngresarSistema, bool TieneBloqueo, bool UsaDispositivoMovil, bool PermiteRiesgoOperativo,
     bool PermiteConsultaEmpleados, bool ValidaIp, bool CambiaClave, int? DiasCambioClave);
 
@@ -88,7 +89,8 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
         if (u is null) return NotFound();
 
         return Ok(new UsuarioDetalleDto(
-            u.Id, u.NombreUsuario, u.Persona?.Nombre, u.IdAgencia, u.Agencia.Nombre,
+            u.Id, u.NombreUsuario, u.Persona?.Nombre ?? u.NombreCompleto, u.Email, u.CodigoUsuarioSoftbank,
+            u.IdAgencia, u.Agencia.Nombre,
             u.PuedeIngresarSistema, u.TieneBloqueo, u.UsaDispositivoMovil, u.PermiteRiesgoOperativo,
             u.PermiteConsultaEmpleados, u.ValidaIp, u.CambiaClave, u.DiasCambioClave));
     }
@@ -315,13 +317,14 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
         {
             query = query.Where(u =>
                 EF.Functions.ILike(u.NombreUsuario, $"%{q}%") ||
+                EF.Functions.ILike(u.NombreCompleto ?? "", $"%{q}%") ||
                 (u.Persona != null && EF.Functions.ILike(u.Persona.Nombre, $"%{q}%")));
         }
 
         var resultado = await query
             .OrderBy(u => u.NombreUsuario)
             .Select(u => new UsuarioListItem(
-                u.Id, u.NombreUsuario, u.Persona != null ? u.Persona.Nombre : null,
+                u.Id, u.NombreUsuario, u.Persona != null ? u.Persona.Nombre : u.NombreCompleto, u.Email,
                 u.Agencia.Nombre, u.Activo, u.TieneBloqueo,
                 u.UsuarioRoles.Where(ur => ur.Activo).Select(ur => ur.Rol.Nombre).ToList()))
             .ToListAsync(cancellationToken);

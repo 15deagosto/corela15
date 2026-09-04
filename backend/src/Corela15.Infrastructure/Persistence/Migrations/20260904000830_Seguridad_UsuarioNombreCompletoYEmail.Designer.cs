@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904000830_Seguridad_UsuarioNombreCompletoYEmail")]
+    partial class Seguridad_UsuarioNombreCompletoYEmail
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -6946,7 +6949,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_obligacion_financiera_id_cuenta_contable");
 
                     b.HasIndex("TipoIdentificacionAcreedor", "IdentificacionAcreedor", "NumeroObligacion", "IdCuentaContable")
-                        .IsUnique()
                         .HasDatabaseName("ix_obligacion_financiera_tipo_identificacion_acreedor_identifi");
 
                     b.ToTable("obligacion_financiera", "obligacion");
@@ -8516,11 +8518,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("cambia_clave");
 
-                    b.Property<string>("CodigoUsuarioSoftbank")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("codigo_usuario_softbank");
-
                     b.Property<DateTimeOffset>("CreadoEn")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("creado_en");
@@ -8599,9 +8596,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_usuario");
-
-                    b.HasIndex("CodigoUsuarioSoftbank")
-                        .HasDatabaseName("ix_usuario_codigo_usuario_softbank");
 
                     b.HasIndex("IdAgencia")
                         .HasDatabaseName("ix_usuario_id_agencia");

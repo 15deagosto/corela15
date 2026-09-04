@@ -12,6 +12,10 @@ public class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
         b.HasKey(x => x.Id);
         b.Property(x => x.NombreUsuario).HasMaxLength(50).IsRequired();
         b.Property(x => x.HashContrasena).IsRequired();
+        b.Property(x => x.NombreCompleto).HasMaxLength(200);
+        b.Property(x => x.Email).HasMaxLength(150);
+        b.Property(x => x.CodigoUsuarioSoftbank).HasMaxLength(50);
+        b.HasIndex(x => x.CodigoUsuarioSoftbank);
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
         b.Property(x => x.ModificadoPor).HasMaxLength(100);
 

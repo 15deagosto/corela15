@@ -43,8 +43,11 @@ public class ObligacionFinancieraConfiguration : IEntityTypeConfiguration<Obliga
 
         // Control real de duplicados del manual (§4): mismo tipo+identificación
         // de acreedor + número de obligación + cuenta contable no puede
-        // repetirse activo más de una vez para el mismo estado.
-        b.HasIndex(x => new { x.TipoIdentificacionAcreedor, x.IdentificacionAcreedor, x.NumeroObligacion, x.IdCuentaContable });
+        // repetirse — ahora también como restricción real de base de datos
+        // (antes solo se validaba en el servicio; la sincronización real
+        // Softbank→Corela15, que escribe directo, también necesita esta
+        // garantía para poder hacer upsert sin duplicar filas).
+        b.HasIndex(x => new { x.TipoIdentificacionAcreedor, x.IdentificacionAcreedor, x.NumeroObligacion, x.IdCuentaContable }).IsUnique();
     }
 }
 

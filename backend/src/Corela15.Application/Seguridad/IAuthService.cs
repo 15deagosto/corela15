@@ -12,6 +12,20 @@ public interface IAuthService
     /// </summary>
     Task<LoginResult> LoginAsync(LoginRequest request, string? direccionIp, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Recalcula roles/menús/estructuras/agencia efectiva del usuario
+    /// AHORA MISMO (mismo cálculo exacto que LoginAsync, sin volver a
+    /// pedir contraseña) y emite un token nuevo con eso — cierra el gap
+    /// real de que los permisos de una sesión ya iniciada quedaban fijos
+    /// hasta el próximo login manual. Revoca la sesión (token) vieja al
+    /// emitir la nueva, para no dejar tokens huérfanos acumulándose.
+    /// Si el usuario fue deshabilitado/bloqueado mientras tanto, esto
+    /// mismo lo detecta y corta el acceso (mismas validaciones que
+    /// LoginAsync) en vez de emitir un token para alguien que ya no
+    /// debería tenerlo.
+    /// </summary>
+    Task<LoginResult> RefrescarAsync(Guid idUsuario, Guid idSesionActual, string? direccionIp, CancellationToken cancellationToken = default);
+
     /// <summary>Revoca la sesión (token) actual — logout real, no solo del lado del cliente.</summary>
     Task LogoutAsync(Guid idSesion, string registradoPor, CancellationToken cancellationToken = default);
 

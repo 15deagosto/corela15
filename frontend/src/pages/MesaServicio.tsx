@@ -103,6 +103,11 @@ function formatoHoras(horas: number | null) {
   return `${(horas / 24).toFixed(1)} días`
 }
 
+/** Resuelve un código de estado (ej. "EN_PROGRESO") al nombre real del catálogo (ej. "En Progreso") — cae al código formateado si el catálogo todavía no cargó. */
+function nombreEstado(estados: Catalogo[] | undefined, codigo: string) {
+  return estados?.find((e) => e.codigo === codigo)?.nombre ?? codigo.replaceAll('_', ' ')
+}
+
 function Estrellas({ valor }: { valor: number }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -118,16 +123,24 @@ export function MesaServicio() {
   const { sesion, tieneMenu } = useAuth()
   const esAgente = tieneMenu('mesa-servicio-agente')
   const [soloMios, setSoloMios] = useState(false)
+  // Sin permiso de agente, por defecto se ve solo lo que uno mismo reportó
+  // — antes no había forma de filtrar esto, un usuario normal veía todos
+  // los tickets de toda la cooperativa mezclados en una sola lista.
+  const [misTickets, setMisTickets] = useState(!esAgente)
   const [filtroEstado, setFiltroEstado] = useState('')
   const [modalNuevo, setModalNuevo] = useState(false)
   const [ticketAbierto, setTicketAbierto] = useState<string | null>(null)
 
   const { data: tickets, isLoading } = useQuery<TicketListItem[]>({
-    queryKey: ['mesa-servicio-tickets', filtroEstado, soloMios],
+    queryKey: ['mesa-servicio-tickets', filtroEstado, soloMios, misTickets],
     queryFn: async () =>
       (
         await api.get(`${BASE}/tickets`, {
-          params: { codigoEstado: filtroEstado || undefined, soloMios: soloMios || undefined },
+          params: {
+            codigoEstado: filtroEstado || undefined,
+            soloMios: soloMios || undefined,
+            misTickets: misTickets || undefined,
+          },
         })
       ).data,
   })
@@ -159,10 +172,15 @@ export function MesaServicio() {
               </option>
             ))}
           </select>
-          {esAgente && (
+          {esAgente ? (
             <label className="flex items-center gap-1.5 text-sm text-graphite-600">
               <input type="checkbox" checked={soloMios} onChange={(e) => setSoloMios(e.target.checked)} />
               Solo asignados a mí
+            </label>
+          ) : (
+            <label className="flex items-center gap-1.5 text-sm text-graphite-600">
+              <input type="checkbox" checked={misTickets} onChange={(e) => setMisTickets(e.target.checked)} />
+              Ver solo lo que yo reporté
             </label>
           )}
         </div>
@@ -184,7 +202,7 @@ export function MesaServicio() {
             <Th>Prioridad</Th>
             <Th>Estado</Th>
             <Th>Asignado</Th>
-            <Th>SLA</Th>
+            <Th>Debería resolverse</Th>
             <Th>Calificación</Th>
             <Th>Creado</Th>
           </tr>
@@ -358,7 +376,7 @@ function NuevoTicketModal({
                 <option value="">Seleccionar...</option>
                 {prioridades?.map((p) => (
                   <option key={p.codigo} value={p.codigo}>
-                    {p.nombre} ({p.horasSla}h SLA)
+                    {p.nombre} — respuesta en {p.horasSla} h
                   </option>
                 ))}
               </select>
@@ -404,7 +422,7 @@ function NuevoTicketModal({
 const TABS_TICKET = [
   { id: 'detalle', label: 'Detalle', icon: Info },
   { id: 'comentarios', label: 'Comentarios', icon: MessageSquare },
-  { id: 'bitacora', label: 'Bitácora y SLA', icon: History },
+  { id: 'bitacora', label: 'Historial', icon: History },
 ] as const
 
 function TicketModal({
@@ -495,6 +513,16 @@ function TicketModal({
   const esCreador = usuarioActual && usuarioActual.toLowerCase() === ticket.creadoPor.toLowerCase()
   const puedeCalificar = esCreador && calificable && !ticket.calificacion
 
+  // Quién lo resolvió y qué dijo — la última entrada de la bitácora que
+  // llevó al ticket a Resuelto/Cerrado. Se calcula acá, del lado del
+  // cliente, con datos que ya vienen en el detalle — no hace falta un
+  // campo nuevo del backend. Es lo primero que un usuario normal quiere
+  // ver, así que va destacado arriba de todo, no escondido en la pestaña
+  // de bitácora técnica.
+  const entradaResolucion = [...detalle.bitacora]
+    .reverse()
+    .find((h) => h.estadoNuevo === 'RESUELTO' || h.estadoNuevo === 'CERRADO')
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
@@ -538,6 +566,23 @@ function TicketModal({
                   <span className="text-xs text-graphite-600">· Agencia {ticket.agencia}</span>
                 </div>
                 <p className="whitespace-pre-wrap text-sm text-graphite-100">{ticket.descripcion}</p>
+
+                {entradaResolucion && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                      <UserCheck size={14} /> Resuelto por {entradaResolucion.registradoPor}
+                    </p>
+                    <p className="mt-0.5 text-xs text-graphite-600">{formatoFecha(entradaResolucion.fecha)}</p>
+                    {entradaResolucion.comentario ? (
+                      <p className="mt-2 text-sm text-graphite-100">"{entradaResolucion.comentario}"</p>
+                    ) : (
+                      <p className="mt-2 text-xs italic text-graphite-600">
+                        No se dejó un comentario de qué se hizo — podés preguntar en Comentarios si necesitás más detalle.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3 text-xs text-graphite-600">
                   <div>
                     <p className="font-medium text-graphite-600">Creado por</p>
@@ -548,7 +593,7 @@ function TicketModal({
                     <p className="text-graphite-100">{ticket.usuarioAsignado ?? '—'}</p>
                   </div>
                   <div>
-                    <p className="font-medium text-graphite-600">Límite SLA</p>
+                    <p className="font-medium text-graphite-600">Debería resolverse antes de</p>
                     <p className="text-graphite-100">
                       {formatoFecha(ticket.fechaLimiteSla)}
                       {ticket.vencidoSla && <Badge variant="peligro"> Vencido</Badge>}
@@ -725,40 +770,47 @@ function TicketModal({
 
             {tab === 'bitacora' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 rounded-lg border border-black/[0.06] p-3 text-xs">
-                  <div className="flex items-start gap-2">
-                    <Clock size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
-                    <div>
-                      <p className="font-medium text-graphite-600">Tiempo de primera respuesta</p>
-                      <p className="text-graphite-100">{formatoHoras(ticket.tiempoPrimeraRespuestaHoras)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Clock size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
-                    <div>
-                      <p className="font-medium text-graphite-600">Tiempo total de resolución</p>
-                      <p className="text-graphite-100">{formatoHoras(ticket.tiempoResolucionHoras)}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {detalle.bitacora.map((h, i) => (
-                    <div key={i} className="flex items-start gap-3 text-xs">
-                      <History size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
+                {/* Los tiempos de SLA son una métrica de gestión interna — solo le sirven a quien resuelve tickets, a un usuario normal solo le confunde. */}
+                {esAgente && (
+                  <div className="grid grid-cols-2 gap-3 rounded-lg border border-black/[0.06] p-3 text-xs">
+                    <div className="flex items-start gap-2">
+                      <Clock size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
                       <div>
-                        <p className="text-graphite-100">
-                          {h.estadoAnterior ? `${h.estadoAnterior} → ${h.estadoNuevo}` : `Creado en ${h.estadoNuevo}`}
-                        </p>
-                        {h.comentario && <p className="text-graphite-600">{h.comentario}</p>}
-                        <p className="text-graphite-700">
-                          {h.registradoPor} · {formatoFecha(h.fecha)}
-                          {h.horasEnEstadoAnterior !== null && (
-                            <> · estuvo {formatoHoras(h.horasEnEstadoAnterior)} en el estado anterior</>
-                          )}
-                        </p>
+                        <p className="font-medium text-graphite-600">Tiempo de primera respuesta</p>
+                        <p className="text-graphite-100">{formatoHoras(ticket.tiempoPrimeraRespuestaHoras)}</p>
                       </div>
                     </div>
-                  ))}
+                    <div className="flex items-start gap-2">
+                      <Clock size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
+                      <div>
+                        <p className="font-medium text-graphite-600">Tiempo total de resolución</p>
+                        <p className="text-graphite-100">{formatoHoras(ticket.tiempoResolucionHoras)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {detalle.bitacora.map((h, i) => {
+                    const nombreNuevo = nombreEstado(estados, h.estadoNuevo)
+                    const nombreAnterior = nombreEstado(estados, h.estadoAnterior)
+                    return (
+                      <div key={i} className="flex items-start gap-3 text-xs">
+                        <History size={14} className="mt-0.5 flex-shrink-0 text-graphite-600" />
+                        <div>
+                          <p className="text-graphite-100">
+                            {h.estadoAnterior ? `${nombreAnterior} → ${nombreNuevo}` : `Ticket creado (${nombreNuevo})`}
+                          </p>
+                          {h.comentario && <p className="text-graphite-600">"{h.comentario}"</p>}
+                          <p className="text-graphite-700">
+                            {h.registradoPor} · {formatoFecha(h.fecha)}
+                            {esAgente && h.horasEnEstadoAnterior !== null && (
+                              <> · estuvo {formatoHoras(h.horasEnEstadoAnterior)} en el estado anterior</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}

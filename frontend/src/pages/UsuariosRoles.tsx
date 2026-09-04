@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
@@ -14,6 +14,8 @@ interface UsuarioDetalle {
   id: string
   nombreUsuario: string
   nombrePersona: string | null
+  email: string | null
+  codigoUsuarioSoftbank: string | null
   idAgencia: number
   agencia: string
   puedeIngresarSistema: boolean
@@ -62,6 +64,7 @@ interface UsuarioRol {
   id: string
   nombreUsuario: string
   nombrePersona: string | null
+  email: string | null
   agencia: string
   activo: boolean
   tieneBloqueo: boolean
@@ -190,6 +193,7 @@ function NuevoUsuarioModal({ onClose, onCreado }: { onClose: () => void; onCread
         id: res.id,
         nombreUsuario,
         nombrePersona: persona?.nombre ?? null,
+        email: null,
         agencia: agencias?.find((a) => a.id === idAgencia)?.nombre ?? '',
         activo: true,
         tieneBloqueo: false,
@@ -346,6 +350,30 @@ function TabDatosYAcceso({ usuario, onGuardado }: { usuario: UsuarioRol; onGuard
 
   return (
     <div className="flex flex-col gap-5">
+      {(detalle.nombrePersona || detalle.email || detalle.codigoUsuarioSoftbank) && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-xs">
+          {detalle.nombrePersona && (
+            <div>
+              <p className="font-medium text-graphite-600">Nombre real</p>
+              <p className="text-graphite-100">{detalle.nombrePersona}</p>
+            </div>
+          )}
+          {detalle.email && (
+            <div>
+              <p className="font-medium text-graphite-600">Correo</p>
+              <p className="text-graphite-100">{detalle.email}</p>
+            </div>
+          )}
+          {detalle.codigoUsuarioSoftbank && (
+            <div>
+              <p className="font-medium text-graphite-600">Código en Softbank</p>
+              <p className="text-graphite-100" title="Trazabilidad real hacia el usuario de origen — para futuras migraciones de datos adicionales.">
+                {detalle.codigoUsuarioSoftbank}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-graphite-600">Agencia</span>
@@ -968,6 +996,7 @@ function GestionarUsuarioModal({
 
 export function UsuariosRoles() {
   const [q, setQ] = useState('')
+  const [agenciaFiltro, setAgenciaFiltro] = useState('TODAS')
   const [usuarioGestionar, setUsuarioGestionar] = useState<UsuarioRol | null>(null)
   const [usuarioRecienCreado, setUsuarioRecienCreado] = useState(false)
   const [mostrarNuevo, setMostrarNuevo] = useState(false)
@@ -977,6 +1006,19 @@ export function UsuariosRoles() {
     queryKey: ['usuarios', q],
     queryFn: async () => (await api.get('/api/usuarios', { params: { q: q || undefined } })).data,
   })
+
+  // Agrupado por agencia en vez de una sola lista plana — con 40+ usuarios
+  // reales importados, una tabla única se volvía imposible de escanear.
+  // Mismo patrón de pestañas ya usado en el resto del proyecto (ej.
+  // Configuración agrupada por módulo).
+  const agencias = useMemo(
+    () => Array.from(new Set((data ?? []).map((u) => u.agencia))).sort((a, b) => a.localeCompare(b)),
+    [data],
+  )
+  const dataFiltrada = useMemo(
+    () => (agenciaFiltro === 'TODAS' ? (data ?? []) : (data ?? []).filter((u) => u.agencia === agenciaFiltro)),
+    [data, agenciaFiltro],
+  )
 
   const toggleBloqueo = useMutation({
     mutationFn: async ({ id, bloquear }: { id: string; bloquear: boolean }) =>
@@ -1029,12 +1071,39 @@ export function UsuariosRoles() {
         </button>
       </div>
 
+      {agencias.length > 1 && (
+        <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-black/[0.08] p-1">
+          <button
+            type="button"
+            onClick={() => setAgenciaFiltro('TODAS')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              agenciaFiltro === 'TODAS' ? 'bg-gold-500 text-white' : 'text-graphite-600 hover:bg-black/[0.02]'
+            }`}
+          >
+            Todas ({data?.length ?? 0})
+          </button>
+          {agencias.map((a) => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => setAgenciaFiltro(a)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                agenciaFiltro === a ? 'bg-gold-500 text-white' : 'text-graphite-600 hover:bg-black/[0.02]'
+              }`}
+            >
+              {a} ({data?.filter((u) => u.agencia === a).length ?? 0})
+            </button>
+          ))}
+        </div>
+      )}
+
       <TableContainer>
         <thead>
           <tr>
             <Th>Usuario</Th>
             <Th>Nombre</Th>
-            <Th>Agencia</Th>
+            <Th>Correo</Th>
+            {agenciaFiltro === 'TODAS' && <Th>Agencia</Th>}
             <Th>Estado</Th>
             <Th>Roles</Th>
             <Th></Th>
@@ -1042,14 +1111,19 @@ export function UsuariosRoles() {
         </thead>
         <tbody>
           {isLoading && <EmptyState>Cargando…</EmptyState>}
-          {!isLoading && (data?.length ?? 0) === 0 && <EmptyState>No se encontraron usuarios</EmptyState>}
-          {data?.map((u) => (
+          {!isLoading && dataFiltrada.length === 0 && <EmptyState>No se encontraron usuarios</EmptyState>}
+          {dataFiltrada.map((u) => (
             <tr key={u.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
-              <Td className="font-medium">{u.nombreUsuario}</Td>
-              <Td>{u.nombrePersona ?? '—'}</Td>
-              <Td>{u.agencia}</Td>
+              <Td className="whitespace-nowrap font-medium">{u.nombreUsuario}</Td>
+              <Td className="max-w-[200px] truncate" title={u.nombrePersona ?? undefined}>
+                {u.nombrePersona ?? '—'}
+              </Td>
+              <Td className="max-w-[190px] truncate text-xs text-graphite-600" title={u.email ?? undefined}>
+                {u.email ?? '—'}
+              </Td>
+              {agenciaFiltro === 'TODAS' && <Td className="whitespace-nowrap">{u.agencia}</Td>}
               <Td>
-                <div className="flex flex-col items-start gap-1">
+                <div className="flex items-center gap-1.5">
                   <Badge variant={u.activo ? 'exito' : 'neutral'}>{u.activo ? 'Activo' : 'Inactivo'}</Badge>
                   <button
                     type="button"
@@ -1065,18 +1139,22 @@ export function UsuariosRoles() {
                 </div>
               </Td>
               <Td>
-                <div className="flex flex-wrap gap-1.5">
-                  {u.roles.length === 0 && <span className="text-graphite-700">—</span>}
-                  {u.roles.map((r) => (
-                    <Badge key={r}>{r}</Badge>
-                  ))}
-                </div>
+                {u.roles.length === 0 ? (
+                  <span className="text-xs text-graphite-700">Sin roles</span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1" title={u.roles.join(', ')}>
+                    {u.roles.slice(0, 2).map((r) => (
+                      <Badge key={r}>{r}</Badge>
+                    ))}
+                    {u.roles.length > 2 && <Badge variant="neutral">+{u.roles.length - 2}</Badge>}
+                  </div>
+                )}
               </Td>
               <Td>
                 <button
                   type="button"
                   onClick={() => setUsuarioGestionar(u)}
-                  className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
+                  className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-gold-400 hover:underline"
                 >
                   <UserCog size={13} /> Gestionar
                 </button>

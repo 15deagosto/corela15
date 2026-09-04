@@ -2,6 +2,7 @@ import { LayoutDashboard } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { modulos } from '../modules'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../lib/AuthContext'
 
 const estadoTexto = {
   disponible: 'Disponible',
@@ -16,6 +17,14 @@ const estadoClase = {
 } as const
 
 export function Home() {
+  const { tieneMenu } = useAuth()
+  // Antes mostraba tarjetas de TODOS los módulos sin filtrar — un usuario
+  // con un solo permiso real veía (y podía abrir, vía el <Link> directo)
+  // cualquier módulo del sistema desde acá, sin pasar por el filtro que sí
+  // aplica el Sidebar. Mismo criterio que Sidebar.tsx: solo lo que el
+  // usuario realmente tiene otorgado.
+  const modulosVisibles = modulos.filter((m) => tieneMenu(m.slug))
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -25,7 +34,7 @@ export function Home() {
       />
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {modulos.map((m) => {
+        {modulosVisibles.map((m) => {
           const Icon = m.icon
           const habilitado = m.estado !== 'proximamente'
           const contenido = (

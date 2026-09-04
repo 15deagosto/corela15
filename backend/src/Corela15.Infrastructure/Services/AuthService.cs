@@ -36,11 +36,55 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             throw new FueraDeHorarioException();
         }
 
+        await RegistrarIntentoAsync(usuario.Id, exitoso: true, direccionIp, null, cancellationToken);
+
+        return await EmitirTokenAsync(usuario, direccionIp, cancellationToken);
+    }
+
+    public async Task<LoginResult> RefrescarAsync(
+        Guid idUsuario, Guid idSesionActual, string? direccionIp, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == idUsuario, cancellationToken)
+            ?? throw new UsuarioNoExisteException(idUsuario);
+
+        // Mismas validaciones que un login real — si a alguien lo
+        // bloquearon o deshabilitaron mientras tenía la sesión abierta,
+        // refrescar no debe emitirle un token nuevo, tiene que cortarle el
+        // acceso acá mismo, no solo dejarlo con el viejo hasta que expire.
+        if (!usuario.Activo || !usuario.PuedeIngresarSistema || usuario.TieneBloqueo)
+        {
+            throw new UsuarioNoHabilitadoException();
+        }
+
+        var resultado = await EmitirTokenAsync(usuario, direccionIp, cancellationToken);
+
+        // La sesión vieja se revoca DESPUÉS de emitir la nueva — revocarla
+        // antes arriesgaría dejar al usuario sin ninguna sesión válida si
+        // algo falla en el medio. Nunca revoca la propia sesión recién
+        // creada (jti distinto por diseño de EmitirTokenAsync).
+        var sesionVieja = await db.SesionesUsuario.FirstOrDefaultAsync(s => s.Id == idSesionActual, cancellationToken);
+        if (sesionVieja is not null && !sesionVieja.Revocada)
+        {
+            sesionVieja.Revocada = true;
+            sesionVieja.RevocadaEn = DateTimeOffset.UtcNow;
+            sesionVieja.RevocadaPor = "sistema:refresco_permisos";
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return resultado;
+    }
+
+    // Cálculo real compartido entre LoginAsync y RefrescarAsync — nunca
+    // duplicado. Roles efectivos = permanentes (usuario_rol) ∪ temporales
+    // vigentes (usuario_rol_temporal, no vencidos); menús = rol_menu real
+    // + Mesa de Servicio siempre (transversal por diseño); estructuras =
+    // segundo nivel de permiso (OF01 y lo que se sume); agencia efectiva =
+    // reasignación temporal vigente si existe, si no la real del usuario.
+    private async Task<LoginResult> EmitirTokenAsync(
+        Usuario usuario, string? direccionIp, CancellationToken cancellationToken)
+    {
         var ahora = DateTimeOffset.UtcNow;
 
-        // Roles efectivos = permanentes (usuario_rol) ∪ temporales vigentes
-        // (usuario_rol_temporal, no vencidos) — verificado contra SEGURIDAD.
-        // USUARIO_ROL_TEMPORAL (cubre licencia/vacaciones/reemplazo real).
         var idsRolPermanentes = await db.UsuarioRoles
             .Where(ur => ur.IdUsuario == usuario.Id && ur.Activo)
             .Select(ur => ur.IdRol)
@@ -62,31 +106,18 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        // Mesa de Servicio es transversal por diseño — control de
-        // incidencias exigido por la SEPS, todo usuario autenticado lo ve
-        // sin importar su rol, nunca depende de rol_menu (a propósito, para
-        // no tener que acordarse de otorgárselo a cada rol nuevo/existente).
         if (!menus.Contains("mesa-servicio")) menus.Add("mesa-servicio");
 
-        // Segundo nivel de permiso, más fino que el menú — dentro del
-        // módulo "Estructuras y Procesos Financieros", qué estructuras
-        // puntuales (OF01, y las que se sumen después) puede generar este
-        // usuario. Mismo patrón exacto que menus, tabla espejo.
         var estructuras = await db.RolesTipoEstructura
             .Where(re => re.Activo && re.TipoEstructura.Activo && idsRolEfectivos.Contains(re.IdRol))
             .Select(re => re.CodigoTipoEstructura)
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        // Agencia efectiva = reasignación temporal vigente (SEGURIDAD.
-        // USUARIO_AGENCIA_TEMPORAL — cubre a un cajero cubriendo otra
-        // sucursal) si existe, si no la agencia real del usuario.
         var idAgenciaEfectiva = await db.UsuariosAgenciaTemporal
             .Where(at => at.IdUsuario == usuario.Id && at.Activo && at.FechaCaducidad > ahora)
             .Select(at => (int?)at.IdAgenciaActual)
             .FirstOrDefaultAsync(cancellationToken) ?? usuario.IdAgencia;
-
-        await RegistrarIntentoAsync(usuario.Id, exitoso: true, direccionIp, null, cancellationToken);
 
         var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus, estructuras, idAgenciaEfectiva);
 
@@ -101,7 +132,9 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        return new LoginResult(token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, idAgenciaEfectiva);
+        return new LoginResult(
+            token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, idAgenciaEfectiva,
+            usuario.CambiaClave);
     }
 
     // Ventana real de acceso por día de la semana (ver HorarioAccesoUsuario.cs)
@@ -213,6 +246,12 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         }
 
         usuario.HashContrasena = BCrypt.Net.BCrypt.HashPassword(request.ContrasenaNueva);
+        // Si el cambio estaba forzado (clave temporal de arranque, ej. la
+        // importación real de usuarios de Softbank donde la clave inicial
+        // es el propio nombre de usuario), ya se cumplió — se limpia acá,
+        // nunca queda pidiendo el cambio de nuevo hasta que un admin lo
+        // fuerce explícitamente otra vez.
+        usuario.CambiaClave = false;
         usuario.ModificadoEn = DateTimeOffset.UtcNow;
         usuario.ModificadoPor = usuario.NombreUsuario;
 

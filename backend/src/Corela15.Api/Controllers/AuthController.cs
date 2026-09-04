@@ -19,6 +19,23 @@ public class AuthController(IAuthService authService) : ControllerBase
         return Ok(resultado);
     }
 
+    /// <summary>
+    /// Recalcula los permisos del usuario actual y emite un token nuevo,
+    /// sin pedir contraseña — el frontend lo llama al cargar la app para
+    /// que un cambio de rol/permisos hecho por un admin mientras el
+    /// usuario ya tenía la sesión abierta se refleje solo con recargar la
+    /// página, sin obligarlo a cerrar sesión y volver a entrar.
+    /// </summary>
+    [HttpPost("refrescar")]
+    public async Task<ActionResult<LoginResult>> Refrescar(CancellationToken cancellationToken)
+    {
+        var idUsuario = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+        var jti = Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Jti)!);
+        var direccionIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var resultado = await authService.RefrescarAsync(idUsuario, jti, direccionIp, cancellationToken);
+        return Ok(resultado);
+    }
+
     [HttpGet("me")]
     public ActionResult<SesionActualResult> Me()
     {

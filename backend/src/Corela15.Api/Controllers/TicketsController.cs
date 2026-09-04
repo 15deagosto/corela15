@@ -37,8 +37,15 @@ public class TicketsController(ITicketService service, Corela15DbContext db) : C
 {
     [HttpGet("tickets")]
     public async Task<ActionResult<IReadOnlyList<TicketListItemDto>>> Listar(
-        [FromQuery] string? codigoEstado, [FromQuery] bool soloMios, CancellationToken cancellationToken)
+        [FromQuery] string? codigoEstado, [FromQuery] bool soloMios, [FromQuery] bool misTickets,
+        CancellationToken cancellationToken)
     {
+        // Dos filtros reales distintos, nunca confundidos: "asignados a mí"
+        // (soloMios — un agente ve lo que le toca resolver) vs "creados por
+        // mí" (misTickets — cualquier usuario, sea agente o no, ve solo lo
+        // que él mismo reportó). Antes un usuario sin permiso de agente no
+        // tenía forma real de filtrar a "mis reportes" — veía la lista
+        // completa de toda la cooperativa mezclada.
         Guid? idUsuarioAsignado = null;
         if (soloMios)
         {
@@ -46,8 +53,9 @@ public class TicketsController(ITicketService service, Corela15DbContext db) : C
                 ?? User.FindFirst("sub")?.Value;
             if (Guid.TryParse(idUsuario, out var parsed)) idUsuarioAsignado = parsed;
         }
+        var creadoPor = misTickets ? User.Identity!.Name! : null;
 
-        var resultado = await service.ListarAsync(new ListarTicketsFiltro(codigoEstado, idUsuarioAsignado, null), cancellationToken);
+        var resultado = await service.ListarAsync(new ListarTicketsFiltro(codigoEstado, idUsuarioAsignado, creadoPor), cancellationToken);
         return Ok(resultado);
     }
 
