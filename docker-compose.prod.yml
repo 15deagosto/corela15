@@ -52,6 +52,17 @@ services:
       - backend
     ports:
       - "80:80"
+      - "443:443"
+    # Sin certificado real todavía: estas 2 líneas quedan comentadas y la
+    # app sirve solo por HTTP (nginx.conf, ya probado). Una vez que exista
+    # el certificado emitido por el AD CS interno en el servidor
+    # (/opt/corela15/certs/portal.crt y portal.key), descomentar ambas
+    # líneas y correr `docker compose -f docker-compose.prod.yml --env-file
+    # .env.prod up -d frontend` -- solo reinicia ese contenedor, sin
+    # rebuild ni tocar nada más.
+    # volumes:
+    #   - ./certs:/etc/nginx/certs:ro
+    #   - ./frontend/nginx-https.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   pgdata:
