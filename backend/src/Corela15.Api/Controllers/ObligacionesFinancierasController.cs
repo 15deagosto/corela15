@@ -178,4 +178,18 @@ public class ObligacionesFinancierasController(IObligacionFinancieraService serv
 
         return Ok(new Of01Result(cabecera, detalle, advertencias));
     }
+
+    /// <summary>
+    /// Única llamada real de todo el backend que toca Softbank -- ver
+    /// <see cref="IObligacionSyncService"/>. Trae/actualiza obligaciones
+    /// financieras reales desde Softbank hacia esta misma base, en el
+    /// momento, sin depender de correr una herramienta externa por
+    /// consola. Protegido por las mismas 2 políticas del controller
+    /// (módulo + estructura OF01) -- nadie más del sistema puede
+    /// dispararlo.
+    /// </summary>
+    [HttpPost("sincronizar")]
+    public async Task<ActionResult<SincronizacionObligacionesResult>> Sincronizar(
+        [FromServices] IObligacionSyncService syncService, CancellationToken cancellationToken)
+        => Ok(await syncService.SincronizarAsync(cancellationToken));
 }

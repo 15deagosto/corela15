@@ -37,6 +37,12 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE:-Corela15Api}
       Jwt__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-480}
       Corela15__CorsOrigins__0: ${CORS_ORIGIN:?set CORS_ORIGIN in .env.prod, ej. https://core.cooperativa15deagosto.fin.ec}
+      # Única excepción real y acotada a la regla de oro del proyecto (el
+      # backend nunca se conecta a Softbank, salvo acá): solo la usa
+      # ObligacionSyncService, protegido por Menu:estructuras-financieras +
+      # Estructura:OF01 -- ningún otro endpoint del sistema la toca.
+      # Credencial de SOLO LECTURA (siga_ro), nunca la de PII (cloudstudio).
+      Softbank__ConnectionStringRo: ${SOFTBANK_CONNECTION_RO:-}
     expose:
       - "8080"
 

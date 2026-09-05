@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileCheck, Lock, Plus, X, IdCard, Landmark, Percent, CalendarDays, Download } from 'lucide-react'
+import { FileCheck, Lock, Plus, X, IdCard, Landmark, Percent, CalendarDays, Download, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -684,14 +684,35 @@ function mensajeError(e: unknown): string {
   return err.response?.data?.detail ?? err.message ?? 'Ocurrió un error inesperado'
 }
 
+interface SincronizacionResult {
+  encontradasEnSoftbank: number
+  sincronizadas: number
+  omitidas: number
+  detalle: string[]
+}
+
 function SeccionGenerarOf01() {
   const hoy = new Date().toISOString().slice(0, 10)
   const [fechaCorte, setFechaCorte] = useState(hoy)
   const [resultado, setResultado] = useState<Of01Result | null>(null)
+  const [resultadoSync, setResultadoSync] = useState<SincronizacionResult | null>(null)
+  const queryClient = useQueryClient()
 
   const generar = useMutation({
     mutationFn: async () => (await api.get(`${BASE}/generar?fechaCorte=${fechaCorte}`)).data as Of01Result,
     onSuccess: setResultado,
+  })
+
+  // Única pantalla de todo el sistema que puede traer datos reales de
+  // Softbank -- protegido por los mismos 2 permisos del módulo completo
+  // (Menu:estructuras-financieras + Estructura:OF01). El resto de la app
+  // sigue trabajando 100% contra Postgres, sin excepción.
+  const sincronizar = useMutation({
+    mutationFn: async () => (await api.post(`${BASE}/sincronizar`)).data as SincronizacionResult,
+    onSuccess: (data) => {
+      setResultadoSync(data)
+      queryClient.invalidateQueries({ queryKey: ['obligaciones-financieras'] })
+    },
   })
 
   return (
@@ -713,7 +734,38 @@ function SeccionGenerarOf01() {
         >
           <Download size={15} /> Generar OF01
         </button>
+        <button
+          type="button"
+          onClick={() => sincronizar.mutate()}
+          disabled={sincronizar.isPending}
+          title="Trae/actualiza obligaciones financieras reales desde Softbank hacia esta base -- la única conexión de todo el sistema a Softbank vive acá"
+          className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-4 py-2 text-sm font-medium text-gold-500 disabled:opacity-50"
+        >
+          <RefreshCw size={15} className={sincronizar.isPending ? 'animate-spin' : ''} /> Sincronizar desde Softbank
+        </button>
       </div>
+
+      {sincronizar.isError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {mensajeError(sincronizar.error)}
+        </div>
+      )}
+
+      {resultadoSync && (
+        <div className="glass-card rounded-xl p-4 text-sm">
+          <p className="font-medium text-graphite-100">
+            {resultadoSync.encontradasEnSoftbank} obligaciones encontradas en Softbank —{' '}
+            {resultadoSync.sincronizadas} sincronizadas, {resultadoSync.omitidas} omitidas.
+          </p>
+          {resultadoSync.detalle.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-graphite-600">
+              {resultadoSync.detalle.map((d, i) => (
+                <li key={i}>{d}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {resultado && (
         <>

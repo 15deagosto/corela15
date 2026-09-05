@@ -85,6 +85,7 @@ builder.Services.AddScoped<IInversionPortafolioService, InversionPortafolioServi
 builder.Services.AddScoped<IChequeService, ChequeService>();
 builder.Services.AddScoped<ISolicitudPedidoService, SolicitudPedidoService>();
 builder.Services.AddScoped<IObligacionFinancieraService, ObligacionFinancieraService>();
+builder.Services.AddScoped<IObligacionSyncService, ObligacionSyncService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
 builder.Services.AddScoped<IAvanceRiesgoService, AvanceRiesgoService>();
