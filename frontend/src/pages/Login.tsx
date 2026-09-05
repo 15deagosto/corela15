@@ -6,9 +6,9 @@ import { useAuth } from '../lib/AuthContext'
 type ApiError = { response?: { data?: { detail?: string } } }
 
 const RASGOS = [
-  { icon: Landmark, texto: 'Contabilidad, ahorros, créditos y caja en un solo core propio' },
-  { icon: ShieldCheck, texto: 'Permisos y estructuras regulatorias, segmentados por rol' },
-  { icon: LineChart, texto: 'Reportería en tiempo real, sin depender de terceros' },
+  { icon: Landmark, texto: 'Nuestras propias herramientas, hechas a medida' },
+  { icon: ShieldCheck, texto: 'Acceso segmentado por rol, cada quien ve lo suyo' },
+  { icon: LineChart, texto: 'Todo lo de la 15, en un solo lugar' },
 ]
 
 export function Login() {
@@ -71,14 +71,13 @@ export function Login() {
 
         <div className="relative z-10 max-w-md">
           <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-gold-600">
-            Core financiero propio
+            Apps La 15
           </p>
           <h1 className="mb-5 text-4xl font-semibold leading-[1.1] text-white">
             Corela15
           </h1>
           <p className="text-base leading-relaxed text-petrol-900/80">
-            La plataforma interna de la cooperativa — ahora tenemos un sistema propio, auditable y hecho a medida
-            de nuestra operación.
+            Nuestro portal, nuestras propias apps — muy pronto vas a encontrar acá todo lo de la 15.
           </p>
 
           <ul className="mt-10 flex flex-col gap-4">
@@ -92,10 +91,6 @@ export function Login() {
             ))}
           </ul>
         </div>
-
-        <p className="relative z-10 text-xs text-petrol-900/50">
-          Desarrollo interno · Jefatura de Sistemas / TIC
-        </p>
       </div>
 
       {/* Panel de acceso */}
@@ -113,7 +108,7 @@ export function Login() {
             <div>
               <p className="text-lg font-semibold text-graphite-100">Corela15</p>
               <p className="text-xs font-medium uppercase tracking-wide text-graphite-600">
-                Core financiero — Coop. 15 de Agosto
+                Apps La 15 — Coop. 15 de Agosto
               </p>
             </div>
           </div>

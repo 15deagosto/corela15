@@ -43,25 +43,47 @@ public class TicketsController(ITicketService service, Corela15DbContext db) : C
         // Dos filtros reales distintos, nunca confundidos: "asignados a mí"
         // (soloMios — un agente ve lo que le toca resolver) vs "creados por
         // mí" (misTickets — cualquier usuario, sea agente o no, ve solo lo
-        // que él mismo reportó). Antes un usuario sin permiso de agente no
-        // tenía forma real de filtrar a "mis reportes" — veía la lista
-        // completa de toda la cooperativa mezclada.
+        // que él mismo reportó).
+        //
+        // Corrección real de seguridad: `misTickets` era un filtro opcional
+        // controlado por el cliente -- cualquier usuario autenticado (el
+        // menú `mesa-servicio` es universal, ver AuthService.LoginAsync)
+        // podía llamar a este endpoint sin ese parámetro y ver los tickets
+        // de TODA la cooperativa, no solo los propios. Un usuario sin el
+        // permiso real de agente (`Menu:mesa-servicio-agente`) ahora queda
+        // forzado a `creadoPor = él mismo` sin excepción, sin importar qué
+        // pida el query string -- solo un agente puede pedir la lista
+        // completa.
+        var esAgente = User.HasClaim("menu", "mesa-servicio-agente");
+
         Guid? idUsuarioAsignado = null;
-        if (soloMios)
+        if (esAgente && soloMios)
         {
             var idUsuario = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                 ?? User.FindFirst("sub")?.Value;
             if (Guid.TryParse(idUsuario, out var parsed)) idUsuarioAsignado = parsed;
         }
-        var creadoPor = misTickets ? User.Identity!.Name! : null;
+        var creadoPor = esAgente ? (misTickets ? User.Identity!.Name! : null) : User.Identity!.Name!;
 
         var resultado = await service.ListarAsync(new ListarTicketsFiltro(codigoEstado, idUsuarioAsignado, creadoPor), cancellationToken);
         return Ok(resultado);
     }
 
+    /// <summary>
+    /// Mismo criterio de seguridad que <see cref="Listar"/>: un usuario sin
+    /// permiso de agente solo puede ver el detalle de un ticket que él
+    /// mismo reportó -- antes cualquiera con el ID (Guid) de un ticket
+    /// ajeno podía leer sus comentarios/bitácora sin restricción.
+    /// </summary>
     [HttpGet("tickets/{id:guid}")]
     public async Task<ActionResult<TicketDetalleDto>> Obtener(Guid id, CancellationToken cancellationToken)
-        => Ok(await service.ObtenerAsync(id, cancellationToken));
+    {
+        var resultado = await service.ObtenerAsync(id, cancellationToken);
+        var esAgente = User.HasClaim("menu", "mesa-servicio-agente");
+        if (!esAgente && resultado.Ticket.CreadoPor != User.Identity!.Name)
+            return NotFound();
+        return Ok(resultado);
+    }
 
     [HttpPost("tickets")]
     public async Task<ActionResult<TicketDto>> Crear(CrearTicketBody body, CancellationToken cancellationToken)
@@ -72,9 +94,18 @@ public class TicketsController(ITicketService service, Corela15DbContext db) : C
         return Created($"/api/mesa-servicio/tickets/{resultado.Id}", resultado);
     }
 
+    /// <summary>Mismo criterio de seguridad que <see cref="Listar"/>/<see cref="Obtener"/>: un no-agente solo puede comentar en un ticket que él mismo reportó.</summary>
     [HttpPost("tickets/{id:guid}/comentarios")]
     public async Task<ActionResult<TicketDto>> Comentar(Guid id, ComentarTicketBody body, CancellationToken cancellationToken)
-        => Ok(await service.ComentarAsync(id, new ComentarTicketRequest(body.Comentario, User.Identity!.Name!), cancellationToken));
+    {
+        var esAgente = User.HasClaim("menu", "mesa-servicio-agente");
+        if (!esAgente)
+        {
+            var creadoPor = await db.Tickets.Where(t => t.Id == id).Select(t => t.CreadoPor).FirstOrDefaultAsync(cancellationToken);
+            if (creadoPor != User.Identity!.Name) return NotFound();
+        }
+        return Ok(await service.ComentarAsync(id, new ComentarTicketRequest(body.Comentario, User.Identity!.Name!), cancellationToken));
+    }
 
     [HttpPost("tickets/{id:guid}/estado")]
     [Authorize(Policy = "Menu:mesa-servicio-agente")]
