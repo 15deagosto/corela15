@@ -202,7 +202,6 @@ export function MesaServicio() {
             <Th>Prioridad</Th>
             <Th>Estado</Th>
             <Th>Asignado</Th>
-            <Th>Debería resolverse</Th>
             <Th>Calificación</Th>
             <Th>Creado</Th>
           </tr>
@@ -228,15 +227,8 @@ export function MesaServicio() {
                   <Badge variant={estadoVariant(t.codigoEstado)}>{t.estado}</Badge>
                 </Td>
                 <Td>{t.usuarioAsignado ?? '—'}</Td>
-                <Td>
-                  {t.vencidoSla ? (
-                    <Badge variant="peligro">Vencido</Badge>
-                  ) : (
-                    formatoFecha(t.fechaLimiteSla)
-                  )}
-                </Td>
                 <Td>{t.calificacion ? <Estrellas valor={t.calificacion} /> : '—'}</Td>
-                <Td title={t.creadoPor}>{formatoFecha(t.creadoEn)}</Td>
+                <Td title={t.creadoPor} className="whitespace-nowrap">{formatoFecha(t.creadoEn)}</Td>
               </tr>
             ))
           )}
