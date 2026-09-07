@@ -1,6 +1,7 @@
 using Corela15.Application.Colocacion;
 using Corela15.Application.Common;
 using Corela15.Application.Contabilidad;
+using Corela15.Application.Planificacion;
 using Corela15.Domain.Ahorros;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Colocacion;
@@ -60,8 +61,8 @@ public record AreaPlanificacionDto(string Codigo, string Nombre, bool Activo);
 public record CrearAreaPlanificacionRequest(string Codigo, string Nombre);
 public record ActualizarAreaPlanificacionRequest(string Nombre, bool Activo);
 
-public record EtiquetaPlanificacionDto(string Codigo, string Nombre, string ColorHex, bool Activo);
-public record CrearEtiquetaPlanificacionRequest(string Codigo, string Nombre, string ColorHex);
+public record EtiquetaPlanificacionDto(string Codigo, string CodigoArea, string Nombre, string ColorHex, bool Activo);
+public record CrearEtiquetaPlanificacionRequest(string Codigo, string CodigoArea, string Nombre, string ColorHex);
 public record ActualizarEtiquetaPlanificacionRequest(string Nombre, string ColorHex, bool Activo);
 
 public record CuentaContablePlanDto(
@@ -1365,19 +1366,21 @@ public class ConfiguracionController(
 
     [HttpGet("planificacion/etiquetas")]
     public async Task<ActionResult<IReadOnlyList<EtiquetaPlanificacionDto>>> EtiquetasPlanificacion(CancellationToken ct)
-        => Ok(await db.EtiquetasPlanificacion.OrderBy(e => e.Nombre)
-            .Select(e => new EtiquetaPlanificacionDto(e.Codigo, e.Nombre, e.ColorHex, e.Activo)).ToListAsync(ct));
+        => Ok(await db.EtiquetasPlanificacion.OrderBy(e => e.CodigoArea).ThenBy(e => e.Nombre)
+            .Select(e => new EtiquetaPlanificacionDto(e.Codigo, e.CodigoArea, e.Nombre, e.ColorHex, e.Activo)).ToListAsync(ct));
 
     [HttpPost("planificacion/etiquetas")]
     public async Task<ActionResult<EtiquetaPlanificacionDto>> CrearEtiquetaPlanificacion(CrearEtiquetaPlanificacionRequest request, CancellationToken ct)
     {
         if (await db.EtiquetasPlanificacion.AnyAsync(e => e.Codigo == request.Codigo, ct))
             throw new CodigoDuplicadoException("una etiqueta", request.Codigo);
+        if (!await db.AreasPlanificacion.AnyAsync(a => a.Codigo == request.CodigoArea, ct))
+            throw new AreaPlanificacionInvalidaException(request.CodigoArea);
 
-        var etiqueta = new EtiquetaPlanificacion { Codigo = request.Codigo, Nombre = request.Nombre, ColorHex = request.ColorHex, Activo = true };
+        var etiqueta = new EtiquetaPlanificacion { Codigo = request.Codigo, CodigoArea = request.CodigoArea, Nombre = request.Nombre, ColorHex = request.ColorHex, Activo = true };
         db.EtiquetasPlanificacion.Add(etiqueta);
         await db.SaveChangesAsync(ct);
-        return Created($"/api/configuracion/planificacion/etiquetas/{etiqueta.Codigo}", new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
+        return Created($"/api/configuracion/planificacion/etiquetas/{etiqueta.Codigo}", new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.CodigoArea, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
     }
 
     [HttpPut("planificacion/etiquetas/{codigo}")]
@@ -1389,6 +1392,6 @@ public class ConfiguracionController(
         etiqueta.ColorHex = request.ColorHex;
         etiqueta.Activo = request.Activo;
         await db.SaveChangesAsync(ct);
-        return Ok(new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
+        return Ok(new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.CodigoArea, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
     }
 }

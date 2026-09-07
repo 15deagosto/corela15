@@ -23,7 +23,18 @@ public interface IPlanificacionService
     Task<IReadOnlyList<PlanSemanalListItemDto>> ListarAsync(ListarPlanesFiltro filtro, CancellationToken cancellationToken = default);
 
     Task<PlanSemanalDto> ObtenerAsync(Guid idPlan, string usuarioActual, bool esGerencia, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Combo editable real: si ya existe una etiqueta con ese nombre en
+    /// esa área, la devuelve tal cual (mismo color de siempre). Si no
+    /// existe, la crea en el momento -- código autogenerado real, color
+    /// asignado de una paleta rotativa según cuántas etiquetas ya tiene
+    /// el área, sin que el usuario tenga que ir a Configuración a mano.
+    /// </summary>
+    Task<EtiquetaDto> ObtenerOCrearEtiquetaAsync(string codigoArea, string nombre, CancellationToken cancellationToken = default);
 }
+
+public record EtiquetaDto(string Codigo, string Nombre, string ColorHex);
 
 public record BloqueRequest(
     int DiaSemana,

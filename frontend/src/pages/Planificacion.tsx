@@ -28,6 +28,15 @@ interface Bloque {
   descripcion: string
 }
 
+/** Estado del formulario -- guarda el NOMBRE escrito (combo editable), se resuelve a código real recién al guardar. */
+interface BloqueEditor {
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  nombreEtiqueta: string
+  descripcion: string
+}
+
 interface PlanSemanal {
   id: string
   codigoArea: string
@@ -75,10 +84,6 @@ export function Planificacion() {
     queryKey: ['planificacion-areas'],
     queryFn: async () => (await api.get(`${BASE}/areas`)).data,
   })
-  const { data: etiquetas } = useQuery<Catalogo[]>({
-    queryKey: ['planificacion-etiquetas'],
-    queryFn: async () => (await api.get(`${BASE}/etiquetas`)).data,
-  })
 
   return (
     <div className="animate-fade-in">
@@ -107,43 +112,71 @@ export function Planificacion() {
         ))}
       </div>
 
-      {tab === 'editor' && <SeccionEditor areas={areas ?? []} etiquetas={etiquetas ?? []} />}
+      {tab === 'editor' && <SeccionEditor areas={areas ?? []} />}
       {tab === 'historial' && <SeccionHistorial areas={areas ?? []} esGerencia={esGerencia} />}
     </div>
   )
 }
 
-function SeccionEditor({ areas, etiquetas }: { areas: Catalogo[]; etiquetas: Catalogo[] }) {
+function SeccionEditor({ areas }: { areas: Catalogo[] }) {
   const queryClient = useQueryClient()
   const [codigoArea, setCodigoArea] = useState('')
   const [fechaInicioSemana, setFechaInicioSemana] = useState(lunesDeEstaSemana())
   const [nombreResponsable, setNombreResponsable] = useState('')
   const [cargoResponsable, setCargoResponsable] = useState('')
-  const [bloques, setBloques] = useState<Bloque[]>([])
+  const [bloques, setBloques] = useState<BloqueEditor[]>([])
   const [resultado, setResultado] = useState<PlanSemanal | null>(null)
 
-  const agregarBloque = () =>
-    setBloques((b) => [...b, { diaSemana: 1, horaInicio: '08:00', horaFin: '09:00', codigoEtiqueta: etiquetas[0]?.codigo ?? '', descripcion: '' }])
+  // Etiquetas reales de la etiqueta elegida -- cada área tiene su propio
+  // set, no uno global compartido. Se recarga al cambiar de área.
+  const { data: etiquetas } = useQuery<Catalogo[]>({
+    queryKey: ['planificacion-etiquetas', codigoArea],
+    queryFn: async () => (await api.get(`${BASE}/etiquetas`, { params: { codigoArea } })).data,
+    enabled: !!codigoArea,
+  })
 
-  const actualizarBloque = (i: number, campo: keyof Bloque, valor: string | number) =>
+  const agregarBloque = () =>
+    setBloques((b) => [...b, { diaSemana: 1, horaInicio: '08:00', horaFin: '09:00', nombreEtiqueta: etiquetas?.[0]?.nombre ?? '', descripcion: '' }])
+
+  const actualizarBloque = (i: number, campo: keyof BloqueEditor, valor: string | number) =>
     setBloques((b) => b.map((x, idx) => (idx === i ? { ...x, [campo]: valor } : x)))
 
   const quitarBloque = (i: number) => setBloques((b) => b.filter((_, idx) => idx !== i))
 
   const guardar = useMutation({
-    mutationFn: async () =>
-      (
+    mutationFn: async () => {
+      // Combo editable real: cada nombre de etiqueta escrito se resuelve
+      // contra el área elegida -- si ya existe (por nombre, sin
+      // importar mayúsculas), se reusa; si no, se registra en el
+      // momento. Nunca hace falta ir a Configuración a mano solo para
+      // agregar una categoría nueva.
+      const nombresUnicos = Array.from(new Set(bloques.map((b) => b.nombreEtiqueta.trim()).filter(Boolean)))
+      const mapaCodigos = new Map<string, string>()
+      for (const nombre of nombresUnicos) {
+        const { data } = await api.post(`${BASE}/etiquetas/obtener-o-crear`, { codigoArea, nombre })
+        mapaCodigos.set(nombre.toLowerCase(), data.codigo)
+      }
+
+      return (
         await api.post(`${BASE}/planes`, {
           codigoArea,
           fechaInicioSemana,
           nombreResponsable,
           cargoResponsable,
-          bloques: bloques.map((b) => ({ ...b, horaInicio: `${b.horaInicio}:00`, horaFin: `${b.horaFin}:00` })),
+          bloques: bloques.map((b) => ({
+            diaSemana: b.diaSemana,
+            horaInicio: `${b.horaInicio}:00`,
+            horaFin: `${b.horaFin}:00`,
+            codigoEtiqueta: mapaCodigos.get(b.nombreEtiqueta.trim().toLowerCase()) ?? '',
+            descripcion: b.descripcion,
+          })),
         })
-      ).data as PlanSemanal,
+      ).data as PlanSemanal
+    },
     onSuccess: (data) => {
       setResultado(data)
       queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
+      queryClient.invalidateQueries({ queryKey: ['planificacion-etiquetas', codigoArea] })
     },
   })
 
@@ -181,7 +214,9 @@ function SeccionEditor({ areas, etiquetas }: { areas: Catalogo[]; etiquetas: Cat
           <button
             type="button"
             onClick={agregarBloque}
-            className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-3 py-1.5 text-sm font-medium text-gold-500"
+            disabled={!codigoArea}
+            title={!codigoArea ? 'Elegí un área primero' : undefined}
+            className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-3 py-1.5 text-sm font-medium text-gold-500 disabled:opacity-40"
           >
             <Plus size={14} /> Agregar bloque
           </button>
@@ -203,13 +238,14 @@ function SeccionEditor({ areas, etiquetas }: { areas: Catalogo[]; etiquetas: Cat
                 <input type="time" value={b.horaInicio} onChange={(e) => actualizarBloque(i, 'horaInicio', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
                 <span className="text-graphite-600">a</span>
                 <input type="time" value={b.horaFin} onChange={(e) => actualizarBloque(i, 'horaFin', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
-                <select value={b.codigoEtiqueta} onChange={(e) => actualizarBloque(i, 'codigoEtiqueta', e.target.value)} className={`${INPUT_CLASS} w-auto`}>
-                  {etiquetas.map((et) => (
-                    <option key={et.codigo} value={et.codigo}>
-                      {et.nombre}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  list="lista-etiquetas-planificacion"
+                  value={b.nombreEtiqueta}
+                  onChange={(e) => actualizarBloque(i, 'nombreEtiqueta', e.target.value)}
+                  className={`${INPUT_CLASS} w-48`}
+                  placeholder="Categoría — escribí una nueva si hace falta"
+                  title="Elegí una existente o escribí una categoría nueva: se registra sola para esta área"
+                />
                 <input
                   value={b.descripcion}
                   onChange={(e) => actualizarBloque(i, 'descripcion', e.target.value)}
@@ -223,6 +259,11 @@ function SeccionEditor({ areas, etiquetas }: { areas: Catalogo[]; etiquetas: Cat
             ))}
           </div>
         )}
+        <datalist id="lista-etiquetas-planificacion">
+          {(etiquetas ?? []).map((et) => (
+            <option key={et.codigo} value={et.nombre} />
+          ))}
+        </datalist>
       </div>
 
       {guardar.isError && <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{mensajeError(guardar.error)}</div>}

@@ -53,7 +53,19 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
             .Select(a => new { a.Codigo, a.Nombre }).ToListAsync(cancellationToken));
 
     [HttpGet("etiquetas")]
-    public async Task<ActionResult<IReadOnlyList<object>>> Etiquetas(CancellationToken cancellationToken)
-        => Ok(await db.EtiquetasPlanificacion.Where(e => e.Activo).OrderBy(e => e.Nombre)
-            .Select(e => new { e.Codigo, e.Nombre, e.ColorHex }).ToListAsync(cancellationToken));
+    public async Task<ActionResult<IReadOnlyList<object>>> Etiquetas([FromQuery] string? codigoArea, CancellationToken cancellationToken)
+    {
+        var query = db.EtiquetasPlanificacion.Where(e => e.Activo);
+        if (!string.IsNullOrWhiteSpace(codigoArea))
+            query = query.Where(e => e.CodigoArea == codigoArea);
+
+        return Ok(await query.OrderBy(e => e.Nombre).Select(e => new { e.Codigo, e.Nombre, e.ColorHex }).ToListAsync(cancellationToken));
+    }
+
+    public record ObtenerOCrearEtiquetaBody(string CodigoArea, string Nombre);
+
+    /// <summary>Combo editable real -- ver <see cref="IPlanificacionService.ObtenerOCrearEtiquetaAsync"/>.</summary>
+    [HttpPost("etiquetas/obtener-o-crear")]
+    public async Task<ActionResult<EtiquetaDto>> ObtenerOCrearEtiqueta(ObtenerOCrearEtiquetaBody body, CancellationToken cancellationToken)
+        => Ok(await service.ObtenerOCrearEtiquetaAsync(body.CodigoArea, body.Nombre, cancellationToken));
 }

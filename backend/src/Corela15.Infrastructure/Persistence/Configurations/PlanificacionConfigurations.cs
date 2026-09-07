@@ -21,9 +21,15 @@ public class EtiquetaPlanificacionConfiguration : IEntityTypeConfiguration<Etiqu
     {
         b.ToTable("etiqueta", "planificacion");
         b.HasKey(x => x.Codigo);
-        b.Property(x => x.Codigo).HasMaxLength(20);
+        b.Property(x => x.Codigo).HasMaxLength(40);
         b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
         b.Property(x => x.ColorHex).HasMaxLength(7).IsRequired();
+
+        b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
+        // Nunca dos etiquetas con el mismo nombre real dentro de la misma
+        // área -- así "obtener o crear" puede confiar en buscar por
+        // (área, nombre) sin ambigüedad.
+        b.HasIndex(x => new { x.CodigoArea, x.Nombre }).IsUnique();
     }
 }
 
