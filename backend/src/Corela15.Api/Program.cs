@@ -13,6 +13,7 @@ using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
 using Corela15.Application.MesaServicio;
+using Corela15.Application.Planificacion;
 using Corela15.Application.Nomina;
 using Corela15.Application.Obligacion;
 using Corela15.Application.Portafolio;
@@ -87,6 +88,7 @@ builder.Services.AddScoped<ISolicitudPedidoService, SolicitudPedidoService>();
 builder.Services.AddScoped<IObligacionFinancieraService, ObligacionFinancieraService>();
 builder.Services.AddScoped<IObligacionSyncService, ObligacionSyncService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IPlanificacionService, PlanificacionService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
 builder.Services.AddScoped<IAvanceRiesgoService, AvanceRiesgoService>();
 builder.Services.AddScoped<IHallazgoService, HallazgoService>();
@@ -166,6 +168,7 @@ var codigosMenu = new[]
     "socios", "usuarios-roles", "contabilidad", "ahorros", "creditos",
     "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
     "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
+    "planificacion", "planificacion-gerencia",
 };
 
 // Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —

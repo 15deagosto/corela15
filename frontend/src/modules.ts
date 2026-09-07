@@ -15,6 +15,7 @@ import {
   FileCheck,
   Boxes,
   LifeBuoy,
+  CalendarRange,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -167,6 +168,14 @@ export const modulos: Modulo[] = [
     nombre: 'Mesa de Servicio',
     descripcion: 'Control de incidencias — disponible para todos los usuarios',
     icon: LifeBuoy,
+    estado: 'disponible',
+  },
+  {
+    slug: 'planificacion',
+    path: '/planificacion',
+    nombre: 'Planificación',
+    descripcion: 'Planificación semanal de actividades por área',
+    icon: CalendarRange,
     estado: 'disponible',
   },
 ]

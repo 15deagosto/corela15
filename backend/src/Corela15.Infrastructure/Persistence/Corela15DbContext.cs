@@ -18,6 +18,7 @@ using Corela15.Domain.Inversion;
 using Corela15.Domain.LavadoActivos;
 using Corela15.Domain.Marketing;
 using Corela15.Domain.MesaServicio;
+using Corela15.Domain.Planificacion;
 using Corela15.Domain.Nomina;
 using Corela15.Domain.Obligacion;
 using Corela15.Domain.Planificacion;
@@ -263,6 +264,10 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketComentario> TicketComentarios => Set<TicketComentario>();
     public DbSet<TicketEtapaHist> TicketEtapaHist => Set<TicketEtapaHist>();
+    public DbSet<AreaPlanificacion> AreasPlanificacion => Set<AreaPlanificacion>();
+    public DbSet<EtiquetaPlanificacion> EtiquetasPlanificacion => Set<EtiquetaPlanificacion>();
+    public DbSet<PlanSemanal> PlanesSemanales => Set<PlanSemanal>();
+    public DbSet<PlanSemanalBloque> PlanesSemanalesBloques => Set<PlanSemanalBloque>();
     public DbSet<EstadoAvanceRiesgo> EstadosAvanceRiesgo => Set<EstadoAvanceRiesgo>();
     public DbSet<AvanceRiesgo> AvancesRiesgo => Set<AvanceRiesgo>();
     public DbSet<AvanceRiesgoDetalle> AvancesRiesgoDetalle => Set<AvanceRiesgoDetalle>();

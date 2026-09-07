@@ -9,6 +9,7 @@ using Corela15.Domain.Credito;
 using Corela15.Domain.FlujoTrabajo;
 using Corela15.Domain.General;
 using Corela15.Domain.Inversion;
+using Corela15.Domain.Planificacion;
 using Corela15.Domain.Seguridad;
 using Corela15.Domain.Sujeto;
 using Corela15.Infrastructure.Persistence;
@@ -54,6 +55,14 @@ public record ActualizarTipoEstructuraRequest(string Nombre, bool Activo);
 
 public record TipoEstructuraAsignadaDto(string Codigo, string Nombre, bool Asignado);
 public record ActualizarRolTipoEstructuraRequest(List<string> CodigosTipoEstructura);
+
+public record AreaPlanificacionDto(string Codigo, string Nombre, bool Activo);
+public record CrearAreaPlanificacionRequest(string Codigo, string Nombre);
+public record ActualizarAreaPlanificacionRequest(string Nombre, bool Activo);
+
+public record EtiquetaPlanificacionDto(string Codigo, string Nombre, string ColorHex, bool Activo);
+public record CrearEtiquetaPlanificacionRequest(string Codigo, string Nombre, string ColorHex);
+public record ActualizarEtiquetaPlanificacionRequest(string Nombre, string ColorHex, bool Activo);
 
 public record CuentaContablePlanDto(
     Guid Id, string Codigo, string Nombre, string Grupo, string Naturaleza,
@@ -1320,5 +1329,66 @@ public class ConfiguracionController(
         u.Activo = false;
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    // Catálogos del módulo Planificación -- áreas de la cooperativa y
+    // etiquetas/categorías (con color real) para clasificar cada bloque
+    // de la planificación semanal. Mismo patrón simple que el resto.
+
+    [HttpGet("planificacion/areas")]
+    public async Task<ActionResult<IReadOnlyList<AreaPlanificacionDto>>> AreasPlanificacion(CancellationToken ct)
+        => Ok(await db.AreasPlanificacion.OrderBy(a => a.Nombre)
+            .Select(a => new AreaPlanificacionDto(a.Codigo, a.Nombre, a.Activo)).ToListAsync(ct));
+
+    [HttpPost("planificacion/areas")]
+    public async Task<ActionResult<AreaPlanificacionDto>> CrearAreaPlanificacion(CrearAreaPlanificacionRequest request, CancellationToken ct)
+    {
+        if (await db.AreasPlanificacion.AnyAsync(a => a.Codigo == request.Codigo, ct))
+            throw new CodigoDuplicadoException("un área", request.Codigo);
+
+        var area = new AreaPlanificacion { Codigo = request.Codigo, Nombre = request.Nombre, Activo = true };
+        db.AreasPlanificacion.Add(area);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/planificacion/areas/{area.Codigo}", new AreaPlanificacionDto(area.Codigo, area.Nombre, area.Activo));
+    }
+
+    [HttpPut("planificacion/areas/{codigo}")]
+    public async Task<ActionResult<AreaPlanificacionDto>> ActualizarAreaPlanificacion(string codigo, ActualizarAreaPlanificacionRequest request, CancellationToken ct)
+    {
+        var area = await db.AreasPlanificacion.FirstOrDefaultAsync(a => a.Codigo == codigo, ct);
+        if (area is null) return NotFound();
+        area.Nombre = request.Nombre;
+        area.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new AreaPlanificacionDto(area.Codigo, area.Nombre, area.Activo));
+    }
+
+    [HttpGet("planificacion/etiquetas")]
+    public async Task<ActionResult<IReadOnlyList<EtiquetaPlanificacionDto>>> EtiquetasPlanificacion(CancellationToken ct)
+        => Ok(await db.EtiquetasPlanificacion.OrderBy(e => e.Nombre)
+            .Select(e => new EtiquetaPlanificacionDto(e.Codigo, e.Nombre, e.ColorHex, e.Activo)).ToListAsync(ct));
+
+    [HttpPost("planificacion/etiquetas")]
+    public async Task<ActionResult<EtiquetaPlanificacionDto>> CrearEtiquetaPlanificacion(CrearEtiquetaPlanificacionRequest request, CancellationToken ct)
+    {
+        if (await db.EtiquetasPlanificacion.AnyAsync(e => e.Codigo == request.Codigo, ct))
+            throw new CodigoDuplicadoException("una etiqueta", request.Codigo);
+
+        var etiqueta = new EtiquetaPlanificacion { Codigo = request.Codigo, Nombre = request.Nombre, ColorHex = request.ColorHex, Activo = true };
+        db.EtiquetasPlanificacion.Add(etiqueta);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/planificacion/etiquetas/{etiqueta.Codigo}", new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
+    }
+
+    [HttpPut("planificacion/etiquetas/{codigo}")]
+    public async Task<ActionResult<EtiquetaPlanificacionDto>> ActualizarEtiquetaPlanificacion(string codigo, ActualizarEtiquetaPlanificacionRequest request, CancellationToken ct)
+    {
+        var etiqueta = await db.EtiquetasPlanificacion.FirstOrDefaultAsync(e => e.Codigo == codigo, ct);
+        if (etiqueta is null) return NotFound();
+        etiqueta.Nombre = request.Nombre;
+        etiqueta.ColorHex = request.ColorHex;
+        etiqueta.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
     }
 }
