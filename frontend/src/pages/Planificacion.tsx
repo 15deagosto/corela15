@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarRange, Plus, Trash2, Eye, X } from 'lucide-react'
+import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { PageHeader } from '../components/PageHeader'
@@ -44,7 +44,14 @@ interface PlanSemanal {
   fechaInicioSemana: string
   nombreResponsable: string
   cargoResponsable: string
-  bloques: (Bloque & { etiqueta: string; colorHex: string })[]
+  bloques: (Bloque & { etiqueta: string; colorHex: string; notaGerencia: string | null })[]
+  enviada: boolean
+  fechaEnvio: string | null
+  enviadaFueraDeTiempo: boolean
+  enviadaPor: string | null
+  notaGerencia: string | null
+  bloqueada: boolean
+  fechaLimiteEnvio: string
   creadoEn: string
   creadoPor: string
   modificadoEn: string | null
@@ -57,6 +64,9 @@ interface PlanListItem {
   fechaInicioSemana: string
   nombreResponsable: string
   cantidadBloques: number
+  enviada: boolean
+  enviadaFueraDeTiempo: boolean
+  bloqueada: boolean
   creadoEn: string
   creadoPor: string
 }
@@ -127,12 +137,64 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
   const [bloques, setBloques] = useState<BloqueEditor[]>([])
   const [resultado, setResultado] = useState<PlanSemanal | null>(null)
 
+  // Si ya existe un plan real para esta área+semana (guardado antes,
+  // enviado o no), lo cargamos para seguir editando en vez de arrancar
+  // un formulario en blanco -- el upsert real del backend es por
+  // área+semana, así que "editar la semana" es esto.
+  const { data: planesDeLaSemana } = useQuery<PlanListItem[]>({
+    queryKey: ['planificacion-semana', codigoArea, fechaInicioSemana],
+    queryFn: async () => (await api.get(`${BASE}/planes`, { params: { codigoArea, desde: fechaInicioSemana, hasta: fechaInicioSemana } })).data,
+    enabled: !!codigoArea && !!fechaInicioSemana,
+  })
+  const idPlanExistente = planesDeLaSemana?.[0]?.id ?? null
+  const { data: planExistente } = useQuery<PlanSemanal>({
+    queryKey: ['planificacion-plan', idPlanExistente],
+    queryFn: async () => (await api.get(`${BASE}/planes/${idPlanExistente}`)).data,
+    enabled: !!idPlanExistente,
+  })
+
+  useEffect(() => {
+    if (!planExistente) return
+    setResultado(planExistente)
+    setNombreResponsable(planExistente.nombreResponsable)
+    setCargoResponsable(planExistente.cargoResponsable)
+    setBloques(
+      planExistente.bloques.map((b) => ({
+        diaSemana: b.diaSemana, horaInicio: b.horaInicio.slice(0, 5), horaFin: b.horaFin.slice(0, 5),
+        nombreEtiqueta: b.etiqueta, descripcion: b.descripcion,
+      })),
+    )
+  }, [planExistente])
+
+  // Cambiar de área o de semana limpia el formulario -- evita mezclar
+  // bloques de una semana con la fecha de otra por accidente.
+  useEffect(() => {
+    if (!idPlanExistente) {
+      setResultado(null)
+      setBloques([])
+      setNombreResponsable('')
+      setCargoResponsable('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigoArea, fechaInicioSemana])
+
   // Etiquetas reales de la etiqueta elegida -- cada área tiene su propio
   // set, no uno global compartido. Se recarga al cambiar de área.
   const { data: etiquetas } = useQuery<Catalogo[]>({
     queryKey: ['planificacion-etiquetas', codigoArea],
     queryFn: async () => (await api.get(`${BASE}/etiquetas`, { params: { codigoArea } })).data,
     enabled: !!codigoArea,
+  })
+
+  const bloqueada = resultado?.bloqueada ?? false
+
+  const enviar = useMutation({
+    mutationFn: async () => (await api.post(`${BASE}/planes/${resultado!.id}/enviar`)).data as PlanSemanal,
+    onSuccess: (data) => {
+      setResultado(data)
+      queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
+      queryClient.invalidateQueries({ queryKey: ['planificacion-semana'] })
+    },
   })
 
   const agregarBloque = () =>
@@ -176,12 +238,15 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     onSuccess: (data) => {
       setResultado(data)
       queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
+      queryClient.invalidateQueries({ queryKey: ['planificacion-semana'] })
       queryClient.invalidateQueries({ queryKey: ['planificacion-etiquetas', codigoArea] })
     },
   })
 
   return (
     <div className="space-y-4">
+      {resultado && <EstadoEnvioBanner plan={resultado} />}
+
       <div className="glass-card grid grid-cols-1 gap-3 rounded-xl p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-graphite-600">Área</span>
@@ -200,11 +265,11 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-graphite-600">Responsable</span>
-          <input value={nombreResponsable} onChange={(e) => setNombreResponsable(e.target.value)} className={INPUT_CLASS} placeholder="Nombre completo" />
+          <input disabled={bloqueada} value={nombreResponsable} onChange={(e) => setNombreResponsable(e.target.value)} className={INPUT_CLASS} placeholder="Nombre completo" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-graphite-600">Cargo</span>
-          <input value={cargoResponsable} onChange={(e) => setCargoResponsable(e.target.value)} className={INPUT_CLASS} placeholder="Ej. Jefe de TI" />
+          <input disabled={bloqueada} value={cargoResponsable} onChange={(e) => setCargoResponsable(e.target.value)} className={INPUT_CLASS} placeholder="Ej. Jefe de TI" />
         </label>
       </div>
 
@@ -214,8 +279,8 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
           <button
             type="button"
             onClick={agregarBloque}
-            disabled={!codigoArea}
-            title={!codigoArea ? 'Elegí un área primero' : undefined}
+            disabled={!codigoArea || bloqueada}
+            title={!codigoArea ? 'Elegí un área primero' : bloqueada ? 'Esta semana ya no se puede editar' : undefined}
             className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-3 py-1.5 text-sm font-medium text-gold-500 disabled:opacity-40"
           >
             <Plus size={14} /> Agregar bloque
@@ -228,17 +293,18 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
           <div className="space-y-2">
             {bloques.map((b, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-black/[0.06] p-2">
-                <select value={b.diaSemana} onChange={(e) => actualizarBloque(i, 'diaSemana', Number(e.target.value))} className={`${INPUT_CLASS} w-auto`}>
+                <select disabled={bloqueada} value={b.diaSemana} onChange={(e) => actualizarBloque(i, 'diaSemana', Number(e.target.value))} className={`${INPUT_CLASS} w-auto`}>
                   {DIAS.map((d, idx) => (
                     <option key={d} value={idx + 1}>
                       {d}
                     </option>
                   ))}
                 </select>
-                <input type="time" value={b.horaInicio} onChange={(e) => actualizarBloque(i, 'horaInicio', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
+                <input disabled={bloqueada} type="time" value={b.horaInicio} onChange={(e) => actualizarBloque(i, 'horaInicio', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
                 <span className="text-graphite-600">a</span>
-                <input type="time" value={b.horaFin} onChange={(e) => actualizarBloque(i, 'horaFin', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
+                <input disabled={bloqueada} type="time" value={b.horaFin} onChange={(e) => actualizarBloque(i, 'horaFin', e.target.value)} className={`${INPUT_CLASS} w-auto`} />
                 <input
+                  disabled={bloqueada}
                   list="lista-etiquetas-planificacion"
                   value={b.nombreEtiqueta}
                   onChange={(e) => actualizarBloque(i, 'nombreEtiqueta', e.target.value)}
@@ -247,14 +313,17 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
                   title="Elegí una existente o escribí una categoría nueva: se registra sola para esta área"
                 />
                 <input
+                  disabled={bloqueada}
                   value={b.descripcion}
                   onChange={(e) => actualizarBloque(i, 'descripcion', e.target.value)}
                   className={`${INPUT_CLASS} min-w-[200px] flex-1`}
                   placeholder="Descripción de la actividad"
                 />
-                <button type="button" onClick={() => quitarBloque(i)} className="text-graphite-600 hover:text-red-600">
-                  <Trash2 size={16} />
-                </button>
+                {!bloqueada && (
+                  <button type="button" onClick={() => quitarBloque(i)} className="text-graphite-600 hover:text-red-600">
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -267,15 +336,42 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
       </div>
 
       {guardar.isError && <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{mensajeError(guardar.error)}</div>}
+      {enviar.isError && <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{mensajeError(enviar.error)}</div>}
 
-      <button
-        type="button"
-        disabled={!codigoArea || !fechaInicioSemana || !nombreResponsable || bloques.length === 0 || guardar.isPending}
-        onClick={() => guardar.mutate()}
-        className="btn-hover rounded-lg bg-gold-500 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-      >
-        Guardar planificación de la semana
-      </button>
+      {!bloqueada && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!codigoArea || !fechaInicioSemana || !nombreResponsable || bloques.length === 0 || guardar.isPending}
+            onClick={() => guardar.mutate()}
+            className="btn-hover rounded-lg bg-gold-500 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {guardar.isPending ? 'Guardando…' : 'Guardar planificación de la semana'}
+          </button>
+          {resultado && !resultado.enviada && (
+            <button
+              type="button"
+              disabled={enviar.isPending}
+              onClick={() => enviar.mutate()}
+              className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-4 py-2.5 text-sm font-medium text-gold-600 disabled:opacity-50"
+              title="Marca la planificación como enviada — antes del viernes 5pm se puede seguir editando aunque ya esté enviada."
+            >
+              <Send size={14} /> Marcar como enviada
+            </button>
+          )}
+          {resultado?.enviada && (
+            <button
+              type="button"
+              disabled={enviar.isPending}
+              onClick={() => enviar.mutate()}
+              className="btn-hover flex items-center gap-1.5 rounded-lg border border-black/[0.08] px-4 py-2.5 text-sm font-medium text-graphite-600 disabled:opacity-50"
+              title="Reenviar tras un cambio — actualiza la fecha de envío."
+            >
+              <Send size={14} /> Reenviar
+            </button>
+          )}
+        </div>
+      )}
 
       {resultado && (
         <div className="space-y-3">
@@ -283,6 +379,38 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
           <GrillaSemanal plan={resultado} />
         </div>
       )}
+    </div>
+  )
+}
+
+function EstadoEnvioBanner({ plan }: { plan: PlanSemanal }) {
+  const limite = new Date(plan.fechaLimiteEnvio).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  if (plan.bloqueada) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+        <Lock size={16} />
+        <span>
+          Esta semana ya fue enviada y pasó el horario límite ({limite}) — quedó bloqueada, ya no se puede modificar.
+        </span>
+      </div>
+    )
+  }
+  if (plan.enviada) {
+    return (
+      <div className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${plan.enviadaFueraDeTiempo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-emerald-300 bg-emerald-50 text-emerald-700'}`}>
+        <Send size={16} />
+        <span>
+          Enviada{plan.enviadaFueraDeTiempo ? ' fuera de horario' : ''} el{' '}
+          {plan.fechaEnvio && new Date(plan.fechaEnvio).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          {plan.enviadaPor && ` por ${plan.enviadaPor}`}. Todavía editable hasta el corte ({limite}).
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-sm text-graphite-600">
+      Borrador sin enviar — corte de envío: viernes {limite}.
     </div>
   )
 }
@@ -317,6 +445,7 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
             <Th>Área</Th>
             <Th>Responsable</Th>
             <Th>Bloques</Th>
+            <Th>Estado</Th>
             <Th>Reportado por</Th>
             <Th></Th>
           </tr>
@@ -333,6 +462,15 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
                 <Td>{p.area}</Td>
                 <Td>{p.nombreResponsable}</Td>
                 <Td>{p.cantidadBloques}</Td>
+                <Td>
+                  {p.bloqueada ? (
+                    <Badge variant="peligro">Bloqueada</Badge>
+                  ) : p.enviada ? (
+                    <Badge variant={p.enviadaFueraDeTiempo ? 'alerta' : 'exito'}>{p.enviadaFueraDeTiempo ? 'Enviada tarde' : 'Enviada'}</Badge>
+                  ) : (
+                    <Badge variant="neutral">Borrador</Badge>
+                  )}
+                </Td>
                 <Td>{p.creadoPor}</Td>
                 <Td>
                   <button type="button" onClick={() => setPlanAbierto(p.id)} className="flex items-center gap-1 text-sm text-gold-600 hover:underline">
@@ -347,17 +485,37 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
 
       {planAbierto && (
         <ModalPortal>
-          <DetallePlanModal id={planAbierto} onClose={() => setPlanAbierto(null)} />
+          <DetallePlanModal id={planAbierto} onClose={() => setPlanAbierto(null)} esGerencia={esGerencia} />
         </ModalPortal>
       )}
     </div>
   )
 }
 
-function DetallePlanModal({ id, onClose }: { id: string; onClose: () => void }) {
+function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: () => void; esGerencia: boolean }) {
+  const queryClient = useQueryClient()
   const { data: plan, isLoading } = useQuery<PlanSemanal>({
     queryKey: ['planificacion-plan', id],
     queryFn: async () => (await api.get(`${BASE}/planes/${id}`)).data,
+  })
+  const [notaGerencia, setNotaGerencia] = useState('')
+  useEffect(() => setNotaGerencia(plan?.notaGerencia ?? ''), [plan?.notaGerencia])
+
+  const invalidar = (data: PlanSemanal) => {
+    queryClient.setQueryData(['planificacion-plan', id], data)
+    queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
+    queryClient.invalidateQueries({ queryKey: ['planificacion-semana'] })
+  }
+
+  const guardarNotaGeneral = useMutation({
+    mutationFn: async () => (await api.post(`${BASE}/planes/${id}/nota-gerencia`, { nota: notaGerencia || null })).data as PlanSemanal,
+    onSuccess: invalidar,
+  })
+
+  const guardarNotaBloque = useMutation({
+    mutationFn: async ({ idBloque, nota }: { idBloque: string; nota: string }) =>
+      (await api.post(`${BASE}/bloques/${idBloque}/nota-gerencia`, { nota: nota || null })).data as PlanSemanal,
+    onSuccess: invalidar,
   })
 
   return (
@@ -377,15 +535,103 @@ function DetallePlanModal({ id, onClose }: { id: string; onClose: () => void }) 
         {isLoading || !plan ? (
           <p className="text-sm text-graphite-600">Cargando…</p>
         ) : (
-          <>
-            <p className="mb-4 text-sm text-graphite-600">
+          <div className="space-y-4">
+            <EstadoEnvioBanner plan={plan} />
+            <p className="text-sm text-graphite-600">
               Responsable: <span className="font-medium text-graphite-100">{plan.nombreResponsable}</span>
               {plan.cargoResponsable && <> — {plan.cargoResponsable}</>}
             </p>
             <GrillaSemanal plan={plan} />
-          </>
+
+            {(esGerencia || plan.notaGerencia) && (
+              <div className="rounded-xl border border-black/[0.06] p-4">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+                  <MessageSquare size={14} /> Nota general de gerencia
+                </p>
+                {esGerencia ? (
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      value={notaGerencia}
+                      onChange={(e) => setNotaGerencia(e.target.value)}
+                      className={`${INPUT_CLASS} min-h-[70px]`}
+                      placeholder="Comentario sobre toda la semana…"
+                    />
+                    <button
+                      type="button"
+                      disabled={guardarNotaGeneral.isPending}
+                      onClick={() => guardarNotaGeneral.mutate()}
+                      className="btn-hover self-start rounded-lg border border-gold-500 px-3 py-1.5 text-xs font-medium text-gold-600 disabled:opacity-50"
+                    >
+                      {guardarNotaGeneral.isPending ? 'Guardando…' : 'Guardar nota'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm text-graphite-100">{plan.notaGerencia}</p>
+                )}
+              </div>
+            )}
+
+            <NotasPorBloque plan={plan} esGerencia={esGerencia} onGuardar={(idBloque, nota) => guardarNotaBloque.mutate({ idBloque, nota })} guardando={guardarNotaBloque.isPending} />
+          </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Notas puntuales de gerencia sobre una hora específica de la semana -- ver PlanSemanalBloque.NotaGerencia. */
+function NotasPorBloque({
+  plan, esGerencia, onGuardar, guardando,
+}: { plan: PlanSemanal; esGerencia: boolean; onGuardar: (idBloque: string, nota: string) => void; guardando: boolean }) {
+  const [idBloqueSel, setIdBloqueSel] = useState('')
+  const [nota, setNota] = useState('')
+
+  const bloquesConNota = plan.bloques.filter((b) => b.notaGerencia)
+  const etiquetaBloque = (b: PlanSemanal['bloques'][number]) => `${DIAS[b.diaSemana - 1]} ${b.horaInicio.slice(0, 5)}–${b.horaFin.slice(0, 5)} — ${b.descripcion}`
+
+  if (!esGerencia && bloquesConNota.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-black/[0.06] p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+        <MessageSquare size={14} /> Notas sobre una hora específica
+      </p>
+
+      {bloquesConNota.length > 0 && (
+        <ul className="mb-3 space-y-2">
+          {bloquesConNota.map((b) => (
+            <li key={b.id} className="rounded-lg border border-black/[0.06] bg-black/[0.015] p-2 text-sm">
+              <p className="text-xs font-medium text-graphite-600">{etiquetaBloque(b)}</p>
+              <p className="whitespace-pre-wrap text-graphite-100">{b.notaGerencia}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {esGerencia && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={idBloqueSel} onChange={(e) => setIdBloqueSel(e.target.value)} className={`${INPUT_CLASS} w-auto`}>
+            <option value="">Elegí un bloque…</option>
+            {plan.bloques.map((b) => (
+              <option key={b.id} value={b.id}>
+                {etiquetaBloque(b)}
+              </option>
+            ))}
+          </select>
+          <input value={nota} onChange={(e) => setNota(e.target.value)} className={`${INPUT_CLASS} min-w-[220px] flex-1`} placeholder="Comentario sobre este bloque…" />
+          <button
+            type="button"
+            disabled={!idBloqueSel || guardando}
+            onClick={() => {
+              onGuardar(idBloqueSel, nota)
+              setNota('')
+            }}
+            className="btn-hover rounded-lg border border-gold-500 px-3 py-1.5 text-xs font-medium text-gold-600 disabled:opacity-50"
+          >
+            Agregar nota
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -47,6 +47,24 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     public async Task<ActionResult<PlanSemanalDto>> Obtener(Guid id, CancellationToken cancellationToken)
         => Ok(await service.ObtenerAsync(id, User.Identity!.Name!, EsGerencia, cancellationToken));
 
+    [HttpPost("planes/{id:guid}/enviar")]
+    public async Task<ActionResult<PlanSemanalDto>> Enviar(Guid id, CancellationToken cancellationToken)
+        => Ok(await service.EnviarAsync(id, User.Identity!.Name!, EsGerencia, cancellationToken));
+
+    public record NotaBody(string? Nota);
+
+    /// <summary>Solo gerencia -- nota general sobre toda la semana.</summary>
+    [HttpPost("planes/{id:guid}/nota-gerencia")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<PlanSemanalDto>> GuardarNotaGerencia(Guid id, NotaBody body, CancellationToken cancellationToken)
+        => Ok(await service.GuardarNotaGerenciaAsync(id, body.Nota, cancellationToken));
+
+    /// <summary>Solo gerencia -- nota puntual sobre un bloque (una hora específica).</summary>
+    [HttpPost("bloques/{idBloque:guid}/nota-gerencia")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<PlanSemanalDto>> GuardarNotaBloque(Guid idBloque, NotaBody body, CancellationToken cancellationToken)
+        => Ok(await service.GuardarNotaBloqueAsync(idBloque, body.Nota, cancellationToken));
+
     [HttpGet("areas")]
     public async Task<ActionResult<IReadOnlyList<object>>> Areas(CancellationToken cancellationToken)
         => Ok(await db.AreasPlanificacion.Where(a => a.Activo).OrderBy(a => a.Nombre)

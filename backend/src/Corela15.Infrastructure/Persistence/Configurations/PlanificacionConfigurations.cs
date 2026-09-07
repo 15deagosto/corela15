@@ -43,6 +43,8 @@ public class PlanSemanalConfiguration : IEntityTypeConfiguration<PlanSemanal>
         b.Property(x => x.CargoResponsable).HasMaxLength(150).IsRequired();
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
         b.Property(x => x.ModificadoPor).HasMaxLength(100);
+        b.Property(x => x.EnviadaPor).HasMaxLength(100);
+        b.Property(x => x.NotaGerencia).HasMaxLength(2000);
 
         b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
 
@@ -61,6 +63,7 @@ public class PlanSemanalBloqueConfiguration : IEntityTypeConfiguration<PlanSeman
         b.ToTable("plan_semanal_bloque", "planificacion");
         b.HasKey(x => x.Id);
         b.Property(x => x.Descripcion).HasMaxLength(500).IsRequired();
+        b.Property(x => x.NotaGerencia).HasMaxLength(1000);
 
         b.HasOne(x => x.PlanSemanal).WithMany(x => x.Bloques).HasForeignKey(x => x.IdPlanSemanal).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.CodigoEtiqueta).OnDelete(DeleteBehavior.Restrict);

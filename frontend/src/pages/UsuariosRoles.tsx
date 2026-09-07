@@ -26,6 +26,8 @@ interface UsuarioDetalle {
   validaIp: boolean
   cambiaClave: boolean
   diasCambioClave: number | null
+  codigoAreaPlanificacion: string | null
+  areaPlanificacion: string | null
 }
 
 interface HorarioAcceso {
@@ -317,11 +319,24 @@ function TabDatosYAcceso({ usuario, onGuardado }: { usuario: UsuarioRol; onGuard
     queryKey: ['usuario-detalle', usuario.id],
     queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}`)).data,
   })
+  const { data: areasPlanificacion } = useQuery<{ codigo: string; nombre: string }[]>({
+    queryKey: ['planificacion-areas'],
+    queryFn: async () => (await api.get('/api/planificacion/areas')).data,
+  })
+  const [codigoAreaPlan, setCodigoAreaPlan] = useState<string>('')
+  const areaPlanCambio = useMutation({
+    mutationFn: async () =>
+      api.patch(`/api/usuarios/${usuario.id}/area-planificacion`, {
+        codigoAreaPlanificacion: codigoAreaPlan || null,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-detalle', usuario.id] }),
+  })
 
   useEffect(() => {
     if (!detalle || cargado) return
     setIdAgencia(detalle.idAgencia)
     setPuedeIngresar(detalle.puedeIngresarSistema)
+    setCodigoAreaPlan(detalle.codigoAreaPlanificacion ?? '')
     setCargado(true)
   }, [detalle, cargado])
 
@@ -401,6 +416,36 @@ function TabDatosYAcceso({ usuario, onGuardado }: { usuario: UsuarioRol; onGuard
         >
           {actualizar.isPending ? 'Guardando…' : 'Guardar cambios'}
         </button>
+      </div>
+
+      <div className="border-t border-black/[0.06] pt-4">
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-600">Área de planificación</p>
+        <p className="mb-2 text-xs text-graphite-600">
+          Quien tenga un área asignada acá puede ver/cargar el plan semanal de esa jefatura en el módulo
+          Planificación — un jefe y su asistente comparten el mismo plan al tener la misma área.
+        </p>
+        <div className="flex items-center gap-2">
+          <select
+            value={codigoAreaPlan}
+            onChange={(e) => setCodigoAreaPlan(e.target.value)}
+            className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+          >
+            <option value="">Sin área asignada</option>
+            {areasPlanificacion?.map((a) => (
+              <option key={a.codigo} value={a.codigo}>
+                {a.nombre}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={areaPlanCambio.isPending}
+            onClick={() => areaPlanCambio.mutate()}
+            className="btn-hover rounded-lg border border-black/[0.08] px-3 py-2 text-xs font-medium text-graphite-100 disabled:opacity-50"
+          >
+            {areaPlanCambio.isPending ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-black/[0.06] pt-4">

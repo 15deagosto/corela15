@@ -21,6 +21,7 @@ public class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
 
         b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.IdPersona).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.AreaPlanificacion).WithMany().HasForeignKey(x => x.CodigoAreaPlanificacion).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.NombreUsuario).IsUnique();
     }

@@ -1,5 +1,6 @@
 using Corela15.Domain.Common;
 using Corela15.Domain.General;
+using Corela15.Domain.Planificacion;
 using Corela15.Domain.Sujeto;
 
 namespace Corela15.Domain.Seguridad;
@@ -52,6 +53,13 @@ public class Usuario : AuditableEntity
     public bool PermiteRiesgoOperativo { get; set; }
     public bool PermiteConsultaEmpleados { get; set; }
     public bool ValidaIp { get; set; }
+
+    // Área real de planificación del usuario (jefe o asistente) -- quien
+    // tenga el mismo área ve/edita el mismo plan semanal, sin importar
+    // quién lo cargó originalmente (ver PlanificacionService). Nullable:
+    // la mayoría de usuarios no tienen nada que ver con este módulo.
+    public string? CodigoAreaPlanificacion { get; set; }
+    public AreaPlanificacion? AreaPlanificacion { get; set; }
 
     public List<UsuarioRol> UsuarioRoles { get; set; } = new();
 }

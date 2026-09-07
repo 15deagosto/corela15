@@ -23,4 +23,7 @@ public class PlanSemanalBloque
     public EtiquetaPlanificacion Etiqueta { get; set; } = null!;
 
     public string Descripcion { get; set; } = string.Empty;
+
+    /// <summary>Nota real de gerencia sobre este bloque puntual (una hora específica de la semana) -- distinta de PlanSemanal.NotaGerencia (la nota general).</summary>
+    public string? NotaGerencia { get; set; }
 }

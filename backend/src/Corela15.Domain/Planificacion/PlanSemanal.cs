@@ -23,6 +23,19 @@ public class PlanSemanal
 
     public ICollection<PlanSemanalBloque> Bloques { get; set; } = new List<PlanSemanalBloque>();
 
+    // Envío real con corte los viernes 17:00 -- ver PlanificacionService
+    // para la lógica completa de bloqueo (antes del corte, editable
+    // aunque ya esté enviada; después del corte, bloqueada por completo;
+    // si nunca se envió y ya pasó el corte, se permite un único envío
+    // tardío, marcado como tal).
+    public bool Enviada { get; set; }
+    public DateTimeOffset? FechaEnvio { get; set; }
+    public bool EnviadaFueraDeTiempo { get; set; }
+    public string? EnviadaPor { get; set; }
+
+    /// <summary>Nota general de gerencia sobre toda la semana -- ver también PlanSemanalBloque.NotaGerencia para notas puntuales por hora.</summary>
+    public string? NotaGerencia { get; set; }
+
     public DateTimeOffset CreadoEn { get; set; }
     public string CreadoPor { get; set; } = string.Empty;
     public DateTimeOffset? ModificadoEn { get; set; }
