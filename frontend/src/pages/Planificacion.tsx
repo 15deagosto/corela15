@@ -197,13 +197,41 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     },
   })
 
+  // Nombre de etiqueta vacío al agregar -- así el campo arranca vacío y el
+  // navegador muestra la lista completa de sugerencias al enfocarlo (un
+  // valor por defecto ya escrito hace que el <datalist> nativo filtre a
+  // lo que coincide con ese texto, mostrando solo 1 opción en vez de
+  // todas). El usuario elige una real o escribe una nueva.
   const agregarBloque = () =>
-    setBloques((b) => [...b, { diaSemana: 1, horaInicio: '08:00', horaFin: '09:00', nombreEtiqueta: etiquetas?.[0]?.nombre ?? '', descripcion: '' }])
+    setBloques((b) => [...b, { diaSemana: 1, horaInicio: '08:00', horaFin: '09:00', nombreEtiqueta: '', descripcion: '' }])
 
   const actualizarBloque = (i: number, campo: keyof BloqueEditor, valor: string | number) =>
     setBloques((b) => b.map((x, idx) => (idx === i ? { ...x, [campo]: valor } : x)))
 
   const quitarBloque = (i: number) => setBloques((b) => b.filter((_, idx) => idx !== i))
+
+  // Vista previa real, reactiva a cada tecla -- antes solo se veía la
+  // grilla después de guardar en el servidor. Resuelve el color de cada
+  // bloque contra las etiquetas ya reales del área; si el usuario
+  // escribió un nombre nuevo (todavía no registrado), se muestra en gris
+  // neutro hasta que se guarde (ahí sí se crea y toma su color real).
+  const previewBloques: GrillaBloque[] = useMemo(
+    () =>
+      bloques
+        .filter((b) => b.horaFin > b.horaInicio)
+        .map((b) => {
+          const real = etiquetas?.find((et) => et.nombre.trim().toLowerCase() === b.nombreEtiqueta.trim().toLowerCase())
+          return {
+            diaSemana: b.diaSemana,
+            horaInicio: `${b.horaInicio}:00`,
+            horaFin: `${b.horaFin}:00`,
+            descripcion: b.descripcion || '(sin descripción)',
+            etiqueta: b.nombreEtiqueta.trim() || '(sin categoría)',
+            colorHex: real?.colorHex ?? '#9ca3af',
+          }
+        }),
+    [bloques, etiquetas],
+  )
 
   const guardar = useMutation({
     mutationFn: async () => {
@@ -342,7 +370,11 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={!codigoArea || !fechaInicioSemana || !nombreResponsable || bloques.length === 0 || guardar.isPending}
+            disabled={
+              !codigoArea || !fechaInicioSemana || !nombreResponsable || bloques.length === 0 ||
+              bloques.some((b) => !b.nombreEtiqueta.trim()) || guardar.isPending
+            }
+            title={bloques.some((b) => !b.nombreEtiqueta.trim()) ? 'Elegí o escribí una categoría en cada bloque antes de guardar' : undefined}
             onClick={() => guardar.mutate()}
             className="btn-hover rounded-lg bg-gold-500 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
           >
@@ -373,10 +405,10 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         </div>
       )}
 
-      {resultado && (
+      {bloques.length > 0 && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-graphite-100">Vista previa — así queda guardada:</p>
-          <GrillaSemanal plan={resultado} />
+          <p className="text-sm font-medium text-graphite-100">Vista previa — se actualiza mientras vas armando la semana:</p>
+          <GrillaSemanal bloques={previewBloques} />
         </div>
       )}
     </div>
@@ -541,7 +573,7 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
               Responsable: <span className="font-medium text-graphite-100">{plan.nombreResponsable}</span>
               {plan.cargoResponsable && <> — {plan.cargoResponsable}</>}
             </p>
-            <GrillaSemanal plan={plan} />
+            <GrillaSemanal bloques={plan.bloques} />
 
             {(esGerencia || plan.notaGerencia) && (
               <div className="rounded-xl border border-black/[0.06] p-4">
@@ -636,17 +668,28 @@ function NotasPorBloque({
   )
 }
 
+/** Bloque genérico que la grilla sabe dibujar -- id opcional porque la vista previa en vivo (sin guardar todavía) no tiene ninguno real. */
+interface GrillaBloque {
+  id?: string
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  descripcion: string
+  etiqueta: string
+  colorHex: string
+}
+
 /** Grilla visual real: columnas por día, bloques coloreados posicionados por horario -- mismo espíritu del PDF de referencia que reemplaza este módulo. */
-function GrillaSemanal({ plan }: { plan: PlanSemanal }) {
+function GrillaSemanal({ bloques }: { bloques: GrillaBloque[] }) {
   const HORA_MIN = 8
   const HORA_MAX = 18
   const totalMinutos = (HORA_MAX - HORA_MIN) * 60
 
   const etiquetasUsadas = useMemo(() => {
     const mapa = new Map<string, { etiqueta: string; colorHex: string }>()
-    plan.bloques.forEach((b) => mapa.set(b.codigoEtiqueta, { etiqueta: b.etiqueta, colorHex: b.colorHex }))
+    bloques.forEach((b) => mapa.set(b.etiqueta, { etiqueta: b.etiqueta, colorHex: b.colorHex }))
     return Array.from(mapa.values())
-  }, [plan.bloques])
+  }, [bloques])
 
   const minutosDesde = (hora: string) => {
     const [h, m] = hora.split(':').map(Number)
@@ -668,19 +711,19 @@ function GrillaSemanal({ plan }: { plan: PlanSemanal }) {
         <div className="grid min-w-[720px] grid-cols-6" style={{ height: `${totalMinutos * 0.9}px` }}>
           {DIAS.map((dia, idx) => {
             const diaNum = idx + 1
-            const bloquesDia = plan.bloques.filter((b) => b.diaSemana === diaNum)
+            const bloquesDia = bloques.filter((b) => b.diaSemana === diaNum)
             return (
               <div key={dia} className="relative border-l border-black/[0.06] first:border-l-0">
                 <div className="sticky top-0 z-10 border-b border-black/[0.06] bg-black/[0.02] px-2 py-1.5 text-center text-xs font-semibold uppercase text-graphite-600">
                   {dia}
                 </div>
                 <div className="relative" style={{ height: `${totalMinutos * 0.9}px` }}>
-                  {bloquesDia.map((b) => {
+                  {bloquesDia.map((b, i) => {
                     const top = minutosDesde(b.horaInicio) * 0.9
                     const height = (minutosDesde(b.horaFin) - minutosDesde(b.horaInicio)) * 0.9
                     return (
                       <div
-                        key={b.id}
+                        key={b.id ?? i}
                         title={`${b.horaInicio}–${b.horaFin}: ${b.descripcion}`}
                         className="absolute left-0.5 right-0.5 overflow-hidden rounded-md p-1 text-[10px] leading-tight text-white"
                         style={{ top: `${top}px`, height: `${Math.max(height, 18)}px`, backgroundColor: b.colorHex }}
