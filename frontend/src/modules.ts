@@ -16,6 +16,7 @@ import {
   Boxes,
   LifeBuoy,
   CalendarRange,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -28,6 +29,15 @@ export interface Modulo {
   descripcion: string
   icon: LucideIcon
   estado: EstadoModulo
+  /**
+   * App real aparte (propio backend/frontend/base, propio despliegue) --
+   * no un módulo nativo de este core. El ícono abre esta URL en una
+   * pestaña nueva del navegador en vez de montarse dentro del workspace
+   * de pestañas internas (Sidebar.tsx/Home.tsx la manejan aparte). El
+   * permiso `slug` sigue controlando quién ve el ícono; la autenticación
+   * real de adentro es propia de esa app, separada de Corela15.
+   */
+  externalUrl?: string
 }
 
 // Nombres pensados para quien usa el sistema (cajero, asesor, admin) — no
@@ -177,5 +187,14 @@ export const modulos: Modulo[] = [
     descripcion: 'Planificación semanal de actividades por área',
     icon: CalendarRange,
     estado: 'disponible',
+  },
+  {
+    slug: 'credvault',
+    path: '/credvault',
+    nombre: 'CredVault',
+    descripcion: 'Bóveda de credenciales de TI — se abre en una pestaña aparte',
+    icon: KeyRound,
+    estado: 'disponible',
+    externalUrl: 'https://credvault.cooperativa15deagosto.fin.ec',
   },
 ]

@@ -89,6 +89,15 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       navigate('/', { replace: true })
       return
     }
+    const externalUrl = modulo !== TAB_INICIO ? modulos.find((m) => m.slug === modulo.slug)?.externalUrl : undefined
+    if (externalUrl) {
+      // App real aparte (ver modules.ts) -- si alguien escribe la ruta a
+      // mano, redirige afuera en vez de intentar abrir una pestaña interna
+      // sin componente real registrado en moduleComponents.tsx.
+      window.location.replace(externalUrl)
+      navigate('/', { replace: true })
+      return
+    }
     const tab: TabInfo = modulo === TAB_INICIO ? TAB_INICIO : { slug: modulo.slug, path: modulo.path, nombre: modulo.nombre }
     setTabs((prev) => (prev.some((t) => t.slug === tab.slug) ? prev : [...prev, tab]))
     setActiveSlug(tab.slug)
@@ -96,6 +105,11 @@ export function TabsProvider({ children }: { children: ReactNode }) {
 
   const activate = (tab: TabInfo) => {
     if (tab.slug !== 'inicio' && !tieneMenu(tab.slug)) return
+    const modulo = modulos.find((m) => m.slug === tab.slug)
+    if (modulo?.externalUrl) {
+      window.open(modulo.externalUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
     setTabs((prev) => (prev.some((t) => t.slug === tab.slug) ? prev : [...prev, tab]))
     setActiveSlug(tab.slug)
     navigate(tab.path)

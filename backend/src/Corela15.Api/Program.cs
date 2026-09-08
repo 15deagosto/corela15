@@ -168,7 +168,7 @@ var codigosMenu = new[]
     "socios", "usuarios-roles", "contabilidad", "ahorros", "creditos",
     "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
     "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
-    "planificacion", "planificacion-gerencia",
+    "planificacion", "planificacion-gerencia", "credvault",
 };
 
 // Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —

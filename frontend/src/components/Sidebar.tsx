@@ -1,4 +1,4 @@
-import { LayoutDashboard } from 'lucide-react'
+import { LayoutDashboard, ExternalLink } from 'lucide-react'
 import { modulos, type EstadoModulo } from '../modules'
 import { useAuth } from '../lib/AuthContext'
 import { useTabs, TAB_INICIO } from '../lib/TabsContext'
@@ -87,6 +87,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 <span className="flex w-full items-center gap-2.5">
                   <Icon size={17} strokeWidth={1.75} />
                   <span className="flex-1 text-left">{m.nombre}</span>
+                  {m.externalUrl && <ExternalLink size={13} className="text-graphite-700" />}
                   {m.estado !== 'disponible' && (
                     <span className="rounded-full bg-graphite-950 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-graphite-700">
                       {tagPorEstado[m.estado]}
@@ -95,13 +96,24 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 </span>
               )
 
+              // App real aparte con su propio despliegue (ver modules.ts)
+              // -- se abre en una pestaña nueva del navegador, nunca se
+              // monta en el workspace de pestañas internas.
+              const onClickModulo = m.externalUrl
+                ? () => {
+                    window.open(m.externalUrl, '_blank', 'noopener,noreferrer')
+                    onClose()
+                  }
+                : () => irA({ slug: m.slug, path: m.path, nombre: m.nombre })
+
               return (
                 <li key={m.slug}>
                   {habilitado ? (
                     <button
                       type="button"
-                      onClick={() => irA({ slug: m.slug, path: m.path, nombre: m.nombre })}
-                      className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${itemClase(activeSlug === m.slug, true)}`}
+                      onClick={onClickModulo}
+                      title={m.externalUrl ? `Abre ${m.nombre} en una pestaña nueva` : undefined}
+                      className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${itemClase(m.externalUrl ? false : activeSlug === m.slug, true)}`}
                     >
                       {contenido}
                     </button>

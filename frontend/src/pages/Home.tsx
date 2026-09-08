@@ -1,4 +1,4 @@
-import { LayoutDashboard } from 'lucide-react'
+import { LayoutDashboard, ExternalLink } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { modulos } from '../modules'
 import { Link } from 'react-router-dom'
@@ -48,7 +48,10 @@ export function Home() {
                 </span>
               </div>
               <div>
-                <h3 className="font-medium text-graphite-100">{m.nombre}</h3>
+                <h3 className="flex items-center gap-1.5 font-medium text-graphite-100">
+                  {m.nombre}
+                  {m.externalUrl && <ExternalLink size={13} className="text-graphite-700" />}
+                </h3>
                 <p className="text-sm text-graphite-600">{m.descripcion}</p>
               </div>
             </div>
@@ -56,7 +59,17 @@ export function Home() {
 
           return (
             <li key={m.slug}>
-              {habilitado ? (
+              {habilitado && m.externalUrl ? (
+                <a
+                  href={m.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Abre ${m.nombre} en una pestaña nueva`}
+                  className="btn-hover flex w-full rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm hover:border-gold-500/40"
+                >
+                  {contenido}
+                </a>
+              ) : habilitado ? (
                 <Link
                   to={m.path}
                   className="btn-hover flex w-full rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm hover:border-gold-500/40"
