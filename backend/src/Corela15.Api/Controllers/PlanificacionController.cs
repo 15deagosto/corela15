@@ -86,4 +86,11 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     [HttpPost("etiquetas/obtener-o-crear")]
     public async Task<ActionResult<EtiquetaDto>> ObtenerOCrearEtiqueta(ObtenerOCrearEtiquetaBody body, CancellationToken cancellationToken)
         => Ok(await service.ObtenerOCrearEtiquetaAsync(body.CodigoArea, body.Nombre, cancellationToken));
+
+    public record ActualizarEtiquetaBody(string Nombre, string ColorHex);
+
+    /// <summary>Renombrar/recolorear una etiqueta real desde el propio combo -- ver <see cref="IPlanificacionService.ActualizarEtiquetaAsync"/>.</summary>
+    [HttpPut("etiquetas/{codigo}")]
+    public async Task<ActionResult<EtiquetaDto>> ActualizarEtiqueta(string codigo, ActualizarEtiquetaBody body, CancellationToken cancellationToken)
+        => Ok(await service.ActualizarEtiquetaAsync(codigo, body.Nombre, body.ColorHex, cancellationToken));
 }

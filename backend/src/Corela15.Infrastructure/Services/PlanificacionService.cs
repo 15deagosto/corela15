@@ -62,6 +62,28 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return new EtiquetaDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex);
     }
 
+    public async Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, CancellationToken cancellationToken = default)
+    {
+        var etiqueta = await db.EtiquetasPlanificacion.FirstOrDefaultAsync(e => e.Codigo == codigo, cancellationToken)
+            ?? throw new EtiquetaPlanificacionInvalidaException(codigo);
+
+        var nombreLimpio = nombre.Trim();
+        if (string.IsNullOrWhiteSpace(nombreLimpio))
+            throw new BloqueHorarioInvalidoException("El nombre de la etiqueta no puede estar vacío.");
+
+        var duplicada = await db.EtiquetasPlanificacion.AnyAsync(
+            e => e.CodigoArea == etiqueta.CodigoArea && e.Codigo != codigo && EF.Functions.ILike(e.Nombre, nombreLimpio),
+            cancellationToken);
+        if (duplicada)
+            throw new NombreEtiquetaDuplicadoException(nombreLimpio);
+
+        etiqueta.Nombre = nombreLimpio;
+        etiqueta.ColorHex = colorHex;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new EtiquetaDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex);
+    }
+
     public async Task<PlanSemanalDto> GuardarAsync(GuardarPlanSemanalRequest request, CancellationToken cancellationToken = default)
     {
         var area = await db.AreasPlanificacion.FirstOrDefaultAsync(a => a.Codigo == request.CodigoArea && a.Activo, cancellationToken)
@@ -108,8 +130,21 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         {
             if (EstaBloqueada(existente))
                 throw new PlanSemanalBloqueadoException();
-            if (existente.Bloques.Any(b => !string.IsNullOrWhiteSpace(b.NotaGerencia)))
+
+            // La protección contra perder una nota de gerencia solo aplica
+            // pasado el corte real (viernes 17:00) -- antes de esa hora, un
+            // comentario de gerencia suele ser justamente un pedido de
+            // cambio, y el área tiene que poder reguardar libremente para
+            // aplicarlo. Después del corte, la semana ya quedó bloqueada
+            // por el chequeo de arriba salvo que nunca se haya enviado
+            // (envío tardío pendiente) -- ahí sí protegemos la nota real
+            // como registro histórico, porque ya no hay margen operativo
+            // para "coordinar y volver a guardar".
+            if (DateTimeOffset.UtcNow >= FechaLimiteEnvio(existente.FechaInicioSemana) &&
+                existente.Bloques.Any(b => !string.IsNullOrWhiteSpace(b.NotaGerencia)))
+            {
                 throw new PlanSemanalConNotaGerenciaException();
+            }
 
             plan = existente;
             plan.NombreResponsable = request.NombreResponsable;

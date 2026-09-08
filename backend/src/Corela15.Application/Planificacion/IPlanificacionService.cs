@@ -25,9 +25,11 @@ public interface IPlanificacionService
     /// Crea o actualiza (upsert real, por Área+Semana) el plan completo de
     /// una semana -- reemplaza todos los bloques existentes por los que
     /// vengan en el request. Rechazado si el plan ya está bloqueado (ver
-    /// resumen de la interfaz) o si algún bloque existente tiene una nota
-    /// de gerencia (se perdería al reconstruir la lista -- hay que
-    /// coordinar con gerencia antes de seguir editando esa semana).
+    /// resumen de la interfaz). Si algún bloque existente tiene una nota de
+    /// gerencia, solo se rechaza el reguardado (para no perderla en
+    /// silencio) una vez pasado el corte real -- antes del corte, un
+    /// comentario de gerencia suele ser un pedido de cambio, así que el
+    /// área puede reguardar libremente para aplicarlo.
     /// </summary>
     Task<PlanSemanalDto> GuardarAsync(GuardarPlanSemanalRequest request, CancellationToken cancellationToken = default);
 
@@ -52,6 +54,15 @@ public interface IPlanificacionService
     /// el área, sin que el usuario tenga que ir a Configuración a mano.
     /// </summary>
     Task<EtiquetaDto> ObtenerOCrearEtiquetaAsync(string codigoArea, string nombre, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Edición real de una etiqueta ya existente (nombre + color) desde el
+    /// propio combo del formulario, sin tener que ir a Configuración --
+    /// mismo criterio de autonomía por área ya establecido con la
+    /// creación sobre la marcha. Rechaza dejarla con el mismo nombre que
+    /// otra etiqueta ya real de la misma área.
+    /// </summary>
+    Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, CancellationToken cancellationToken = default);
 }
 
 public record EtiquetaDto(string Codigo, string Nombre, string ColorHex);
@@ -94,6 +105,9 @@ public class AreaPlanificacionInvalidaException(string codigo)
 
 public class EtiquetaPlanificacionInvalidaException(string codigo)
     : ReglaDeNegocioException($"La etiqueta '{codigo}' no existe o no está activa");
+
+public class NombreEtiquetaDuplicadoException(string nombre)
+    : ReglaDeNegocioException($"Ya existe una etiqueta llamada '{nombre}' en esta área");
 
 public class BloqueHorarioInvalidoException(string detalle)
     : SolicitudInvalidaException(detalle);

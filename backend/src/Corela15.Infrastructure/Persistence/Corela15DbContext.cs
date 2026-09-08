@@ -21,7 +21,6 @@ using Corela15.Domain.MesaServicio;
 using Corela15.Domain.Planificacion;
 using Corela15.Domain.Nomina;
 using Corela15.Domain.Obligacion;
-using Corela15.Domain.Planificacion;
 using Corela15.Domain.Portafolio;
 using Corela15.Domain.Proveeduria;
 using Corela15.Domain.ReporteControl;
