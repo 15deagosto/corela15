@@ -56,22 +56,42 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             throw new UsuarioNoHabilitadoException();
         }
 
-        var resultado = await EmitirTokenAsync(usuario, direccionIp, cancellationToken);
+        // La sesión (jti) ya llegó validada por el middleware de
+        // autenticación antes de que este método corra (OnTokenValidated
+        // rechaza cualquier jti revocado o inexistente con 401 antes de
+        // tocar el controller) -- acá siempre debería existir. Si no
+        // existe (carrera real con una revocación concurrente, ej.
+        // RevocarTodasLasSesionesAsync corriendo justo en el medio), se
+        // rechaza en vez de emitir una sesión nueva sin control.
+        var sesionActual = await db.SesionesUsuario.FirstOrDefaultAsync(s => s.Id == idSesionActual, cancellationToken)
+            ?? throw new UsuarioNoHabilitadoException();
 
-        // La sesión vieja se revoca DESPUÉS de emitir la nueva — revocarla
-        // antes arriesgaría dejar al usuario sin ninguna sesión válida si
-        // algo falla en el medio. Nunca revoca la propia sesión recién
-        // creada (jti distinto por diseño de EmitirTokenAsync).
-        var sesionVieja = await db.SesionesUsuario.FirstOrDefaultAsync(s => s.Id == idSesionActual, cancellationToken);
-        if (sesionVieja is not null && !sesionVieja.Revocada)
-        {
-            sesionVieja.Revocada = true;
-            sesionVieja.RevocadaEn = DateTimeOffset.UtcNow;
-            sesionVieja.RevocadaPor = "sistema:refresco_permisos";
-            await db.SaveChangesAsync(cancellationToken);
-        }
+        // Bug real corregido acá, encontrado con recargas rápidas de
+        // página: la versión anterior SIEMPRE rotaba la sesión (creaba un
+        // jti nuevo y revocaba el viejo). Dos recargas casi simultáneas
+        // (o dos pestañas abiertas) mandan la MISMA sesión vieja al
+        // servidor -- la primera la rota y revoca; cuando la segunda
+        // llega, el middleware ya la ve revocada y la rechaza con 401,
+        // el interceptor de axios lo trata como sesión inválida y manda
+        // al login, aunque la persona nunca cerró sesión de verdad.
+        // Corregido: refrescar reusa el MISMO jti (nunca escribe en
+        // sesion_usuario) y la MISMA fecha de expiración original -- solo
+        // re-firma un token con los permisos recalculados. Concurrente y
+        // seguro por diseño: cualquier cantidad de refrescos simultáneos
+        // con el mismo token de partida producen tokens distintos pero
+        // ninguno invalida a los demás. No extiende la sesión más allá de
+        // su duración original (Jwt:ExpiryMinutes desde el login real) --
+        // decisión consciente, un límite de vida fijo por sesión es más
+        // seguro que uno que se renueva indefinidamente solo por recargar
+        // la página.
+        var permisos = await CalcularPermisosEfectivosAsync(usuario, cancellationToken);
+        var (token, expiraEn, _) = GenerarToken(
+            usuario, permisos.Roles, permisos.Menus, permisos.Estructuras, permisos.Datasets, permisos.Opciones,
+            permisos.IdAgenciaEfectiva, jtiExistente: idSesionActual, expiraEnExistente: sesionActual.ExpiraEn);
 
-        return resultado;
+        return new LoginResult(
+            token, expiraEn, usuario.Id, usuario.NombreUsuario, permisos.Roles, permisos.Menus, permisos.Estructuras,
+            permisos.Datasets, permisos.Opciones, permisos.IdAgenciaEfectiva, usuario.CambiaClave);
     }
 
     // Cálculo real compartido entre LoginAsync y RefrescarAsync — nunca
@@ -80,8 +100,11 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
     // + Mesa de Servicio siempre (transversal por diseño); estructuras =
     // segundo nivel de permiso (OF01 y lo que se sume); agencia efectiva =
     // reasignación temporal vigente si existe, si no la real del usuario.
-    private async Task<LoginResult> EmitirTokenAsync(
-        Usuario usuario, string? direccionIp, CancellationToken cancellationToken)
+    private record PermisosEfectivos(
+        List<string> Roles, List<string> Menus, List<string> Estructuras, List<string> Datasets,
+        List<string> Opciones, int IdAgenciaEfectiva);
+
+    private async Task<PermisosEfectivos> CalcularPermisosEfectivosAsync(Usuario usuario, CancellationToken cancellationToken)
     {
         var ahora = DateTimeOffset.UtcNow;
 
@@ -180,7 +203,20 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .Select(at => (int?)at.IdAgenciaActual)
             .FirstOrDefaultAsync(cancellationToken) ?? usuario.IdAgencia;
 
-        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva);
+        return new PermisosEfectivos(roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva);
+    }
+
+    // Camino real de LOGIN (con contraseña): siempre crea una sesión
+    // nueva de verdad (jti nuevo, fila nueva en sesion_usuario). Distinto
+    // a propósito de RefrescarAsync, que reusa la sesión existente -- acá
+    // sí corresponde una identidad de sesión nueva, es un ingreso real.
+    private async Task<LoginResult> EmitirTokenAsync(
+        Usuario usuario, string? direccionIp, CancellationToken cancellationToken)
+    {
+        var permisos = await CalcularPermisosEfectivosAsync(usuario, cancellationToken);
+        var (token, expiraEn, jti) = GenerarToken(
+            usuario, permisos.Roles, permisos.Menus, permisos.Estructuras, permisos.Datasets, permisos.Opciones,
+            permisos.IdAgenciaEfectiva);
 
         db.SesionesUsuario.Add(new SesionUsuario
         {
@@ -194,8 +230,8 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
 
         return new LoginResult(
-            token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva,
-            usuario.CambiaClave);
+            token, expiraEn, usuario.Id, usuario.NombreUsuario, permisos.Roles, permisos.Menus, permisos.Estructuras,
+            permisos.Datasets, permisos.Opciones, permisos.IdAgenciaEfectiva, usuario.CambiaClave);
     }
 
     // Ventana real de acceso por día de la semana (ver HorarioAccesoUsuario.cs)
@@ -528,8 +564,15 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    // `jtiExistente`/`expiraEnExistente`: usados por RefrescarAsync para
+    // re-firmar un token con la MISMA identidad de sesión y la MISMA
+    // expiración original -- reusar en vez de rotar es lo que hace que
+    // refrescar sea seguro bajo recargas/pestañas concurrentes (ver
+    // RefrescarAsync). Un login real (EmitirTokenAsync) nunca los pasa,
+    // siempre genera una sesión nueva de verdad.
     private (string Token, DateTimeOffset ExpiraEn, Guid Jti) GenerarToken(
-        Usuario usuario, List<string> roles, List<string> menus, List<string> estructuras, List<string> datasets, List<string> opciones, int idAgenciaEfectiva)
+        Usuario usuario, List<string> roles, List<string> menus, List<string> estructuras, List<string> datasets, List<string> opciones,
+        int idAgenciaEfectiva, Guid? jtiExistente = null, DateTimeOffset? expiraEnExistente = null)
     {
         var secret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Falta Jwt:Secret (revisar .env.core)");
@@ -537,8 +580,8 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         var audience = configuration["Jwt:Audience"] ?? "Corela15Api";
         var expiryMinutes = int.TryParse(configuration["Jwt:ExpiryMinutes"], out var m) ? m : 480;
 
-        var expiraEn = DateTimeOffset.UtcNow.AddMinutes(expiryMinutes);
-        var jti = Guid.NewGuid();
+        var expiraEn = expiraEnExistente ?? DateTimeOffset.UtcNow.AddMinutes(expiryMinutes);
+        var jti = jtiExistente ?? Guid.NewGuid();
 
         var claims = new List<Claim>
         {
