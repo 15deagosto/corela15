@@ -10,4 +10,7 @@ public class UsuarioOpcion
     public Opcion Opcion { get; set; } = null!;
 
     public bool Activo { get; set; } = true;
+
+    /// <summary>Exclusión real, mismo patrón exacto que <see cref="UsuarioMenu.Excluido"/> -- bloquea esta opción para esta persona aunque el rol la otorgue, con prioridad absoluta.</summary>
+    public bool Excluido { get; set; } = false;
 }

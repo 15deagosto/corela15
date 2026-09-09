@@ -17,4 +17,16 @@ public class UsuarioMenu
     public Menu Menu { get; set; } = null!;
 
     public bool Activo { get; set; } = true;
+
+    /// <summary>
+    /// Exclusión real: bloquea este menú para esta persona puntual aunque
+    /// su rol se lo otorgue -- la única forma real de "restar" en un
+    /// modelo que por diseño solo suma (rol ∪ directo). Tiene prioridad
+    /// absoluta sobre cualquier otorgamiento (rol o directo): si
+    /// Excluido=true, <see cref="Activo"/> se ignora en el cálculo final
+    /// de AuthService.EmitirTokenAsync -- seguridad primero, nunca al
+    /// revés. Nunca aplica a "mesa-servicio" (universal por requisito
+    /// SEPS, sin excepción para nadie).
+    /// </summary>
+    public bool Excluido { get; set; } = false;
 }

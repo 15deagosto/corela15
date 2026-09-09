@@ -50,13 +50,18 @@ public record RolAsignadoDto(int Id, string Nombre, bool Asignado);
 
 public record ActualizarRolesUsuarioRequest(IReadOnlyList<int> IdsRol);
 
-public record MenuUsuarioDto(int IdMenu, string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto);
-public record ActualizarMenusUsuarioRequest(IReadOnlyList<int> IdsMenu);
-public record DatasetUsuarioDto(string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto);
-public record ActualizarDatasetsUsuarioRequest(IReadOnlyList<string> CodigosDataset);
+// "Excluido" es la exclusión real (ver UsuarioMenu.Excluido): bloquea el
+// permiso para esta persona aunque el rol lo otorgue -- solo tiene
+// sentido real cuando OtorgadoPorRol=true (excluir algo que ya no se
+// tiene no hace nada); el PUT igual acepta la lista completa de
+// exclusiones sin exigir esa condición, la UI es quien la respeta.
+public record MenuUsuarioDto(int IdMenu, string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto, bool Excluido);
+public record ActualizarMenusUsuarioRequest(IReadOnlyList<int> IdsMenu, IReadOnlyList<int>? IdsMenuExcluidos = null);
+public record DatasetUsuarioDto(string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto, bool Excluido);
+public record ActualizarDatasetsUsuarioRequest(IReadOnlyList<string> CodigosDataset, IReadOnlyList<string>? CodigosDatasetExcluidos = null);
 
-public record OpcionUsuarioDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool OtorgadoPorRol, bool OtorgadoDirecto);
-public record ActualizarOpcionesUsuarioRequest(IReadOnlyList<string> CodigosOpcion);
+public record OpcionUsuarioDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool OtorgadoPorRol, bool OtorgadoDirecto, bool Excluido);
+public record ActualizarOpcionesUsuarioRequest(IReadOnlyList<string> CodigosOpcion, IReadOnlyList<string>? CodigosOpcionExcluidas = null);
 
 [ApiController]
 [Route("api/usuarios")]
@@ -353,12 +358,13 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
 
         var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
         var menusPorRol = await db.RolesMenu.Where(rm => rm.Activo && idsRol.Contains(rm.IdRol)).Select(rm => rm.IdMenu).ToListAsync(cancellationToken);
-        var menusDirectos = await db.UsuariosMenu.Where(um => um.IdUsuario == id && um.Activo).Select(um => um.IdMenu).ToListAsync(cancellationToken);
+        var menusDirectos = await db.UsuariosMenu.Where(um => um.IdUsuario == id && um.Activo && !um.Excluido).Select(um => um.IdMenu).ToListAsync(cancellationToken);
+        var menusExcluidos = await db.UsuariosMenu.Where(um => um.IdUsuario == id && um.Excluido).Select(um => um.IdMenu).ToListAsync(cancellationToken);
 
         var resultado = await db.Menus
             .Where(m => m.Activo)
             .OrderBy(m => m.Orden)
-            .Select(m => new MenuUsuarioDto(m.Id, m.Codigo, m.Nombre, menusPorRol.Contains(m.Id), menusDirectos.Contains(m.Id)))
+            .Select(m => new MenuUsuarioDto(m.Id, m.Codigo, m.Nombre, menusPorRol.Contains(m.Id), menusDirectos.Contains(m.Id), menusExcluidos.Contains(m.Id)))
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
@@ -370,16 +376,29 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
     {
         if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
 
+        var excluidos = request.IdsMenuExcluidos ?? [];
         var existentes = await db.UsuariosMenu.Where(um => um.IdUsuario == id).ToListAsync(cancellationToken);
         foreach (var existente in existentes)
         {
-            existente.Activo = request.IdsMenu.Contains(existente.IdMenu);
+            // La exclusión tiene prioridad: si está en la lista de
+            // excluidos, Activo se apaga sin importar qué mande la lista
+            // de otorgados (nunca ambas cosas a la vez sobre el mismo
+            // código).
+            existente.Excluido = excluidos.Contains(existente.IdMenu);
+            existente.Activo = !existente.Excluido && request.IdsMenu.Contains(existente.IdMenu);
         }
 
         var idsExistentes = existentes.Select(e => e.IdMenu).ToHashSet();
-        foreach (var idMenu in request.IdsMenu.Where(idMenu => !idsExistentes.Contains(idMenu)))
+        foreach (var idMenu in request.IdsMenu.Concat(excluidos).Distinct().Where(idMenu => !idsExistentes.Contains(idMenu)))
         {
-            db.UsuariosMenu.Add(new Corela15.Domain.Seguridad.UsuarioMenu { IdUsuario = id, IdMenu = idMenu, Activo = true });
+            var esExcluido = excluidos.Contains(idMenu);
+            db.UsuariosMenu.Add(new Corela15.Domain.Seguridad.UsuarioMenu
+            {
+                IdUsuario = id,
+                IdMenu = idMenu,
+                Activo = !esExcluido && request.IdsMenu.Contains(idMenu),
+                Excluido = esExcluido,
+            });
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -394,12 +413,13 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
 
         var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
         var datasetsPorRol = await db.RolesDatasetReporteria.Where(rd => rd.Activo && idsRol.Contains(rd.IdRol)).Select(rd => rd.CodigoDataset).ToListAsync(cancellationToken);
-        var datasetsDirectos = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id && ud.Activo).Select(ud => ud.CodigoDataset).ToListAsync(cancellationToken);
+        var datasetsDirectos = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id && ud.Activo && !ud.Excluido).Select(ud => ud.CodigoDataset).ToListAsync(cancellationToken);
+        var datasetsExcluidos = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id && ud.Excluido).Select(ud => ud.CodigoDataset).ToListAsync(cancellationToken);
 
         var resultado = await db.DatasetsReporteria
             .Where(d => d.Activo)
             .OrderBy(d => d.Nombre)
-            .Select(d => new DatasetUsuarioDto(d.Codigo, d.Nombre, datasetsPorRol.Contains(d.Codigo), datasetsDirectos.Contains(d.Codigo)))
+            .Select(d => new DatasetUsuarioDto(d.Codigo, d.Nombre, datasetsPorRol.Contains(d.Codigo), datasetsDirectos.Contains(d.Codigo), datasetsExcluidos.Contains(d.Codigo)))
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
@@ -411,16 +431,25 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
     {
         if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
 
+        var excluidos = request.CodigosDatasetExcluidos ?? [];
         var existentes = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id).ToListAsync(cancellationToken);
         foreach (var existente in existentes)
         {
-            existente.Activo = request.CodigosDataset.Contains(existente.CodigoDataset);
+            existente.Excluido = excluidos.Contains(existente.CodigoDataset);
+            existente.Activo = !existente.Excluido && request.CodigosDataset.Contains(existente.CodigoDataset);
         }
 
         var codigosExistentes = existentes.Select(e => e.CodigoDataset).ToHashSet();
-        foreach (var codigo in request.CodigosDataset.Where(c => !codigosExistentes.Contains(c)))
+        foreach (var codigo in request.CodigosDataset.Concat(excluidos).Distinct().Where(c => !codigosExistentes.Contains(c)))
         {
-            db.UsuariosDatasetReporteria.Add(new Corela15.Domain.Seguridad.UsuarioDatasetReporteria { IdUsuario = id, CodigoDataset = codigo, Activo = true });
+            var esExcluido = excluidos.Contains(codigo);
+            db.UsuariosDatasetReporteria.Add(new Corela15.Domain.Seguridad.UsuarioDatasetReporteria
+            {
+                IdUsuario = id,
+                CodigoDataset = codigo,
+                Activo = !esExcluido && request.CodigosDataset.Contains(codigo),
+                Excluido = esExcluido,
+            });
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -435,12 +464,13 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
 
         var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
         var opcionesPorRol = await db.RolesOpcion.Where(ro => ro.Activo && idsRol.Contains(ro.IdRol)).Select(ro => ro.CodigoOpcion).ToListAsync(cancellationToken);
-        var opcionesDirectas = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id && uo.Activo).Select(uo => uo.CodigoOpcion).ToListAsync(cancellationToken);
+        var opcionesDirectas = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id && uo.Activo && !uo.Excluido).Select(uo => uo.CodigoOpcion).ToListAsync(cancellationToken);
+        var opcionesExcluidas = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id && uo.Excluido).Select(uo => uo.CodigoOpcion).ToListAsync(cancellationToken);
 
         var resultado = await db.Opciones
             .Where(o => o.Activo)
             .OrderBy(o => o.CodigoMenu).ThenBy(o => o.Nombre)
-            .Select(o => new OpcionUsuarioDto(o.Codigo, o.Nombre, o.CodigoMenu, o.Menu.Nombre, opcionesPorRol.Contains(o.Codigo), opcionesDirectas.Contains(o.Codigo)))
+            .Select(o => new OpcionUsuarioDto(o.Codigo, o.Nombre, o.CodigoMenu, o.Menu.Nombre, opcionesPorRol.Contains(o.Codigo), opcionesDirectas.Contains(o.Codigo), opcionesExcluidas.Contains(o.Codigo)))
             .ToListAsync(cancellationToken);
 
         return Ok(resultado);
@@ -452,16 +482,25 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
     {
         if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
 
+        var excluidas = request.CodigosOpcionExcluidas ?? [];
         var existentes = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id).ToListAsync(cancellationToken);
         foreach (var existente in existentes)
         {
-            existente.Activo = request.CodigosOpcion.Contains(existente.CodigoOpcion);
+            existente.Excluido = excluidas.Contains(existente.CodigoOpcion);
+            existente.Activo = !existente.Excluido && request.CodigosOpcion.Contains(existente.CodigoOpcion);
         }
 
         var codigosExistentes = existentes.Select(e => e.CodigoOpcion).ToHashSet();
-        foreach (var codigo in request.CodigosOpcion.Where(c => !codigosExistentes.Contains(c)))
+        foreach (var codigo in request.CodigosOpcion.Concat(excluidas).Distinct().Where(c => !codigosExistentes.Contains(c)))
         {
-            db.UsuariosOpcion.Add(new Corela15.Domain.Seguridad.UsuarioOpcion { IdUsuario = id, CodigoOpcion = codigo, Activo = true });
+            var esExcluida = excluidas.Contains(codigo);
+            db.UsuariosOpcion.Add(new Corela15.Domain.Seguridad.UsuarioOpcion
+            {
+                IdUsuario = id,
+                CodigoOpcion = codigo,
+                Activo = !esExcluida && request.CodigosOpcion.Contains(codigo),
+                Excluido = esExcluida,
+            });
         }
 
         await db.SaveChangesAsync(cancellationToken);

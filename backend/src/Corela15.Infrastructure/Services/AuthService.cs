@@ -110,11 +110,21 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         // pedido real de dar acceso a un módulo puntual a una sola persona
         // sin tener que crear o tocar un rol para eso.
         var menusPorUsuario = await db.UsuariosMenu
-            .Where(um => um.Activo && um.Menu.Activo && um.IdUsuario == usuario.Id)
+            .Where(um => um.Activo && !um.Excluido && um.Menu.Activo && um.IdUsuario == usuario.Id)
             .Select(um => um.Menu.Codigo)
             .ToListAsync(cancellationToken);
 
-        var menus = menusPorRol.Union(menusPorUsuario).ToList();
+        // Exclusión real: la única forma de "restar" lo que un rol ya
+        // otorga -- tiene prioridad absoluta, se aplica DESPUÉS de la
+        // unión rol∪directo (ver UsuarioMenu.Excluido). "mesa-servicio"
+        // queda deliberadamente fuera: se agrega siempre después, sin
+        // excepción para nadie (requisito SEPS universal).
+        var menusExcluidos = await db.UsuariosMenu
+            .Where(um => um.Excluido && um.IdUsuario == usuario.Id)
+            .Select(um => um.Menu.Codigo)
+            .ToListAsync(cancellationToken);
+
+        var menus = menusPorRol.Union(menusPorUsuario).Except(menusExcluidos).ToList();
         if (!menus.Contains("mesa-servicio")) menus.Add("mesa-servicio");
 
         var estructuras = await db.RolesTipoEstructura
@@ -134,11 +144,16 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .ToListAsync(cancellationToken);
 
         var datasetsPorUsuario = await db.UsuariosDatasetReporteria
-            .Where(ud => ud.Activo && ud.Dataset.Activo && ud.IdUsuario == usuario.Id)
+            .Where(ud => ud.Activo && !ud.Excluido && ud.Dataset.Activo && ud.IdUsuario == usuario.Id)
             .Select(ud => ud.CodigoDataset)
             .ToListAsync(cancellationToken);
 
-        var datasets = datasetsPorRol.Union(datasetsPorUsuario).ToList();
+        var datasetsExcluidos = await db.UsuariosDatasetReporteria
+            .Where(ud => ud.Excluido && ud.IdUsuario == usuario.Id)
+            .Select(ud => ud.CodigoDataset)
+            .ToListAsync(cancellationToken);
+
+        var datasets = datasetsPorRol.Union(datasetsPorUsuario).Except(datasetsExcluidos).ToList();
 
         // Tercer nivel de permiso, genérico para cualquier módulo (ver
         // Opcion.cs) -- un reporte puntual, una acción puntual. Mismo
@@ -149,11 +164,16 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .ToListAsync(cancellationToken);
 
         var opcionesPorUsuario = await db.UsuariosOpcion
-            .Where(uo => uo.Activo && uo.Opcion.Activo && uo.IdUsuario == usuario.Id)
+            .Where(uo => uo.Activo && !uo.Excluido && uo.Opcion.Activo && uo.IdUsuario == usuario.Id)
             .Select(uo => uo.CodigoOpcion)
             .ToListAsync(cancellationToken);
 
-        var opciones = opcionesPorRol.Union(opcionesPorUsuario).ToList();
+        var opcionesExcluidas = await db.UsuariosOpcion
+            .Where(uo => uo.Excluido && uo.IdUsuario == usuario.Id)
+            .Select(uo => uo.CodigoOpcion)
+            .ToListAsync(cancellationToken);
+
+        var opciones = opcionesPorRol.Union(opcionesPorUsuario).Except(opcionesExcluidas).ToList();
 
         var idAgenciaEfectiva = await db.UsuariosAgenciaTemporal
             .Where(at => at.IdUsuario == usuario.Id && at.Activo && at.FechaCaducidad > ahora)

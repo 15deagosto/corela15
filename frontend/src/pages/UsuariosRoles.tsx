@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2, Lock, BarChart3, ListChecks } from 'lucide-react'
+import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2, Lock, BarChart3, ListChecks, Ban } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -108,6 +108,7 @@ interface MenuUsuario {
   nombre: string
   otorgadoPorRol: boolean
   otorgadoDirecto: boolean
+  excluido: boolean
 }
 
 interface DatasetUsuario {
@@ -115,6 +116,7 @@ interface DatasetUsuario {
   nombre: string
   otorgadoPorRol: boolean
   otorgadoDirecto: boolean
+  excluido: boolean
 }
 
 interface OpcionUsuario {
@@ -124,6 +126,7 @@ interface OpcionUsuario {
   nombreMenu: string
   otorgadoPorRol: boolean
   otorgadoDirecto: boolean
+  excluido: boolean
 }
 
 function formatoFecha(iso: string) {
@@ -673,7 +676,9 @@ function TabRoles({ usuario }: { usuario: UsuarioRol }) {
 function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
   const queryClient = useQueryClient()
   const [seleccionMenus, setSeleccionMenus] = useState<Set<number> | null>(null)
+  const [seleccionMenusExcluidos, setSeleccionMenusExcluidos] = useState<Set<number> | null>(null)
   const [seleccionDatasets, setSeleccionDatasets] = useState<Set<string> | null>(null)
+  const [seleccionDatasetsExcluidos, setSeleccionDatasetsExcluidos] = useState<Set<string> | null>(null)
 
   const { data: menus, isLoading: cargandoMenus } = useQuery<MenuUsuario[]>({
     queryKey: ['usuario-menus', usuario.id],
@@ -688,20 +693,24 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
     queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}/opciones`)).data,
   })
   const [seleccionOpciones, setSeleccionOpciones] = useState<Set<string> | null>(null)
+  const [seleccionOpcionesExcluidas, setSeleccionOpcionesExcluidas] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     if (menus && seleccionMenus === null) {
       setSeleccionMenus(new Set(menus.filter((m) => m.otorgadoDirecto).map((m) => m.idMenu)))
+      setSeleccionMenusExcluidos(new Set(menus.filter((m) => m.excluido).map((m) => m.idMenu)))
     }
   }, [menus, seleccionMenus])
   useEffect(() => {
     if (datasets && seleccionDatasets === null) {
       setSeleccionDatasets(new Set(datasets.filter((d) => d.otorgadoDirecto).map((d) => d.codigo)))
+      setSeleccionDatasetsExcluidos(new Set(datasets.filter((d) => d.excluido).map((d) => d.codigo)))
     }
   }, [datasets, seleccionDatasets])
   useEffect(() => {
     if (opciones && seleccionOpciones === null) {
       setSeleccionOpciones(new Set(opciones.filter((o) => o.otorgadoDirecto).map((o) => o.codigo)))
+      setSeleccionOpcionesExcluidas(new Set(opciones.filter((o) => o.excluido).map((o) => o.codigo)))
     }
   }, [opciones, seleccionOpciones])
 
@@ -714,20 +723,39 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
   }, [opciones])
 
   const guardarMenus = useMutation({
-    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/menus`, { idsMenu: Array.from(seleccionMenus ?? []) }),
+    mutationFn: async () =>
+      api.put(`/api/usuarios/${usuario.id}/menus`, {
+        idsMenu: Array.from(seleccionMenus ?? []),
+        idsMenuExcluidos: Array.from(seleccionMenusExcluidos ?? []),
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-menus', usuario.id] }),
   })
   const guardarDatasets = useMutation({
-    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/datasets-reporteria`, { codigosDataset: Array.from(seleccionDatasets ?? []) }),
+    mutationFn: async () =>
+      api.put(`/api/usuarios/${usuario.id}/datasets-reporteria`, {
+        codigosDataset: Array.from(seleccionDatasets ?? []),
+        codigosDatasetExcluidos: Array.from(seleccionDatasetsExcluidos ?? []),
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-datasets', usuario.id] }),
   })
   const guardarOpciones = useMutation({
-    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/opciones`, { codigosOpcion: Array.from(seleccionOpciones ?? []) }),
+    mutationFn: async () =>
+      api.put(`/api/usuarios/${usuario.id}/opciones`, {
+        codigosOpcion: Array.from(seleccionOpciones ?? []),
+        codigosOpcionExcluidas: Array.from(seleccionOpcionesExcluidas ?? []),
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-opciones', usuario.id] }),
   })
 
   const alternarMenu = (id: number) => {
     setSeleccionMenus((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
+  const alternarMenuExcluido = (id: number) => {
+    setSeleccionMenusExcluidos((prev) => {
       const s = new Set(prev ?? [])
       s.has(id) ? s.delete(id) : s.add(id)
       return s
@@ -740,8 +768,22 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
       return s
     })
   }
+  const alternarDatasetExcluido = (codigo: string) => {
+    setSeleccionDatasetsExcluidos((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
   const alternarOpcion = (codigo: string) => {
     setSeleccionOpciones((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+  const alternarOpcionExcluida = (codigo: string) => {
+    setSeleccionOpcionesExcluidas((prev) => {
       const s = new Set(prev ?? [])
       s.has(codigo) ? s.delete(codigo) : s.add(codigo)
       return s
@@ -751,35 +793,44 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-graphite-600">
-        Esto se suma a lo que ya le dan sus roles, nunca lo reemplaza. Un chip con candado ya está otorgado por rol
-        — para quitarlo, editá el rol en Configuración o sacale el rol a la persona.
+        Esto se suma a lo que ya le dan sus roles, nunca lo reemplaza. Un chip con candado 🔒 ya está otorgado por
+        rol — hacé clic en él para <strong>excluirlo</strong> solo para esta persona (queda en rojo, con prioridad
+        sobre el rol); un chip en rojo ⛔ vuelve a la normalidad con otro clic.
       </p>
 
       <div>
         <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
           <ShieldCheck size={14} /> Módulos
         </p>
-        {cargandoMenus || !menus || !seleccionMenus ? (
+        {cargandoMenus || !menus || !seleccionMenus || !seleccionMenusExcluidos ? (
           <p className="text-sm text-graphite-600">Cargando…</p>
         ) : (
           <>
             <div className="mb-3 flex flex-wrap gap-2">
               {menus.map((m) => {
-                const marcado = m.otorgadoPorRol || seleccionMenus.has(m.idMenu)
+                const excluido = m.otorgadoPorRol && seleccionMenusExcluidos.has(m.idMenu)
+                const marcado = (m.otorgadoPorRol || seleccionMenus.has(m.idMenu)) && !excluido
                 return (
                   <button
                     key={m.idMenu}
                     type="button"
-                    disabled={m.otorgadoPorRol}
-                    onClick={() => alternarMenu(m.idMenu)}
-                    title={m.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                    onClick={() => (m.otorgadoPorRol ? alternarMenuExcluido(m.idMenu) : alternarMenu(m.idMenu))}
+                    title={
+                      excluido
+                        ? 'Excluido explícitamente para esta persona — clic para restaurar'
+                        : m.otorgadoPorRol
+                          ? 'Otorgado por un rol de esta persona — clic para excluirlo solo acá'
+                          : 'Otorgamiento directo'
+                    }
                     className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                      marcado
-                        ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
-                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
-                    } ${m.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                      excluido
+                        ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                        : marcado
+                          ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                          : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    }`}
                   >
-                    {m.otorgadoPorRol && <Lock size={11} />}
+                    {excluido ? <Ban size={11} /> : m.otorgadoPorRol && <Lock size={11} />}
                     {m.nombre}
                   </button>
                 )
@@ -801,7 +852,7 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
         <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
           <BarChart3 size={14} /> Datasets de Reportería Gerencial
         </p>
-        {cargandoDatasets || !datasets || !seleccionDatasets ? (
+        {cargandoDatasets || !datasets || !seleccionDatasets || !seleccionDatasetsExcluidos ? (
           <p className="text-sm text-graphite-600">Cargando…</p>
         ) : (
           <>
@@ -810,23 +861,31 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
             </p>
             <div className="mb-3 flex flex-wrap gap-2">
               {datasets.map((d) => {
-                const marcado = d.otorgadoPorRol || seleccionDatasets.has(d.codigo)
+                const excluido = d.otorgadoPorRol && seleccionDatasetsExcluidos.has(d.codigo)
+                const marcado = (d.otorgadoPorRol || seleccionDatasets.has(d.codigo)) && !excluido
                 return (
                   <button
                     key={d.codigo}
                     type="button"
-                    disabled={d.otorgadoPorRol}
-                    onClick={() => alternarDataset(d.codigo)}
-                    title={d.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                    onClick={() => (d.otorgadoPorRol ? alternarDatasetExcluido(d.codigo) : alternarDataset(d.codigo))}
+                    title={
+                      excluido
+                        ? 'Excluido explícitamente para esta persona — clic para restaurar'
+                        : d.otorgadoPorRol
+                          ? 'Otorgado por un rol de esta persona — clic para excluirlo solo acá'
+                          : 'Otorgamiento directo'
+                    }
                     className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                      marcado
-                        ? d.codigo === 'nominal'
-                          ? 'border-red-500/50 bg-red-500/10 text-red-700'
-                          : 'border-gold-500/50 bg-gold-500/10 text-gold-300'
-                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
-                    } ${d.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                      excluido
+                        ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                        : marcado
+                          ? d.codigo === 'nominal'
+                            ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                            : 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                          : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    }`}
                   >
-                    {d.otorgadoPorRol && <Lock size={11} />}
+                    {excluido ? <Ban size={11} /> : d.otorgadoPorRol && <Lock size={11} />}
                     {d.nombre}
                   </button>
                 )
@@ -852,7 +911,7 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
           El nivel más fino: dale acceso a un solo reporte o una sola acción de un módulo, sin otorgar el módulo
           completo — el caso real de "esta persona solo necesita ver este reporte".
         </p>
-        {cargandoOpciones || !opciones || !seleccionOpciones ? (
+        {cargandoOpciones || !opciones || !seleccionOpciones || !seleccionOpcionesExcluidas ? (
           <p className="text-sm text-graphite-600">Cargando…</p>
         ) : opciones.length === 0 ? (
           <p className="text-sm text-graphite-600">Todavía no hay opciones registradas para ningún módulo.</p>
@@ -864,21 +923,29 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
                   <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-graphite-600">{nombreMenu}</p>
                   <div className="flex flex-wrap gap-2">
                     {items.map((o) => {
-                      const marcado = o.otorgadoPorRol || seleccionOpciones.has(o.codigo)
+                      const excluida = o.otorgadoPorRol && seleccionOpcionesExcluidas.has(o.codigo)
+                      const marcado = (o.otorgadoPorRol || seleccionOpciones.has(o.codigo)) && !excluida
                       return (
                         <button
                           key={o.codigo}
                           type="button"
-                          disabled={o.otorgadoPorRol}
-                          onClick={() => alternarOpcion(o.codigo)}
-                          title={o.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                          onClick={() => (o.otorgadoPorRol ? alternarOpcionExcluida(o.codigo) : alternarOpcion(o.codigo))}
+                          title={
+                            excluida
+                              ? 'Excluida explícitamente para esta persona — clic para restaurar'
+                              : o.otorgadoPorRol
+                                ? 'Otorgada por un rol de esta persona — clic para excluirla solo acá'
+                                : 'Otorgamiento directo'
+                          }
                           className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                            marcado
-                              ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
-                              : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
-                          } ${o.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                            excluida
+                              ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                              : marcado
+                                ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                                : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                          }`}
                         >
-                          {o.otorgadoPorRol && <Lock size={11} />}
+                          {excluida ? <Ban size={11} /> : o.otorgadoPorRol && <Lock size={11} />}
                           {o.nombre}
                         </button>
                       )

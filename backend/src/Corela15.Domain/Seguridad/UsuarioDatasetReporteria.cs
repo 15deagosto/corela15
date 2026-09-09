@@ -10,4 +10,7 @@ public class UsuarioDatasetReporteria
     public DatasetReporteria Dataset { get; set; } = null!;
 
     public bool Activo { get; set; } = true;
+
+    /// <summary>Exclusión real, mismo patrón exacto que <see cref="UsuarioMenu.Excluido"/> -- bloquea este dataset para esta persona aunque el rol lo otorgue, con prioridad absoluta.</summary>
+    public bool Excluido { get; set; } = false;
 }
