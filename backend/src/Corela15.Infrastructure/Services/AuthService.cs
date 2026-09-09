@@ -100,12 +100,21 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .Select(r => r.Nombre)
             .ToListAsync(cancellationToken);
 
-        var menus = await db.RolesMenu
+        var menusPorRol = await db.RolesMenu
             .Where(rm => rm.Activo && rm.Menu.Activo && idsRolEfectivos.Contains(rm.IdRol))
             .Select(rm => rm.Menu.Codigo)
-            .Distinct()
             .ToListAsync(cancellationToken);
 
+        // Otorgamiento directo a la persona, además de lo que ya le da el
+        // rol -- nunca resta, solo suma (ver UsuarioMenu.cs). Cierra el
+        // pedido real de dar acceso a un módulo puntual a una sola persona
+        // sin tener que crear o tocar un rol para eso.
+        var menusPorUsuario = await db.UsuariosMenu
+            .Where(um => um.Activo && um.Menu.Activo && um.IdUsuario == usuario.Id)
+            .Select(um => um.Menu.Codigo)
+            .ToListAsync(cancellationToken);
+
+        var menus = menusPorRol.Union(menusPorUsuario).ToList();
         if (!menus.Contains("mesa-servicio")) menus.Add("mesa-servicio");
 
         var estructuras = await db.RolesTipoEstructura
@@ -114,12 +123,44 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
             .Distinct()
             .ToListAsync(cancellationToken);
 
+        // Datasets del módulo "Reportería Gerencial" (motor semántico
+        // portado de SIGA) — mismo patrón exacto que `estructuras`, ver
+        // DatasetReporteria.cs. "nominal" (PII de socios) solo aparece acá
+        // si el rol o el usuario lo tienen otorgado explícitamente, nunca
+        // por defecto. Mismo criterio "suma, nunca resta" que los menús.
+        var datasetsPorRol = await db.RolesDatasetReporteria
+            .Where(rd => rd.Activo && rd.Dataset.Activo && idsRolEfectivos.Contains(rd.IdRol))
+            .Select(rd => rd.CodigoDataset)
+            .ToListAsync(cancellationToken);
+
+        var datasetsPorUsuario = await db.UsuariosDatasetReporteria
+            .Where(ud => ud.Activo && ud.Dataset.Activo && ud.IdUsuario == usuario.Id)
+            .Select(ud => ud.CodigoDataset)
+            .ToListAsync(cancellationToken);
+
+        var datasets = datasetsPorRol.Union(datasetsPorUsuario).ToList();
+
+        // Tercer nivel de permiso, genérico para cualquier módulo (ver
+        // Opcion.cs) -- un reporte puntual, una acción puntual. Mismo
+        // criterio de unión que menús/datasets, nunca resta.
+        var opcionesPorRol = await db.RolesOpcion
+            .Where(ro => ro.Activo && ro.Opcion.Activo && idsRolEfectivos.Contains(ro.IdRol))
+            .Select(ro => ro.CodigoOpcion)
+            .ToListAsync(cancellationToken);
+
+        var opcionesPorUsuario = await db.UsuariosOpcion
+            .Where(uo => uo.Activo && uo.Opcion.Activo && uo.IdUsuario == usuario.Id)
+            .Select(uo => uo.CodigoOpcion)
+            .ToListAsync(cancellationToken);
+
+        var opciones = opcionesPorRol.Union(opcionesPorUsuario).ToList();
+
         var idAgenciaEfectiva = await db.UsuariosAgenciaTemporal
             .Where(at => at.IdUsuario == usuario.Id && at.Activo && at.FechaCaducidad > ahora)
             .Select(at => (int?)at.IdAgenciaActual)
             .FirstOrDefaultAsync(cancellationToken) ?? usuario.IdAgencia;
 
-        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus, estructuras, idAgenciaEfectiva);
+        var (token, expiraEn, jti) = GenerarToken(usuario, roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva);
 
         db.SesionesUsuario.Add(new SesionUsuario
         {
@@ -133,7 +174,7 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         await db.SaveChangesAsync(cancellationToken);
 
         return new LoginResult(
-            token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, idAgenciaEfectiva,
+            token, expiraEn, usuario.Id, usuario.NombreUsuario, roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva,
             usuario.CambiaClave);
     }
 
@@ -468,7 +509,7 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
     }
 
     private (string Token, DateTimeOffset ExpiraEn, Guid Jti) GenerarToken(
-        Usuario usuario, List<string> roles, List<string> menus, List<string> estructuras, int idAgenciaEfectiva)
+        Usuario usuario, List<string> roles, List<string> menus, List<string> estructuras, List<string> datasets, List<string> opciones, int idAgenciaEfectiva)
     {
         var secret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Falta Jwt:Secret (revisar .env.core)");
@@ -488,6 +529,8 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
         claims.AddRange(menus.Select(m2 => new Claim("menu", m2)));
         claims.AddRange(estructuras.Select(e => new Claim("estructura", e)));
+        claims.AddRange(datasets.Select(d => new Claim("dataset", d)));
+        claims.AddRange(opciones.Select(o => new Claim("opcion", o)));
         claims.Add(new Claim("agencia", idAgenciaEfectiva.ToString()));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));

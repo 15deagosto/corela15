@@ -1,3 +1,4 @@
+using Corela15.Api.Autorizacion;
 using Corela15.Api.Idempotencia;
 using Corela15.Application.Colocacion;
 using Corela15.Domain.Colocacion;
@@ -109,6 +110,7 @@ public class CreditosController(
     // (SEGURIDAD.MENU_REPORTE, ver 06-catalogo-reportes-softbank.md) —
     // Colocacion.ConcesionCreditoReport, Colocacion.CreditosPrecancelados,
     // Colocacion.ProximosVencimientos.
+    [RequireOpcion("creditos.reportes.concesion")]
     [HttpGet("reportes/concesion-credito")]
     public async Task<ActionResult<IReadOnlyList<ConcesionCreditoItem>>> ReporteConcesionCredito(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -131,6 +133,7 @@ public class CreditosController(
     // (ModificadoEn del préstamo, que se actualiza en el pago de la cuota
     // que lo cancela, comparado contra FechaVencimiento) — no requiere un
     // campo nuevo, se deriva de datos ya reales del dominio.
+    [RequireOpcion("creditos.reportes.precancelados")]
     [HttpGet("reportes/creditos-precancelados")]
     public async Task<ActionResult<IReadOnlyList<CreditoPrecanceladoItem>>> ReporteCreditosPrecancelados(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -153,6 +156,7 @@ public class CreditosController(
         return Ok(resultado);
     }
 
+    [RequireOpcion("creditos.reportes.vencimientos")]
     [HttpGet("reportes/proximos-vencimientos")]
     public async Task<ActionResult<IReadOnlyList<ProximoVencimientoItem>>> ReporteProximosVencimientos(
         [FromQuery] int dias, CancellationToken cancellationToken)
@@ -179,6 +183,7 @@ public class CreditosController(
 
     // Colocacion.ConsolidadoCredCancelados / Colocacion.AnexoGarantias —
     // ver 06-catalogo-reportes-softbank.md.
+    [RequireOpcion("creditos.reportes.cancelados")]
     [HttpGet("reportes/creditos-cancelados")]
     public async Task<ActionResult<IReadOnlyList<CreditoCanceladoItem>>> ReporteCreditosCancelados(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -207,6 +212,7 @@ public class CreditosController(
     // ningún filtro de agencia oculto — cualquier usuario con
     // Menu:creditos ve la cartera completa por asesor, sin importar su
     // propia agencia.
+    [RequireOpcion("creditos.reportes.mora-asesor")]
     [HttpGet("reportes/creditos-mora-asesor")]
     public async Task<ActionResult<IReadOnlyList<CreditoMoraAsesorItem>>> ReporteCreditosMoraAsesor(
         [FromQuery] string? codigoUsuarioAsesor, CancellationToken cancellationToken)
@@ -242,6 +248,7 @@ public class CreditosController(
     // Colocacion.IndiceMorosidad / IndiceMorosidad2 — cartera vencida real
     // (saldo de préstamos con DiasMora > 0) sobre cartera total vigente,
     // única fuente de verdad de mora ya construida (IMoraCarteraService).
+    [RequireOpcion("creditos.reportes.indice-morosidad")]
     [HttpGet("reportes/indice-morosidad")]
     public async Task<ActionResult<IndiceMorosidadItem>> ReporteIndiceMorosidad(CancellationToken cancellationToken)
     {
@@ -259,6 +266,7 @@ public class CreditosController(
     // (AutoDebitoSpiLog, ver CLAUDE.md "Auto-débito de cuota por SPI"),
     // filtrada a los omitidos (Debitado=false) con su motivo explícito —
     // exactamente el gap que originó este proyecto (01-contexto-origen.md).
+    [RequireOpcion("creditos.reportes.spi-no-procesados")]
     [HttpGet("reportes/debitos-spi-no-procesados")]
     public async Task<ActionResult<IReadOnlyList<DebitoSpiNoProcesadoItem>>> ReporteDebitosSpiNoProcesados(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -278,6 +286,7 @@ public class CreditosController(
     // construido (PrestamoCastigado, ver CLAUDE.md "Colocación:
     // diferimiento de cuotas, cartera castigada, custodia de pagaré"),
     // nunca duplicado, solo listado por rango de fecha.
+    [RequireOpcion("creditos.reportes.cartera-castigada")]
     [HttpGet("reportes/anexo-cartera-castigada")]
     public async Task<ActionResult<IReadOnlyList<AnexoCarteraCastigadaItem>>> ReporteAnexoCarteraCastigada(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -301,6 +310,7 @@ public class CreditosController(
     // solo agrupadas. Agencia real desde Prestamo.IdAgencia (ya existía,
     // sin campo nuevo); no requirió índice adicional (volumen bajo, sin
     // filtro de fecha en el agrupado).
+    [RequireOpcion("creditos.reportes.castigada-agencia")]
     [HttpGet("reportes/anexo-cartera-castigada-agencia")]
     public async Task<ActionResult<IReadOnlyList<AnexoCarteraCastigadaAgenciaItem>>> ReporteAnexoCarteraCastigadaAgencia(
         CancellationToken cancellationToken)
@@ -315,6 +325,7 @@ public class CreditosController(
         return Ok(resultado);
     }
 
+    [RequireOpcion("creditos.reportes.castigada-cliente")]
     [HttpGet("reportes/anexo-cartera-castigada-cliente")]
     public async Task<ActionResult<IReadOnlyList<AnexoCarteraCastigadaClienteItem>>> ReporteAnexoCarteraCastigadaCliente(
         CancellationToken cancellationToken)
@@ -348,6 +359,7 @@ public class CreditosController(
     // (capital, interés, seguro, mora, manuales) de la cartera vigente,
     // el mismo dato que ya alimenta pago de cuota/mora/provisión, expuesto
     // como listado — sin duplicar ningún cálculo.
+    [RequireOpcion("creditos.reportes.item-credito")]
     [HttpGet("reportes/anexo-item-credito")]
     public async Task<ActionResult<IReadOnlyList<AnexoItemCreditoItem>>> ReporteAnexoItemCredito(
         [FromQuery] string? numeroPrestamo, CancellationToken cancellationToken)
@@ -375,6 +387,7 @@ public class CreditosController(
     // ya sembrado (ver CLAUDE.md "Catálogos socioeconómicos reales de
     // Socios"). Nunca inventa el concepto: reusa Cliente.CodigoCausaVinculacion
     // tal cual ya existía.
+    [RequireOpcion("creditos.reportes.vinculados")]
     [HttpGet("reportes/creditos-vinculados")]
     public async Task<ActionResult<IReadOnlyList<CreditoVinculadoItem>>> ReporteCreditosVinculados(
         CancellationToken cancellationToken)
@@ -405,6 +418,7 @@ public class CreditosController(
 
     // Colocacion.PrestamoPorTipoConvenio — cartera vigente con convenio real
     // asignado (Prestamo.CodigoTipoConvenio, ver credito.tipo_convenio).
+    [RequireOpcion("creditos.reportes.por-convenio")]
     [HttpGet("reportes/prestamo-por-convenio")]
     public async Task<ActionResult<IReadOnlyList<PrestamoPorConvenioItem>>> ReportePrestamoPorConvenio(
         CancellationToken cancellationToken)
@@ -445,6 +459,7 @@ public class CreditosController(
     // — pagos de capital reales (rubros CAP cobrados) en el rango, sobre
     // préstamos con convenio asignado. Reusa PrestamoRubro, sin duplicar
     // ningún cálculo de pago.
+    [RequireOpcion("creditos.reportes.abonos-convenio")]
     [HttpGet("reportes/abonos-por-convenio")]
     public async Task<ActionResult<IReadOnlyList<AbonoConvenioItem>>> ReporteAbonosPorConvenio(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -472,6 +487,7 @@ public class CreditosController(
     // se construye ahora. Agrupado en memoria (no en el Select de EF) por
     // el mismo motivo ya documentado varias veces en el proyecto: Npgsql
     // no siempre traduce bien un GroupBy por año/mes sobre DateOnly.
+    [RequireOpcion("creditos.reportes.entrega-recuperacion")]
     [HttpGet("reportes/entrega-recuperacion")]
     public async Task<ActionResult<IReadOnlyList<EntregaRecuperacionItem>>> ReporteEntregaRecuperacion(
         [FromQuery] DateOnly desde, [FromQuery] DateOnly hasta, CancellationToken cancellationToken)
@@ -515,6 +531,7 @@ public class CreditosController(
     // registra el asiento contable, solo replica la misma regla de
     // negocio para mostrarla — evita que "ver el reporte" tenga un efecto
     // contable secundario.
+    [RequireOpcion("creditos.reportes.calificacion")]
     [HttpGet("reportes/calificacion-prestamos")]
     public async Task<ActionResult<IReadOnlyList<CalificacionPrestamoItem>>> ReporteCalificacionPrestamos(
         CancellationToken cancellationToken)
@@ -562,6 +579,7 @@ public class CreditosController(
     // sembrado, ver CLAUDE.md "Motor de rubros real"), nunca solo el
     // rubro puntual "Gastos Judiciales" — la clasificación GAJ es la
     // agrupación real que usa el propio catálogo de Softbank.
+    [RequireOpcion("creditos.reportes.gastos-judiciales")]
     [HttpGet("reportes/gastos-judiciales")]
     public async Task<ActionResult<IReadOnlyList<GastoJudicialItem>>> ReporteGastosJudiciales(
         [FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta, CancellationToken cancellationToken)
@@ -591,6 +609,7 @@ public class CreditosController(
     // (`ix_prestamo_id_tipo_prestamo`) y `Estado` recibió índice propio
     // en la ronda anterior — el query no necesitó ningún campo/índice
     // nuevo, ya estaba todo listo.
+    [RequireOpcion("creditos.reportes.consolidado-tipo-cartera")]
     [HttpGet("reportes/consolidado-tipo-cartera")]
     public async Task<ActionResult<IReadOnlyList<ConsolidadoTipoCarteraItem>>> ReporteConsolidadoTipoCartera(
         CancellationToken cancellationToken)
@@ -612,6 +631,7 @@ public class CreditosController(
     // (IdPrestamo,Estado,FechaFin) de la ronda anterior ya cubre el
     // filtro por Estado; se suma aquí ordenado por préstamo, no por
     // fecha, así que no requiere índice adicional.
+    [RequireOpcion("creditos.reportes.seguro-desgravamen")]
     [HttpGet("reportes/consolidado-seguro-desgravamen")]
     public async Task<ActionResult<IReadOnlyList<ConsolidadoSeguroDesgravamenItem>>> ReporteConsolidadoSeguroDesgravamen(
         CancellationToken cancellationToken)
@@ -640,6 +660,7 @@ public class CreditosController(
         return Ok(items);
     }
 
+    [RequireOpcion("creditos.reportes.garantias")]
     [HttpGet("reportes/anexo-garantias")]
     public async Task<ActionResult<IReadOnlyList<AnexoGarantiaItem>>> ReporteAnexoGarantias(CancellationToken cancellationToken)
     {

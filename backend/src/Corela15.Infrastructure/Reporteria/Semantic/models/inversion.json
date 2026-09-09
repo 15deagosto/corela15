@@ -1,0 +1,49 @@
+{
+  "id": "inversion",
+  "label": "Captaciones — Depósitos a Plazo Fijo",
+  "description": "Depósitos a plazo fijo (DPF). A diferencia de Ahorros, el monto captado sí es una columna directa (DEPOSITO.MONTO) — no requiere desglose por ítem.",
+  "roles": [],
+  "supportsSnapshot": true,
+
+  "baseSql": "FROM Softbank.INVERSION.DEPOSITO {{T}} d JOIN Softbank.GENERAL.AGENCIA a ON a.ID = d.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = d.CODIGOUSUARIO LEFT JOIN Softbank.INVERSION.TIPO_DEPOSITO td ON td.CODIGO = d.CODIGOTIPODEPOSITO LEFT JOIN Softbank.INVERSION.ESTADO_DEPOSITO ed ON ed.CODIGO = d.CODIGOESTADODEPOSITO LEFT JOIN Softbank.INVERSION.DEPOSITO_CLIENTE dc ON dc.IDDEPOSITO = d.ID AND dc.ESPRINCIPAL = 1",
+
+  "dimensions": [
+    { "id": "agencia",      "label": "Agencia",              "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "oficial",      "label": "Oficial",               "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "tipoDeposito", "label": "Tipo de depósito",      "group": "Producto",     "sql": "RTRIM(td.NOMBRE)" },
+    { "id": "estado",       "label": "Estado del depósito",   "group": "Producto",     "sql": "RTRIM(ed.NOMBRE)" },
+    { "id": "vinculado",    "label": "Depósito vinculado",    "group": "Riesgo",       "sql": "CASE WHEN d.ESVINCULADO = 1 THEN 'Sí' ELSE 'No' END" },
+    { "id": "bandaPlazo",   "label": "Banda de plazo",        "group": "Producto",     "sql": "CASE WHEN d.PLAZO <= 90 THEN '0 - 90 días' WHEN d.PLAZO <= 180 THEN '91 - 180 días' WHEN d.PLAZO <= 360 THEN '181 - 360 días' ELSE 'Más de 360 días' END" },
+    { "id": "anio",         "label": "Año de apertura",       "group": "Tiempo",       "sql": "YEAR(d.FECHACREACION)" },
+    { "id": "mes",          "label": "Mes de apertura",       "group": "Tiempo",       "sql": "FORMAT(d.FECHACREACION, 'yyyy-MM')" }
+  ],
+
+  "measures": [
+    { "id": "depositos",  "label": "Depósitos",          "format": "int",   "sql": "COUNT(*)" },
+    { "id": "socios",     "label": "Socios",             "format": "int",   "sql": "COUNT(DISTINCT dc.IDCLIENTE)", "description": "Socios distintos como titular principal (ESPRINCIPAL=1)." },
+    { "id": "monto",      "label": "Monto captado",      "format": "money", "sql": "SUM(d.MONTO)" },
+    { "id": "ticketProm", "label": "Ticket promedio",    "format": "money", "sql": "SUM(d.MONTO) / NULLIF(COUNT(*), 0)" },
+    { "id": "tasaProm",   "label": "Tasa promedio ponderada", "format": "pct", "sql": "SUM(CAST(d.TASA AS DECIMAL(18,6)) * d.MONTO) / NULLIF(SUM(d.MONTO), 0)" },
+    { "id": "plazoProm",  "label": "Plazo promedio (días, pond.)", "format": "num", "sql": "SUM(CAST(d.PLAZO AS DECIMAL(18,4)) * d.MONTO) / NULLIF(SUM(d.MONTO), 0)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "tipoDeposito", "label": "Tipo de depósito", "type": "multi",
+      "sql": "RTRIM(td.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.INVERSION.TIPO_DEPOSITO ORDER BY 1"
+    },
+    {
+      "id": "estado", "label": "Estado del depósito", "type": "multi",
+      "sql": "d.CODIGOESTADODEPOSITO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.INVERSION.ESTADO_DEPOSITO ORDER BY 2"
+    },
+    { "id": "fechaDesde", "label": "Abierto desde", "type": "dateFrom", "sql": "d.FECHACREACION" },
+    { "id": "fechaHasta", "label": "Abierto hasta", "type": "dateTo",   "sql": "d.FECHACREACION" }
+  ]
+}

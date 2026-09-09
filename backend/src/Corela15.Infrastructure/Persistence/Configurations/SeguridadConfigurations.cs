@@ -99,6 +99,87 @@ public class RolTipoEstructuraConfiguration : IEntityTypeConfiguration<RolTipoEs
     }
 }
 
+public class DatasetReporteriaConfiguration : IEntityTypeConfiguration<DatasetReporteria>
+{
+    public void Configure(EntityTypeBuilder<DatasetReporteria> b)
+    {
+        b.ToTable("dataset_reporteria", "seguridad");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(30);
+        b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
+    }
+}
+
+public class RolDatasetReporteriaConfiguration : IEntityTypeConfiguration<RolDatasetReporteria>
+{
+    public void Configure(EntityTypeBuilder<RolDatasetReporteria> b)
+    {
+        b.ToTable("rol_dataset_reporteria", "seguridad");
+        b.HasKey(x => new { x.IdRol, x.CodigoDataset });
+
+        b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.IdRol).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Dataset).WithMany().HasForeignKey(x => x.CodigoDataset).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class OpcionConfiguration : IEntityTypeConfiguration<Opcion>
+{
+    public void Configure(EntityTypeBuilder<Opcion> b)
+    {
+        b.ToTable("opcion", "seguridad");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(80);
+        b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
+        b.HasOne(x => x.Menu).WithMany().HasForeignKey(x => x.CodigoMenu).HasPrincipalKey(m => m.Codigo).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class RolOpcionConfiguration : IEntityTypeConfiguration<RolOpcion>
+{
+    public void Configure(EntityTypeBuilder<RolOpcion> b)
+    {
+        b.ToTable("rol_opcion", "seguridad");
+        b.HasKey(x => new { x.IdRol, x.CodigoOpcion });
+        b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.IdRol).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Opcion).WithMany().HasForeignKey(x => x.CodigoOpcion).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class UsuarioOpcionConfiguration : IEntityTypeConfiguration<UsuarioOpcion>
+{
+    public void Configure(EntityTypeBuilder<UsuarioOpcion> b)
+    {
+        b.ToTable("usuario_opcion", "seguridad");
+        b.HasKey(x => new { x.IdUsuario, x.CodigoOpcion });
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Opcion).WithMany().HasForeignKey(x => x.CodigoOpcion).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class UsuarioMenuConfiguration : IEntityTypeConfiguration<UsuarioMenu>
+{
+    public void Configure(EntityTypeBuilder<UsuarioMenu> b)
+    {
+        b.ToTable("usuario_menu", "seguridad");
+        b.HasKey(x => new { x.IdUsuario, x.IdMenu });
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Menu).WithMany().HasForeignKey(x => x.IdMenu).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class UsuarioDatasetReporteriaConfiguration : IEntityTypeConfiguration<UsuarioDatasetReporteria>
+{
+    public void Configure(EntityTypeBuilder<UsuarioDatasetReporteria> b)
+    {
+        b.ToTable("usuario_dataset_reporteria", "seguridad");
+        b.HasKey(x => new { x.IdUsuario, x.CodigoDataset });
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Dataset).WithMany().HasForeignKey(x => x.CodigoDataset).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<AccionIngresoUsuario>
 {
     public void Configure(EntityTypeBuilder<AccionIngresoUsuario> b)

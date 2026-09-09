@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   CalendarRange,
   KeyRound,
+  BarChart3,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -186,6 +187,14 @@ export const modulos: Modulo[] = [
     nombre: 'Planificación',
     descripcion: 'Planificación semanal de actividades por área',
     icon: CalendarRange,
+    estado: 'disponible',
+  },
+  {
+    slug: 'reporteria-gerencial',
+    path: '/reporteria-gerencial',
+    nombre: 'Reportería Gerencial',
+    descripcion: 'Tableros de Cartera, Captaciones, Contabilidad y Socios (motor migrado de SIGA)',
+    icon: BarChart3,
     estado: 'disponible',
   },
   {

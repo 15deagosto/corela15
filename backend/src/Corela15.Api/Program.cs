@@ -36,6 +36,17 @@ if (File.Exists(envPath))
     DotNetEnv.Env.Load(envPath);
 }
 
+// Carga .env (Softbank de solo lectura, ya reservado en la raíz del repo
+// para este propósito -- ver la "Regla de oro" en CLAUDE.md) para el motor
+// de Reportería Gerencial (Reporteria/Query/QueryExecutor.cs, portado de
+// SIGA). Ningún nombre de variable se repite entre .env.core y .env, así
+// que cargar ambos en el mismo proceso es seguro.
+var envSoftbankPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", ".env");
+if (File.Exists(envSoftbankPath))
+{
+    DotNetEnv.Env.Load(envSoftbankPath);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, config) =>
@@ -101,6 +112,17 @@ builder.Services.AddScoped<IReclamoService, ReclamoService>();
 builder.Services.AddScoped<ISocioService, SocioService>();
 builder.Services.AddHostedService<AutoDebitoSpiBackgroundService>();
 builder.Services.AddScoped<IdempotenciaFilter>();
+
+// Reportería Gerencial (motor semántico portado de SIGA, ver Program.cs
+// más abajo para las policies "Dataset:<código>" y AuthService.cs para el
+// claim "dataset"). Singleton: SemanticModelStore lee sus recursos
+// embebidos una sola vez al arrancar y QueryCompiler/QueryExecutor no
+// guardan estado por request, sin ninguna dependencia de Corela15DbContext
+// (que sí es scoped).
+builder.Services.AddSingleton<Corela15.Infrastructure.Reporteria.Semantic.SemanticModelStore>();
+builder.Services.AddSingleton<Corela15.Infrastructure.Reporteria.Query.QueryCompiler>();
+builder.Services.AddSingleton<Corela15.Infrastructure.Reporteria.Query.QueryExecutor>();
+builder.Services.AddScoped<Corela15.Infrastructure.Reporteria.TableroReporteriaService>();
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -168,7 +190,7 @@ var codigosMenu = new[]
     "socios", "usuarios-roles", "contabilidad", "ahorros", "creditos",
     "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
     "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
-    "planificacion", "planificacion-gerencia", "credvault",
+    "planificacion", "planificacion-gerencia", "credvault", "reporteria-gerencial",
 };
 
 // Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —
@@ -177,6 +199,16 @@ var codigosMenu = new[]
 // para sumar más sin tocar este arreglo si se agregan por catálogo — acá
 // solo se declaran las policies base ya conocidas al arrancar.
 var codigosTipoEstructura = new[] { "OF01" };
+
+// Mismo patrón, para el módulo "Reportería Gerencial" (ver
+// DatasetReporteria.cs) — qué datasets del motor semántico (portado de
+// SIGA) puede consultar cada usuario. "nominal" está acá también: la
+// policy existe, pero el claim solo lo trae quien lo tenga otorgado
+// explícitamente (ver la migración de siembra, nunca por defecto).
+var codigosDatasetReporteria = new[]
+{
+    "cartera", "ahorros", "inversion", "contabilidad", "socios", "solicitudes", "vinculados", "nominal",
+};
 
 builder.Services.AddAuthorization(options =>
 {
@@ -193,9 +225,18 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy($"Estructura:{codigo}", policy => policy.RequireClaim("estructura", codigo));
     }
+
+    foreach (var codigo in codigosDatasetReporteria)
+    {
+        options.AddPolicy($"Dataset:{codigo}", policy => policy.RequireClaim("dataset", codigo));
+    }
 });
 
-builder.Services.AddControllers(options => options.Filters.Add<IdempotenciaFilter>());
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<IdempotenciaFilter>();
+    options.Filters.Add<Corela15.Api.Autorizacion.OpcionFilter>();
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

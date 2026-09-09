@@ -8,6 +8,8 @@ interface Sesion {
   roles: string[]
   menus: string[]
   estructuras: string[]
+  datasets: string[]
+  opciones: string[]
   cambiaClave: boolean
 }
 
@@ -18,6 +20,10 @@ interface AuthContextValue {
   logout: () => Promise<void>
   tieneMenu: (codigo: string) => boolean
   tieneEstructura: (codigo: string) => boolean
+  /** Datasets del módulo Reportería Gerencial (ver seguridad.dataset_reporteria) que el usuario tiene otorgados. */
+  tieneDataset: (codigo: string) => boolean
+  /** Tercer nivel de permiso, genérico: un reporte o acción puntual dentro de cualquier módulo (ver seguridad.opcion). */
+  tieneOpcion: (codigo: string) => boolean
   /** Vuelve a pedir un token con los datos reales actuales, sin contraseña — lo usa el mount inicial y la pantalla de cambio de clave obligatorio tras completarlo. */
   refrescarPermisos: () => Promise<void>
 }
@@ -43,6 +49,8 @@ function mapearSesion(data: {
   roles: string[]
   menus: string[]
   estructuras?: string[]
+  datasets?: string[]
+  opciones?: string[]
   cambiaClave?: boolean
 }): Sesion {
   return {
@@ -52,6 +60,8 @@ function mapearSesion(data: {
     roles: data.roles,
     menus: data.menus,
     estructuras: data.estructuras ?? [],
+    datasets: data.datasets ?? [],
+    opciones: data.opciones ?? [],
     cambiaClave: data.cambiaClave ?? false,
   }
 }
@@ -119,10 +129,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const tieneMenu = (codigo: string) => sesion?.menus.includes(codigo) ?? false
   const tieneEstructura = (codigo: string) => sesion?.estructuras.includes(codigo) ?? false
+  const tieneDataset = (codigo: string) => sesion?.datasets.includes(codigo) ?? false
+  const tieneOpcion = (codigo: string) => sesion?.opciones.includes(codigo) ?? false
 
   return (
     <AuthContext.Provider
-      value={{ sesion, cargando, login, logout, tieneMenu, tieneEstructura, refrescarPermisos }}
+      value={{ sesion, cargando, login, logout, tieneMenu, tieneEstructura, tieneDataset, tieneOpcion, refrescarPermisos }}
     >
       {children}
     </AuthContext.Provider>

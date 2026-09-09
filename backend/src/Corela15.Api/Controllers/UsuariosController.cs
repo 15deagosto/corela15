@@ -50,6 +50,14 @@ public record RolAsignadoDto(int Id, string Nombre, bool Asignado);
 
 public record ActualizarRolesUsuarioRequest(IReadOnlyList<int> IdsRol);
 
+public record MenuUsuarioDto(int IdMenu, string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto);
+public record ActualizarMenusUsuarioRequest(IReadOnlyList<int> IdsMenu);
+public record DatasetUsuarioDto(string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto);
+public record ActualizarDatasetsUsuarioRequest(IReadOnlyList<string> CodigosDataset);
+
+public record OpcionUsuarioDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool OtorgadoPorRol, bool OtorgadoDirecto);
+public record ActualizarOpcionesUsuarioRequest(IReadOnlyList<string> CodigosOpcion);
+
 [ApiController]
 [Route("api/usuarios")]
 [Authorize(Policy = "Menu:usuarios-roles")]
@@ -322,6 +330,138 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
             {
                 IdUsuario = id, IdRol = idRol, Activo = true, AsignadoEn = DateTimeOffset.UtcNow,
             });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    // ---- Permisos directos por usuario (menús y datasets de Reportería
+    // Gerencial) — segundo camino real, además de los roles: permite darle
+    // acceso a un módulo puntual (o un dataset puntual) a una sola persona
+    // sin crear ni tocar un rol para eso. Nunca resta lo que el rol ya
+    // otorga (ver UsuarioMenu.cs/AuthService.EmitirTokenAsync, es una
+    // unión) — el PUT solo reconcilia la lista de otorgamientos DIRECTOS;
+    // "OtorgadoPorRol" en el GET es puramente informativo, para que quien
+    // administra vea de dónde viene cada acceso real antes de tocar nada.
+
+    [HttpGet("{id:guid}/menus")]
+    public async Task<ActionResult<IReadOnlyList<MenuUsuarioDto>>> MenusDelUsuario(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null) return NotFound();
+
+        var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
+        var menusPorRol = await db.RolesMenu.Where(rm => rm.Activo && idsRol.Contains(rm.IdRol)).Select(rm => rm.IdMenu).ToListAsync(cancellationToken);
+        var menusDirectos = await db.UsuariosMenu.Where(um => um.IdUsuario == id && um.Activo).Select(um => um.IdMenu).ToListAsync(cancellationToken);
+
+        var resultado = await db.Menus
+            .Where(m => m.Activo)
+            .OrderBy(m => m.Orden)
+            .Select(m => new MenuUsuarioDto(m.Id, m.Codigo, m.Nombre, menusPorRol.Contains(m.Id), menusDirectos.Contains(m.Id)))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("{id:guid}/menus")]
+    public async Task<IActionResult> ActualizarMenusDelUsuario(
+        Guid id, [FromBody] ActualizarMenusUsuarioRequest request, CancellationToken cancellationToken)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
+
+        var existentes = await db.UsuariosMenu.Where(um => um.IdUsuario == id).ToListAsync(cancellationToken);
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.IdsMenu.Contains(existente.IdMenu);
+        }
+
+        var idsExistentes = existentes.Select(e => e.IdMenu).ToHashSet();
+        foreach (var idMenu in request.IdsMenu.Where(idMenu => !idsExistentes.Contains(idMenu)))
+        {
+            db.UsuariosMenu.Add(new Corela15.Domain.Seguridad.UsuarioMenu { IdUsuario = id, IdMenu = idMenu, Activo = true });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/datasets-reporteria")]
+    public async Task<ActionResult<IReadOnlyList<DatasetUsuarioDto>>> DatasetsReporteriaDelUsuario(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null) return NotFound();
+
+        var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
+        var datasetsPorRol = await db.RolesDatasetReporteria.Where(rd => rd.Activo && idsRol.Contains(rd.IdRol)).Select(rd => rd.CodigoDataset).ToListAsync(cancellationToken);
+        var datasetsDirectos = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id && ud.Activo).Select(ud => ud.CodigoDataset).ToListAsync(cancellationToken);
+
+        var resultado = await db.DatasetsReporteria
+            .Where(d => d.Activo)
+            .OrderBy(d => d.Nombre)
+            .Select(d => new DatasetUsuarioDto(d.Codigo, d.Nombre, datasetsPorRol.Contains(d.Codigo), datasetsDirectos.Contains(d.Codigo)))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("{id:guid}/datasets-reporteria")]
+    public async Task<IActionResult> ActualizarDatasetsReporteriaDelUsuario(
+        Guid id, [FromBody] ActualizarDatasetsUsuarioRequest request, CancellationToken cancellationToken)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
+
+        var existentes = await db.UsuariosDatasetReporteria.Where(ud => ud.IdUsuario == id).ToListAsync(cancellationToken);
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.CodigosDataset.Contains(existente.CodigoDataset);
+        }
+
+        var codigosExistentes = existentes.Select(e => e.CodigoDataset).ToHashSet();
+        foreach (var codigo in request.CodigosDataset.Where(c => !codigosExistentes.Contains(c)))
+        {
+            db.UsuariosDatasetReporteria.Add(new Corela15.Domain.Seguridad.UsuarioDatasetReporteria { IdUsuario = id, CodigoDataset = codigo, Activo = true });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/opciones")]
+    public async Task<ActionResult<IReadOnlyList<OpcionUsuarioDto>>> OpcionesDelUsuario(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null) return NotFound();
+
+        var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
+        var opcionesPorRol = await db.RolesOpcion.Where(ro => ro.Activo && idsRol.Contains(ro.IdRol)).Select(ro => ro.CodigoOpcion).ToListAsync(cancellationToken);
+        var opcionesDirectas = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id && uo.Activo).Select(uo => uo.CodigoOpcion).ToListAsync(cancellationToken);
+
+        var resultado = await db.Opciones
+            .Where(o => o.Activo)
+            .OrderBy(o => o.CodigoMenu).ThenBy(o => o.Nombre)
+            .Select(o => new OpcionUsuarioDto(o.Codigo, o.Nombre, o.CodigoMenu, o.Menu.Nombre, opcionesPorRol.Contains(o.Codigo), opcionesDirectas.Contains(o.Codigo)))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("{id:guid}/opciones")]
+    public async Task<IActionResult> ActualizarOpcionesDelUsuario(
+        Guid id, [FromBody] ActualizarOpcionesUsuarioRequest request, CancellationToken cancellationToken)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
+
+        var existentes = await db.UsuariosOpcion.Where(uo => uo.IdUsuario == id).ToListAsync(cancellationToken);
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.CodigosOpcion.Contains(existente.CodigoOpcion);
+        }
+
+        var codigosExistentes = existentes.Select(e => e.CodigoOpcion).ToHashSet();
+        foreach (var codigo in request.CodigosOpcion.Where(c => !codigosExistentes.Contains(c)))
+        {
+            db.UsuariosOpcion.Add(new Corela15.Domain.Seguridad.UsuarioOpcion { IdUsuario = id, CodigoOpcion = codigo, Activo = true });
         }
 
         await db.SaveChangesAsync(cancellationToken);

@@ -7874,6 +7874,160 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.ToTable("tarifa_servicio_financiero", "reportecontrol");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Reporteria.AuditoriaConsultaReporteria", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Dataset")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("dataset");
+
+                    b.Property<string>("Dimensiones")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("dimensiones");
+
+                    b.Property<long>("DuracionMs")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duracion_ms");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error");
+
+                    b.Property<DateTimeOffset>("FechaHora")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_hora");
+
+                    b.Property<int>("Filas")
+                        .HasColumnType("integer")
+                        .HasColumnName("filas");
+
+                    b.Property<string>("Filtros")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("filtros");
+
+                    b.Property<string>("Metricas")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("metricas");
+
+                    b.Property<DateTime?>("Snapshot")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("snapshot");
+
+                    b.Property<string>("Usuario")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario");
+
+                    b.HasKey("Id")
+                        .HasName("pk_auditoria_consulta");
+
+                    b.HasIndex("FechaHora")
+                        .HasDatabaseName("ix_auditoria_consulta_fecha_hora");
+
+                    b.HasIndex("Usuario")
+                        .HasDatabaseName("ix_auditoria_consulta_usuario");
+
+                    b.ToTable("auditoria_consulta", "reporteria");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Reporteria.FavoritoTablero", b =>
+                {
+                    b.Property<string>("Usuario")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario");
+
+                    b.Property<int>("IdTablero")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_tablero");
+
+                    b.Property<DateTimeOffset>("AgregadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("agregado_en");
+
+                    b.HasKey("Usuario", "IdTablero")
+                        .HasName("pk_favorito_tablero");
+
+                    b.HasIndex("IdTablero")
+                        .HasDatabaseName("ix_favorito_tablero_id_tablero");
+
+                    b.ToTable("favorito_tablero", "reporteria");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Reporteria.Tablero", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en");
+
+                    b.Property<string>("Definicion")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("definicion");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("EsPredefinido")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_predefinido");
+
+                    b.Property<bool>("EsPublico")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_publico");
+
+                    b.Property<DateTimeOffset>("ModificadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modificado_en");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<string>("Propietario")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("propietario");
+
+                    b.Property<string[]>("RolesPermitidos")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("roles_permitidos");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tablero");
+
+                    b.HasIndex("Propietario")
+                        .HasDatabaseName("ix_tablero_propietario");
+
+                    b.ToTable("tablero", "reporteria");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Riesgo.AvanceRiesgo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8415,6 +8569,29 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.ToTable("accion_usuario", "seguridad");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Seguridad.DatasetReporteria", b =>
+                {
+                    b.Property<string>("Codigo")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.HasKey("Codigo")
+                        .HasName("pk_dataset_reporteria");
+
+                    b.ToTable("dataset_reporteria", "seguridad");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Seguridad.HorarioAccesoUsuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8487,11 +8664,45 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_menu");
 
+                    b.HasAlternateKey("Codigo")
+                        .HasName("ak_menu_codigo");
+
                     b.HasIndex("Codigo")
                         .IsUnique()
                         .HasDatabaseName("ix_menu_codigo");
 
                     b.ToTable("menu", "seguridad");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.Opcion", b =>
+                {
+                    b.Property<string>("Codigo")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("codigo");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("CodigoMenu")
+                        .IsRequired()
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("codigo_menu");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.HasKey("Codigo")
+                        .HasName("pk_opcion");
+
+                    b.HasIndex("CodigoMenu")
+                        .HasDatabaseName("ix_opcion_codigo_menu");
+
+                    b.ToTable("opcion", "seguridad");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Seguridad.Rol", b =>
@@ -8531,6 +8742,29 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.ToTable("rol", "seguridad");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Seguridad.RolDatasetReporteria", b =>
+                {
+                    b.Property<int>("IdRol")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_rol");
+
+                    b.Property<string>("CodigoDataset")
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo_dataset");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.HasKey("IdRol", "CodigoDataset")
+                        .HasName("pk_rol_dataset_reporteria");
+
+                    b.HasIndex("CodigoDataset")
+                        .HasDatabaseName("ix_rol_dataset_reporteria_codigo_dataset");
+
+                    b.ToTable("rol_dataset_reporteria", "seguridad");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Seguridad.RolMenu", b =>
                 {
                     b.Property<int>("IdRol")
@@ -8552,6 +8786,29 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_rol_menu_id_menu");
 
                     b.ToTable("rol_menu", "seguridad");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.RolOpcion", b =>
+                {
+                    b.Property<int>("IdRol")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_rol");
+
+                    b.Property<string>("CodigoOpcion")
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("codigo_opcion");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.HasKey("IdRol", "CodigoOpcion")
+                        .HasName("pk_rol_opcion");
+
+                    b.HasIndex("CodigoOpcion")
+                        .HasDatabaseName("ix_rol_opcion_codigo_opcion");
+
+                    b.ToTable("rol_opcion", "seguridad");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Seguridad.RolTipoEstructura", b =>
@@ -8867,6 +9124,75 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_usuario_agencia_temporal_id_usuario_activo");
 
                     b.ToTable("usuario_agencia_temporal", "seguridad");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioDatasetReporteria", b =>
+                {
+                    b.Property<Guid>("IdUsuario")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_usuario");
+
+                    b.Property<string>("CodigoDataset")
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo_dataset");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.HasKey("IdUsuario", "CodigoDataset")
+                        .HasName("pk_usuario_dataset_reporteria");
+
+                    b.HasIndex("CodigoDataset")
+                        .HasDatabaseName("ix_usuario_dataset_reporteria_codigo_dataset");
+
+                    b.ToTable("usuario_dataset_reporteria", "seguridad");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioMenu", b =>
+                {
+                    b.Property<Guid>("IdUsuario")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_usuario");
+
+                    b.Property<int>("IdMenu")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_menu");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.HasKey("IdUsuario", "IdMenu")
+                        .HasName("pk_usuario_menu");
+
+                    b.HasIndex("IdMenu")
+                        .HasDatabaseName("ix_usuario_menu_id_menu");
+
+                    b.ToTable("usuario_menu", "seguridad");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioOpcion", b =>
+                {
+                    b.Property<Guid>("IdUsuario")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_usuario");
+
+                    b.Property<string>("CodigoOpcion")
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("codigo_opcion");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.HasKey("IdUsuario", "CodigoOpcion")
+                        .HasName("pk_usuario_opcion");
+
+                    b.HasIndex("CodigoOpcion")
+                        .HasDatabaseName("ix_usuario_opcion_codigo_opcion");
+
+                    b.ToTable("usuario_opcion", "seguridad");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioRol", b =>
@@ -11979,6 +12305,18 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("CuentaContableGasto");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Reporteria.FavoritoTablero", b =>
+                {
+                    b.HasOne("Corela15.Domain.Reporteria.Tablero", "Tablero")
+                        .WithMany()
+                        .HasForeignKey("IdTablero")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_favorito_tablero_tableros_reporteria_id_tablero");
+
+                    b.Navigation("Tablero");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Riesgo.AvanceRiesgo", b =>
                 {
                     b.HasOne("Corela15.Domain.Riesgo.EstadoAvanceRiesgo", "Estado")
@@ -12117,6 +12455,40 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("Usuario");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Seguridad.Opcion", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.Menu", "Menu")
+                        .WithMany()
+                        .HasForeignKey("CodigoMenu")
+                        .HasPrincipalKey("Codigo")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_opcion_menu_codigo_menu");
+
+                    b.Navigation("Menu");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.RolDatasetReporteria", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.DatasetReporteria", "Dataset")
+                        .WithMany()
+                        .HasForeignKey("CodigoDataset")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rol_dataset_reporteria_dataset_reporteria_codigo_dataset");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Rol", "Rol")
+                        .WithMany()
+                        .HasForeignKey("IdRol")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rol_dataset_reporteria_rol_id_rol");
+
+                    b.Navigation("Dataset");
+
+                    b.Navigation("Rol");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Seguridad.RolMenu", b =>
                 {
                     b.HasOne("Corela15.Domain.Seguridad.Menu", "Menu")
@@ -12134,6 +12506,27 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_rol_menu_rol_id_rol");
 
                     b.Navigation("Menu");
+
+                    b.Navigation("Rol");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.RolOpcion", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.Opcion", "Opcion")
+                        .WithMany()
+                        .HasForeignKey("CodigoOpcion")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rol_opcion_opcion_codigo_opcion");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Rol", "Rol")
+                        .WithMany()
+                        .HasForeignKey("IdRol")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rol_opcion_rol_id_rol");
+
+                    b.Navigation("Opcion");
 
                     b.Navigation("Rol");
                 });
@@ -12235,6 +12628,69 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("AgenciaActual");
 
                     b.Navigation("AgenciaOrigen");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioDatasetReporteria", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.DatasetReporteria", "Dataset")
+                        .WithMany()
+                        .HasForeignKey("CodigoDataset")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_dataset_reporteria_dataset_reporteria_codigo_dataset");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_dataset_reporteria_usuario_id_usuario");
+
+                    b.Navigation("Dataset");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioMenu", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.Menu", "Menu")
+                        .WithMany()
+                        .HasForeignKey("IdMenu")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_menu_menu_id_menu");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_menu_usuario_id_usuario");
+
+                    b.Navigation("Menu");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Seguridad.UsuarioOpcion", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.Opcion", "Opcion")
+                        .WithMany()
+                        .HasForeignKey("CodigoOpcion")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_opcion_opcion_codigo_opcion");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_usuario_opcion_usuario_id_usuario");
+
+                    b.Navigation("Opcion");
 
                     b.Navigation("Usuario");
                 });

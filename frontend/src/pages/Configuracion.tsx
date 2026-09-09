@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Settings, Plus, X, Pencil, ShieldCheck, Building2, Calculator, PiggyBank, Landmark, Users, FileCheck } from 'lucide-react'
+import { Settings, Plus, X, Pencil, ShieldCheck, Building2, Calculator, PiggyBank, Landmark, Users, FileCheck, BarChart3, ListChecks } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -677,6 +677,20 @@ interface TipoEstructuraAsignado {
   asignado: boolean
 }
 
+interface DatasetReporteriaAsignado {
+  codigo: string
+  nombre: string
+  asignado: boolean
+}
+
+interface OpcionAsignada {
+  codigo: string
+  nombre: string
+  codigoMenu: string
+  nombreMenu: string
+  asignado: boolean
+}
+
 function PermisosDelRol({ rol, onClose }: { rol: Rol; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [seleccion, setSeleccion] = useState<Set<number> | null>(null)
@@ -882,6 +896,224 @@ function EstructurasDelRol({ rol, onClose }: { rol: Rol; onClose: () => void }) 
   )
 }
 
+// Segundo nivel de permiso, dentro del módulo "Reportería Gerencial" —
+// qué datasets (Cartera/Captaciones/Contabilidad/Socios/Solicitudes/
+// Vinculados/Nominal) puede consultar este rol. Mismo patrón exacto que
+// EstructurasDelRol (arriba), contra /roles/{id}/datasets-reporteria.
+function DatasetsDelRol({ rol, onClose }: { rol: Rol; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [seleccion, setSeleccion] = useState<Set<string> | null>(null)
+
+  const { data: datasets, isLoading } = useQuery<DatasetReporteriaAsignado[]>({
+    queryKey: ['config-rol-datasets', rol.id],
+    queryFn: async () => (await api.get(`/api/configuracion/roles/${rol.id}/datasets-reporteria`)).data,
+  })
+
+  useEffect(() => {
+    if (datasets && seleccion === null) {
+      setSeleccion(new Set(datasets.filter((d) => d.asignado).map((d) => d.codigo)))
+    }
+  }, [datasets, seleccion])
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      api.put(`/api/configuracion/roles/${rol.id}/datasets-reporteria`, {
+        codigosDataset: Array.from(seleccion ?? []),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-rol-datasets', rol.id] })
+    },
+  })
+
+  const alternar = (codigo: string) => {
+    setSeleccion((prev) => {
+      const siguiente = new Set(prev ?? [])
+      if (siguiente.has(codigo)) siguiente.delete(codigo)
+      else siguiente.add(codigo)
+      return siguiente
+    })
+  }
+
+  return (
+    <tr>
+      <Td colSpan={5}>
+        <div className="glass-card animate-zoom-in rounded-xl p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+              <BarChart3 size={15} /> Datasets de Reportería Gerencial para {rol.nombre}
+            </h4>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={16} />
+            </button>
+          </div>
+
+          <p className="mb-3 text-xs text-graphite-600">
+            "Nominal" expone identificación de socios — otorgarlo solo con aprobación explícita, nunca por defecto.
+          </p>
+
+          {isLoading && <p className="text-sm text-graphite-600">Cargando…</p>}
+
+          {datasets && seleccion && (
+            <>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {datasets.map((d) => (
+                  <button
+                    key={d.codigo}
+                    type="button"
+                    onClick={() => alternar(d.codigo)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      seleccion.has(d.codigo)
+                        ? d.codigo === 'nominal'
+                          ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                          : 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    }`}
+                  >
+                    {d.nombre}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => guardar.mutate()}
+                  disabled={guardar.isPending}
+                  className="btn-hover rounded-lg bg-gold-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {guardar.isPending ? 'Guardando…' : 'Guardar datasets'}
+                </button>
+                {guardar.isSuccess && <span className="text-xs text-petrol-700">Guardado.</span>}
+                {guardar.isError && <span className="text-xs text-red-700">No se pudo guardar.</span>}
+              </div>
+
+              <p className="mt-3 text-xs text-graphite-600">
+                Mismo criterio que los módulos: un cambio acá no afecta sesiones ya iniciadas, se aplica en el
+                próximo login.
+              </p>
+            </>
+          )}
+        </div>
+      </Td>
+    </tr>
+  )
+}
+
+// Tercer nivel de permiso, el más fino y genérico: un reporte o una
+// acción puntual dentro de CUALQUIER módulo (ver Opcion.cs). Agrupado por
+// módulo real en la propia pantalla (no una tabla plana) para que siga
+// siendo manejable a medida que se sumen opciones de más módulos —
+// pedido explícito del usuario ("super manejable y fácil").
+function OpcionesDelRol({ rol, onClose }: { rol: Rol; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [seleccion, setSeleccion] = useState<Set<string> | null>(null)
+
+  const { data: opciones, isLoading } = useQuery<OpcionAsignada[]>({
+    queryKey: ['config-rol-opciones', rol.id],
+    queryFn: async () => (await api.get(`/api/configuracion/roles/${rol.id}/opciones`)).data,
+  })
+
+  useEffect(() => {
+    if (opciones && seleccion === null) {
+      setSeleccion(new Set(opciones.filter((o) => o.asignado).map((o) => o.codigo)))
+    }
+  }, [opciones, seleccion])
+
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, OpcionAsignada[]>()
+    for (const o of opciones ?? []) {
+      mapa.set(o.nombreMenu, [...(mapa.get(o.nombreMenu) ?? []), o])
+    }
+    return mapa
+  }, [opciones])
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      api.put(`/api/configuracion/roles/${rol.id}/opciones`, { codigosOpcion: Array.from(seleccion ?? []) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config-rol-opciones', rol.id] }),
+  })
+
+  const alternar = (codigo: string) => {
+    setSeleccion((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+
+  return (
+    <tr>
+      <Td colSpan={5}>
+        <div className="glass-card animate-zoom-in rounded-xl p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+              <ListChecks size={15} /> Opciones (reportes y acciones puntuales) para {rol.nombre}
+            </h4>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={16} />
+            </button>
+          </div>
+
+          <p className="mb-3 text-xs text-graphite-600">
+            Nivel más fino que el módulo: dale acceso a un reporte o acción puntual sin otorgar el módulo completo.
+          </p>
+
+          {isLoading && <p className="text-sm text-graphite-600">Cargando…</p>}
+          {!isLoading && (opciones?.length ?? 0) === 0 && (
+            <p className="text-sm text-graphite-600">Todavía no hay opciones registradas para ningún módulo.</p>
+          )}
+
+          {opciones && seleccion && (
+            <>
+              <div className="mb-3 flex flex-col gap-3">
+                {[...grupos.entries()].map(([nombreMenu, items]) => (
+                  <div key={nombreMenu}>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-graphite-600">{nombreMenu}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((o) => (
+                        <button
+                          key={o.codigo}
+                          type="button"
+                          onClick={() => alternar(o.codigo)}
+                          className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                            seleccion.has(o.codigo)
+                              ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                              : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                          }`}
+                        >
+                          {o.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => guardar.mutate()}
+                  disabled={guardar.isPending}
+                  className="btn-hover rounded-lg bg-gold-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {guardar.isPending ? 'Guardando…' : 'Guardar opciones'}
+                </button>
+                {guardar.isSuccess && <span className="text-xs text-petrol-700">Guardado.</span>}
+                {guardar.isError && <span className="text-xs text-red-700">No se pudo guardar.</span>}
+              </div>
+
+              <p className="mt-3 text-xs text-graphite-600">
+                Mismo criterio que los módulos: un cambio acá no afecta sesiones ya iniciadas, se aplica en el
+                próximo login.
+              </p>
+            </>
+          )}
+        </div>
+      </Td>
+    </tr>
+  )
+}
+
 function TabRoles() {
   const queryClient = useQueryClient()
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -892,6 +1124,8 @@ function TabRoles() {
   const [permiteConsolidadoCliente, setPermiteConsolidadoCliente] = useState(false)
   const [rolPermisos, setRolPermisos] = useState<Rol | null>(null)
   const [rolEstructuras, setRolEstructuras] = useState<Rol | null>(null)
+  const [rolDatasets, setRolDatasets] = useState<Rol | null>(null)
+  const [rolOpciones, setRolOpciones] = useState<Rol | null>(null)
 
   const { data, isLoading } = useQuery<Rol[]>({
     queryKey: ['config-roles'],
@@ -1061,6 +1295,20 @@ function TabRoles() {
                     >
                       <FileCheck size={13} /> Estructuras
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setRolDatasets(rolDatasets?.id === item.id ? null : item)}
+                      className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
+                    >
+                      <BarChart3 size={13} /> Datasets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRolOpciones(rolOpciones?.id === item.id ? null : item)}
+                      className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
+                    >
+                      <ListChecks size={13} /> Opciones
+                    </button>
                   </div>
                 </Td>
               </tr>
@@ -1069,6 +1317,12 @@ function TabRoles() {
               )}
               {rolEstructuras?.id === item.id && (
                 <EstructurasDelRol rol={item} onClose={() => setRolEstructuras(null)} />
+              )}
+              {rolDatasets?.id === item.id && (
+                <DatasetsDelRol rol={item} onClose={() => setRolDatasets(null)} />
+              )}
+              {rolOpciones?.id === item.id && (
+                <OpcionesDelRol rol={item} onClose={() => setRolOpciones(null)} />
               )}
             </Fragment>
           ))}

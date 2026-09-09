@@ -86,6 +86,16 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<RolMenu> RolesMenu => Set<RolMenu>();
     public DbSet<TipoEstructura> TiposEstructura => Set<TipoEstructura>();
     public DbSet<RolTipoEstructura> RolesTipoEstructura => Set<RolTipoEstructura>();
+    public DbSet<DatasetReporteria> DatasetsReporteria => Set<DatasetReporteria>();
+    public DbSet<RolDatasetReporteria> RolesDatasetReporteria => Set<RolDatasetReporteria>();
+    public DbSet<UsuarioMenu> UsuariosMenu => Set<UsuarioMenu>();
+    public DbSet<UsuarioDatasetReporteria> UsuariosDatasetReporteria => Set<UsuarioDatasetReporteria>();
+    public DbSet<Opcion> Opciones => Set<Opcion>();
+    public DbSet<RolOpcion> RolesOpcion => Set<RolOpcion>();
+    public DbSet<UsuarioOpcion> UsuariosOpcion => Set<UsuarioOpcion>();
+    public DbSet<Corela15.Domain.Reporteria.Tablero> TablerosReporteria => Set<Corela15.Domain.Reporteria.Tablero>();
+    public DbSet<Corela15.Domain.Reporteria.FavoritoTablero> FavoritosTablero => Set<Corela15.Domain.Reporteria.FavoritoTablero>();
+    public DbSet<Corela15.Domain.Reporteria.AuditoriaConsultaReporteria> AuditoriaConsultaReporteria => Set<Corela15.Domain.Reporteria.AuditoriaConsultaReporteria>();
     public DbSet<SolicitudIdempotente> SolicitudesIdempotentes => Set<SolicitudIdempotente>();
     public DbSet<SesionUsuario> SesionesUsuario => Set<SesionUsuario>();
     public DbSet<AccionUsuario> AccionesUsuario => Set<AccionUsuario>();

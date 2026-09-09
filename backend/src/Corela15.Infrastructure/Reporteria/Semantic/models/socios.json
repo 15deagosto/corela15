@@ -1,0 +1,50 @@
+{
+  "id": "socios",
+  "label": "Socios",
+  "description": "Vista agregada de la base de socios: conteo por agencia, estado, sector económico y asesor. NUNCA expone identificación, nombre, dirección, teléfono ni correo de socios (SUJETO.PERSONA) — solo cifras agregadas, según la Regla #3 de CLAUDE.md. El nombre del asesor sí se muestra: es información laboral (NOMINA/SEGURIDAD), no dato personal del socio.",
+  "roles": [],
+  "supportsSnapshot": false,
+
+  "baseSql": "FROM Softbank.CLIENTES.CLIENTE c JOIN Softbank.GENERAL.AGENCIA a ON a.ID = c.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.CLIENTES.ESTADOCLIENTE ec ON ec.CODIGO = c.CODIGOESTADO LEFT JOIN Softbank.CLIENTES.SECTOR_ECONOMICO se ON se.CODIGO = c.CODIGOSECTORECONOMICO LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = c.USUARIOOFICIAL",
+
+  "dimensions": [
+    { "id": "agencia",         "label": "Agencia",              "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "asesor",          "label": "Asesor / Oficial",      "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "estado",          "label": "Estado del socio",      "group": "Perfil",       "sql": "RTRIM(ec.NOMBRE)" },
+    { "id": "sectorEconomico", "label": "Sector económico",      "group": "Perfil",       "sql": "RTRIM(se.NOMBRE)" },
+    { "id": "exento",          "label": "Exento SEPS",           "group": "Perfil",       "sql": "CASE WHEN c.ESEXCENTO = 1 THEN 'Sí' ELSE 'No' END" },
+    { "id": "antiguedadBanda", "label": "Antigüedad",            "group": "Vinculación",  "sql": "CASE WHEN DATEDIFF(YEAR, c.FECHAINGRESO, GETDATE()) < 1 THEN '< 1 año' WHEN DATEDIFF(YEAR, c.FECHAINGRESO, GETDATE()) <= 3 THEN '1 a 3 años' WHEN DATEDIFF(YEAR, c.FECHAINGRESO, GETDATE()) <= 5 THEN '3 a 5 años' WHEN DATEDIFF(YEAR, c.FECHAINGRESO, GETDATE()) <= 10 THEN '5 a 10 años' ELSE 'Más de 10 años' END" },
+    { "id": "anioIngreso",     "label": "Año de ingreso",        "group": "Vinculación",  "sql": "YEAR(c.FECHAINGRESO)" },
+    { "id": "mesIngreso",      "label": "Mes de ingreso",        "group": "Vinculación",  "sql": "FORMAT(c.FECHAINGRESO, 'yyyy-MM')" }
+  ],
+
+  "measures": [
+    { "id": "socios",              "label": "Socios",                    "format": "int",   "sql": "COUNT(*)" },
+    { "id": "antiguedadPromAnios", "label": "Antigüedad promedio (años)","format": "num",   "sql": "AVG(CAST(DATEDIFF(DAY, c.FECHAINGRESO, GETDATE()) AS DECIMAL(18,2)) / 365.25)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "estado", "label": "Estado del socio", "type": "multi",
+      "sql": "c.CODIGOESTADO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.CLIENTES.ESTADOCLIENTE ORDER BY 2"
+    },
+    {
+      "id": "sectorEconomico", "label": "Sector económico", "type": "multi",
+      "sql": "c.CODIGOSECTORECONOMICO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.CLIENTES.SECTOR_ECONOMICO WHERE ACTIVA = 1 ORDER BY 2"
+    },
+    {
+      "id": "asesor", "label": "Asesor / Oficial", "type": "multi",
+      "sql": "RTRIM(u.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(u.NOMBRE) FROM Softbank.SEGURIDAD.USUARIO u JOIN Softbank.CLIENTES.CLIENTE c ON c.USUARIOOFICIAL = u.USUARIO ORDER BY 1"
+    },
+    { "id": "fechaDesde", "label": "Ingresado desde", "type": "dateFrom", "sql": "c.FECHAINGRESO" },
+    { "id": "fechaHasta", "label": "Ingresado hasta", "type": "dateTo",   "sql": "c.FECHAINGRESO" }
+  ]
+}

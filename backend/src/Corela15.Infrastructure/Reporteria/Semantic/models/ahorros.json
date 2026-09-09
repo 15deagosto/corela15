@@ -1,0 +1,47 @@
+{
+  "id": "ahorros",
+  "label": "Captaciones — Ahorros",
+  "description": "Cuentas de ahorro (vista, cliente, estudiantil, programado, etc.). El saldo se arma sumando AHORROS.CUENTA_ITEMSALDO filtrado a ítems que suman al disponible (ITEMSALDO.SUMASALDO=1) — la cuenta no tiene columna de saldo directa. Excluye Certificados de Aportación (patrimonio, no captación). Pendiente de validar con Negocios: si el saldo oficial reportado usa exactamente este filtro o distingue disponible de bloqueado/encaje — ver docs/modelo-datos-captaciones.md.",
+  "roles": [],
+  "supportsSnapshot": true,
+
+  "baseSql": "FROM Softbank.AHORROS.CUENTA {{T}} c JOIN Softbank.GENERAL.AGENCIA a ON a.ID = c.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = c.CODIGOUSUARIOOFICIAL LEFT JOIN Softbank.AHORROS.TIPO_CUENTA tc ON tc.CODIGO = c.CODIGOTIPOCUENTA LEFT JOIN Softbank.AHORROS.ESTADO_CUENTA ec ON ec.CODIGO = c.CODIGOESTADO LEFT JOIN Softbank.AHORROS.CUENTA_CLIENTE cc ON cc.NUMEROCUENTA = c.NUMERO AND cc.PRINCIPAL = 1 LEFT JOIN (SELECT ci.NUMEROCUENTA, SUM(ci.SALDO) AS SALDO FROM Softbank.AHORROS.CUENTA_ITEMSALDO {{T}} ci JOIN Softbank.AHORROS.ITEMSALDO isd ON isd.ID = ci.IDITEM WHERE isd.SUMASALDO = 1 GROUP BY ci.NUMEROCUENTA) s ON s.NUMEROCUENTA = c.NUMERO",
+
+  "baseWhere": "c.CODIGOTIPOCUENTA <> '001'",
+
+  "dimensions": [
+    { "id": "agencia",    "label": "Agencia",           "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "oficial",    "label": "Oficial de cuenta",  "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "tipoCuenta", "label": "Tipo de cuenta",     "group": "Producto",     "sql": "RTRIM(tc.NOMBRE)" },
+    { "id": "estado",     "label": "Estado de la cuenta","group": "Producto",     "sql": "RTRIM(ec.NOMBRE)" },
+    { "id": "anio",       "label": "Año de apertura",    "group": "Tiempo",       "sql": "YEAR(c.FECHACREACION)" },
+    { "id": "mes",        "label": "Mes de apertura",    "group": "Tiempo",       "sql": "FORMAT(c.FECHACREACION, 'yyyy-MM')" }
+  ],
+
+  "measures": [
+    { "id": "cuentas",   "label": "Cuentas",          "format": "int",   "sql": "COUNT(*)" },
+    { "id": "socios",    "label": "Socios",           "format": "int",   "sql": "COUNT(DISTINCT cc.IDCLIENTE)", "description": "Socios distintos como titular principal (PRINCIPAL=1). No suma cotitulares." },
+    { "id": "saldo",     "label": "Saldo captado",    "format": "money", "sql": "SUM(ISNULL(s.SALDO, 0))" },
+    { "id": "saldoProm", "label": "Saldo promedio",   "format": "money", "sql": "SUM(ISNULL(s.SALDO, 0)) / NULLIF(COUNT(*), 0)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "tipoCuenta", "label": "Tipo de cuenta", "type": "multi",
+      "sql": "RTRIM(tc.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.AHORROS.TIPO_CUENTA WHERE CODIGO <> '001' ORDER BY 1"
+    },
+    {
+      "id": "estado", "label": "Estado de la cuenta", "type": "multi",
+      "sql": "c.CODIGOESTADO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.AHORROS.ESTADO_CUENTA ORDER BY 2"
+    },
+    { "id": "fechaDesde", "label": "Abierta desde", "type": "dateFrom", "sql": "c.FECHACREACION" },
+    { "id": "fechaHasta", "label": "Abierta hasta", "type": "dateTo",   "sql": "c.FECHACREACION" }
+  ]
+}

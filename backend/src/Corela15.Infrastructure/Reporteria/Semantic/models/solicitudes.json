@@ -1,0 +1,52 @@
+{
+  "id": "solicitudes",
+  "label": "Solicitudes de Crédito",
+  "description": "Solicitudes de crédito (previas al desembolso): estado del trámite, montos solicitados vs. aprobados y anulaciones. Estados según el reporte oficial SOLICITUD DE PRÉSTAMO del core: Digitada, Ingresada, En comité, Aprobada, Negada, Anulada, Liquidada, Verificación.",
+  "roles": [],
+  "supportsSnapshot": false,
+
+  "baseSql": "FROM Softbank.CREDITO.SOLICITUD_PRESTAMO sp JOIN Softbank.GENERAL.AGENCIA a ON a.ID = sp.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = sp.CODIGOUSUARIO LEFT JOIN Softbank.CREDITO.TIPO_PRESTAMO tp ON tp.CODIGO = sp.CODIGOTIPOPRESTAMO",
+
+  "dimensions": [
+    { "id": "agencia",         "label": "Agencia",              "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "asesor",          "label": "Asesor",               "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "tipo",            "label": "Tipo de crédito",       "group": "Producto",     "sql": "RTRIM(tp.NOMBRE)" },
+    { "id": "estadoSolicitud", "label": "Estado de la solicitud","group": "Trámite",      "sql": "CASE sp.CODIGOESTADOSOLICITUD WHEN 'LI' THEN 'Liquidada' WHEN 'NE' THEN 'Negada' WHEN 'IN' THEN 'Ingresada' WHEN 'AP' THEN 'Aprobada' WHEN 'AN' THEN 'Anulada' WHEN 'DI' THEN 'Digitada' WHEN 'CO' THEN 'En comité' WHEN 'VE' THEN 'Verificación' ELSE sp.CODIGOESTADOSOLICITUD END" },
+    { "id": "vinculada",       "label": "Solicitud vinculada",   "group": "Riesgo",       "sql": "CASE WHEN sp.ESVINCULADO = 1 THEN 'Sí' ELSE 'No' END" },
+    { "id": "anio",            "label": "Año de la solicitud",   "group": "Tiempo",       "sql": "YEAR(sp.FECHASISTEMA)" },
+    { "id": "mes",             "label": "Mes de la solicitud",   "group": "Tiempo",       "sql": "FORMAT(sp.FECHASISTEMA, 'yyyy-MM')" }
+  ],
+
+  "measures": [
+    { "id": "solicitudes",     "label": "Solicitudes",          "format": "int",   "sql": "COUNT(*)" },
+    { "id": "montoSolicitado", "label": "Monto solicitado",     "format": "money", "sql": "SUM(sp.MONTOSOLICITADO)" },
+    { "id": "montoAprobado",   "label": "Monto aprobado",       "format": "money", "sql": "SUM(sp.MONTOAPROBADO)" },
+    { "id": "anuladas",        "label": "Anuladas",             "format": "int",   "sql": "SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'AN' THEN 1 ELSE 0 END)", "higherIsWorse": true },
+    { "id": "pctAnuladas",     "label": "% Anuladas",           "format": "pct",   "sql": "(CAST(SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'AN' THEN 1 ELSE 0 END) AS DECIMAL(18,4)) / NULLIF(COUNT(*), 0)) * 100", "higherIsWorse": true, "description": "Anuladas sobre el total de solicitudes del corte filtrado." },
+    { "id": "negadas",         "label": "Negadas",              "format": "int",   "sql": "SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'NE' THEN 1 ELSE 0 END)", "higherIsWorse": true },
+    { "id": "pctNegadas",      "label": "% Negadas",            "format": "pct",   "sql": "(CAST(SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'NE' THEN 1 ELSE 0 END) AS DECIMAL(18,4)) / NULLIF(COUNT(*), 0)) * 100", "higherIsWorse": true },
+    { "id": "liquidadas",      "label": "Liquidadas",           "format": "int",   "sql": "SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'LI' THEN 1 ELSE 0 END)" },
+    { "id": "pctLiquidadas",   "label": "% Liquidadas",         "format": "pct",   "sql": "(CAST(SUM(CASE WHEN sp.CODIGOESTADOSOLICITUD = 'LI' THEN 1 ELSE 0 END) AS DECIMAL(18,4)) / NULLIF(COUNT(*), 0)) * 100" },
+    { "id": "ticketSolicitado","label": "Ticket solicitado prom.","format": "money","sql": "SUM(sp.MONTOSOLICITADO) / NULLIF(COUNT(*), 0)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "asesor", "label": "Asesor", "type": "multi",
+      "sql": "RTRIM(u.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(u.NOMBRE) FROM Softbank.SEGURIDAD.USUARIO u JOIN Softbank.CREDITO.SOLICITUD_PRESTAMO sp ON sp.CODIGOUSUARIO = u.USUARIO ORDER BY 1"
+    },
+    {
+      "id": "estadoSolicitud", "label": "Estado de la solicitud", "type": "multi",
+      "sql": "sp.CODIGOESTADOSOLICITUD",
+      "catalogSql": "SELECT DISTINCT CODIGOESTADOSOLICITUD, CASE CODIGOESTADOSOLICITUD WHEN 'LI' THEN 'Liquidada' WHEN 'NE' THEN 'Negada' WHEN 'IN' THEN 'Ingresada' WHEN 'AP' THEN 'Aprobada' WHEN 'AN' THEN 'Anulada' WHEN 'DI' THEN 'Digitada' WHEN 'CO' THEN 'En comité' WHEN 'VE' THEN 'Verificación' ELSE CODIGOESTADOSOLICITUD END FROM Softbank.CREDITO.SOLICITUD_PRESTAMO ORDER BY 2"
+    },
+    { "id": "fechaDesde", "label": "Solicitado desde", "type": "dateFrom", "sql": "sp.FECHASISTEMA" },
+    { "id": "fechaHasta", "label": "Solicitado hasta", "type": "dateTo",   "sql": "sp.FECHASISTEMA" }
+  ]
+}

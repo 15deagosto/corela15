@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2 } from 'lucide-react'
+import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2, Lock, BarChart3, ListChecks } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -100,6 +100,30 @@ interface RolAsignado {
   id: number
   nombre: string
   asignado: boolean
+}
+
+interface MenuUsuario {
+  idMenu: number
+  codigo: string
+  nombre: string
+  otorgadoPorRol: boolean
+  otorgadoDirecto: boolean
+}
+
+interface DatasetUsuario {
+  codigo: string
+  nombre: string
+  otorgadoPorRol: boolean
+  otorgadoDirecto: boolean
+}
+
+interface OpcionUsuario {
+  codigo: string
+  nombre: string
+  codigoMenu: string
+  nombreMenu: string
+  otorgadoPorRol: boolean
+  otorgadoDirecto: boolean
 }
 
 function formatoFecha(iso: string) {
@@ -299,6 +323,7 @@ const TABS_GESTION = [
   { id: 'datos', label: 'Datos y acceso', icon: UserCog },
   { id: 'seguridad', label: 'Seguridad', icon: Settings2 },
   { id: 'roles', label: 'Roles', icon: ShieldCheck },
+  { id: 'permisos', label: 'Permisos directos', icon: Lock },
   { id: 'horarios', label: 'Horarios', icon: Clock },
   { id: 'temporal', label: 'Asignaciones temporales', icon: Building2 },
   { id: 'sesiones', label: 'Sesiones', icon: KeyRound },
@@ -630,6 +655,254 @@ function TabRoles({ usuario }: { usuario: UsuarioRol }) {
       >
         {guardar.isPending ? 'Guardando…' : 'Guardar roles'}
       </button>
+    </div>
+  )
+}
+
+/**
+ * Segundo camino real para otorgar acceso, además de los roles: darle un
+ * módulo (o un dataset de Reportería Gerencial) a esta persona puntual,
+ * sin crear ni tocar un rol para eso — el pedido explícito del usuario
+ * ("quiza a una sola persona dar un acceso"). Un chip ya otorgado por
+ * rol se muestra marcado y bloqueado (con un candado): quitarlo de acá no
+ * tendría efecto real, porque el rol lo sigue dando — para quitarlo hay
+ * que editar el rol (Configuración → Roles) o sacarle el rol a la
+ * persona. Solo los chips SIN el candado son togglea­bles: eso es lo que
+ * este panel realmente controla, el otorgamiento directo.
+ */
+function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
+  const queryClient = useQueryClient()
+  const [seleccionMenus, setSeleccionMenus] = useState<Set<number> | null>(null)
+  const [seleccionDatasets, setSeleccionDatasets] = useState<Set<string> | null>(null)
+
+  const { data: menus, isLoading: cargandoMenus } = useQuery<MenuUsuario[]>({
+    queryKey: ['usuario-menus', usuario.id],
+    queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}/menus`)).data,
+  })
+  const { data: datasets, isLoading: cargandoDatasets } = useQuery<DatasetUsuario[]>({
+    queryKey: ['usuario-datasets', usuario.id],
+    queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}/datasets-reporteria`)).data,
+  })
+  const { data: opciones, isLoading: cargandoOpciones } = useQuery<OpcionUsuario[]>({
+    queryKey: ['usuario-opciones', usuario.id],
+    queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}/opciones`)).data,
+  })
+  const [seleccionOpciones, setSeleccionOpciones] = useState<Set<string> | null>(null)
+
+  useEffect(() => {
+    if (menus && seleccionMenus === null) {
+      setSeleccionMenus(new Set(menus.filter((m) => m.otorgadoDirecto).map((m) => m.idMenu)))
+    }
+  }, [menus, seleccionMenus])
+  useEffect(() => {
+    if (datasets && seleccionDatasets === null) {
+      setSeleccionDatasets(new Set(datasets.filter((d) => d.otorgadoDirecto).map((d) => d.codigo)))
+    }
+  }, [datasets, seleccionDatasets])
+  useEffect(() => {
+    if (opciones && seleccionOpciones === null) {
+      setSeleccionOpciones(new Set(opciones.filter((o) => o.otorgadoDirecto).map((o) => o.codigo)))
+    }
+  }, [opciones, seleccionOpciones])
+
+  const opcionesPorModulo = useMemo(() => {
+    const mapa = new Map<string, OpcionUsuario[]>()
+    for (const o of opciones ?? []) {
+      mapa.set(o.nombreMenu, [...(mapa.get(o.nombreMenu) ?? []), o])
+    }
+    return mapa
+  }, [opciones])
+
+  const guardarMenus = useMutation({
+    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/menus`, { idsMenu: Array.from(seleccionMenus ?? []) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-menus', usuario.id] }),
+  })
+  const guardarDatasets = useMutation({
+    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/datasets-reporteria`, { codigosDataset: Array.from(seleccionDatasets ?? []) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-datasets', usuario.id] }),
+  })
+  const guardarOpciones = useMutation({
+    mutationFn: async () => api.put(`/api/usuarios/${usuario.id}/opciones`, { codigosOpcion: Array.from(seleccionOpciones ?? []) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-opciones', usuario.id] }),
+  })
+
+  const alternarMenu = (id: number) => {
+    setSeleccionMenus((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
+  const alternarDataset = (codigo: string) => {
+    setSeleccionDatasets((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+  const alternarOpcion = (codigo: string) => {
+    setSeleccionOpciones((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="text-xs text-graphite-600">
+        Esto se suma a lo que ya le dan sus roles, nunca lo reemplaza. Un chip con candado ya está otorgado por rol
+        — para quitarlo, editá el rol en Configuración o sacale el rol a la persona.
+      </p>
+
+      <div>
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+          <ShieldCheck size={14} /> Módulos
+        </p>
+        {cargandoMenus || !menus || !seleccionMenus ? (
+          <p className="text-sm text-graphite-600">Cargando…</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {menus.map((m) => {
+                const marcado = m.otorgadoPorRol || seleccionMenus.has(m.idMenu)
+                return (
+                  <button
+                    key={m.idMenu}
+                    type="button"
+                    disabled={m.otorgadoPorRol}
+                    onClick={() => alternarMenu(m.idMenu)}
+                    title={m.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                    className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      marcado
+                        ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    } ${m.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                  >
+                    {m.otorgadoPorRol && <Lock size={11} />}
+                    {m.nombre}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => guardarMenus.mutate()}
+              disabled={guardarMenus.isPending}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {guardarMenus.isPending ? 'Guardando…' : 'Guardar módulos directos'}
+            </button>
+          </>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+          <BarChart3 size={14} /> Datasets de Reportería Gerencial
+        </p>
+        {cargandoDatasets || !datasets || !seleccionDatasets ? (
+          <p className="text-sm text-graphite-600">Cargando…</p>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-graphite-600">
+              "Cartera Nominal" expone identificación de socios — otorgalo solo con aprobación explícita.
+            </p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {datasets.map((d) => {
+                const marcado = d.otorgadoPorRol || seleccionDatasets.has(d.codigo)
+                return (
+                  <button
+                    key={d.codigo}
+                    type="button"
+                    disabled={d.otorgadoPorRol}
+                    onClick={() => alternarDataset(d.codigo)}
+                    title={d.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                    className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      marcado
+                        ? d.codigo === 'nominal'
+                          ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                          : 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                        : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    } ${d.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                  >
+                    {d.otorgadoPorRol && <Lock size={11} />}
+                    {d.nombre}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => guardarDatasets.mutate()}
+              disabled={guardarDatasets.isPending}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {guardarDatasets.isPending ? 'Guardando…' : 'Guardar datasets directos'}
+            </button>
+          </>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+          <ListChecks size={14} /> Opciones (reportes y acciones puntuales)
+        </p>
+        <p className="mb-2 text-xs text-graphite-600">
+          El nivel más fino: dale acceso a un solo reporte o una sola acción de un módulo, sin otorgar el módulo
+          completo — el caso real de "esta persona solo necesita ver este reporte".
+        </p>
+        {cargandoOpciones || !opciones || !seleccionOpciones ? (
+          <p className="text-sm text-graphite-600">Cargando…</p>
+        ) : opciones.length === 0 ? (
+          <p className="text-sm text-graphite-600">Todavía no hay opciones registradas para ningún módulo.</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-col gap-3">
+              {[...opcionesPorModulo.entries()].map(([nombreMenu, items]) => (
+                <div key={nombreMenu}>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-graphite-600">{nombreMenu}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {items.map((o) => {
+                      const marcado = o.otorgadoPorRol || seleccionOpciones.has(o.codigo)
+                      return (
+                        <button
+                          key={o.codigo}
+                          type="button"
+                          disabled={o.otorgadoPorRol}
+                          onClick={() => alternarOpcion(o.codigo)}
+                          title={o.otorgadoPorRol ? 'Otorgado por un rol de esta persona' : 'Otorgamiento directo'}
+                          className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                            marcado
+                              ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                              : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                          } ${o.otorgadoPorRol ? 'cursor-not-allowed opacity-80' : ''}`}
+                        >
+                          {o.otorgadoPorRol && <Lock size={11} />}
+                          {o.nombre}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => guardarOpciones.mutate()}
+              disabled={guardarOpciones.isPending}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {guardarOpciones.isPending ? 'Guardando…' : 'Guardar opciones directas'}
+            </button>
+          </>
+        )}
+      </div>
+
+      <p className="text-xs text-graphite-600">
+        Un cambio acá no afecta sesiones ya iniciadas — se aplica en el próximo login (o al recargar la app, que
+        refresca los permisos solo).
+      </p>
     </div>
   )
 }
@@ -1029,6 +1302,7 @@ function GestionarUsuarioModal({
             {tab === 'datos' && <TabDatosYAcceso usuario={usuario} onGuardado={() => {}} />}
             {tab === 'seguridad' && <TabSeguridad usuario={usuario} />}
             {tab === 'roles' && <TabRoles usuario={usuario} />}
+            {tab === 'permisos' && <TabPermisosDirectos usuario={usuario} />}
             {tab === 'horarios' && <TabHorarios usuario={usuario} />}
             {tab === 'temporal' && <TabAsignacionesTemporales usuario={usuario} />}
             {tab === 'sesiones' && <TabSesiones usuario={usuario} />}

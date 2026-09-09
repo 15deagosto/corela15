@@ -1,0 +1,38 @@
+{
+  "id": "contabilidad",
+  "label": "Contabilidad — Balance de Comprobación",
+  "description": "⚠️ EN VALIDACIÓN — el balance general (Activo+Pasivo+Patrimonio+Ingresos+Gastos) no está cerrando en cero al sumar todas las cuentas de detalle; hay un residuo de ~$420 mil (~1,49% del activo) sin explicar todavía. Ubicado: vive por completo en SALDOINICIAL (no lo genera el movimiento del día ni el arrastre día a día) y crece en pequeños incrementos a lo largo de toda la serie histórica desde 2023 — patrón consistente con redondeo acumulado en procesos automáticos del core (interés/provisión diarios), no con un asiento único ni una migración. Ver docs/modelo-datos-contabilidad.md. Usar solo para explorar cuentas puntuales, NO como cifra oficial de Activo/Pasivo/Patrimonio hasta que Contabilidad/TI lo confirme. Saldos al corte más reciente disponible (SALDOCONTABLE se reconstruye a diario). Solo incluye cuentas de detalle (CUENTACONTABLE.ESDEMOVIMIENTO=1) — las cuentas de grupo/resumen ya son la suma de sus hijas.",
+  "roles": [],
+  "supportsSnapshot": false,
+
+  "baseSql": "FROM Softbank.CONTABILIDAD.SALDOCONTABLE sc JOIN Softbank.CONTABILIDAD.CUENTACONTABLE cc ON cc.CODIGO = sc.CODIGOCUENTA JOIN Softbank.GENERAL.AGENCIA a ON a.ID = sc.IDAGENCIA AND a.CODIGO <> 'CSD'",
+
+  "baseWhere": "cc.ESDEMOVIMIENTO = 1 AND cc.ACTIVA = 1 AND sc.FECHA = (SELECT MAX(FECHA) FROM Softbank.CONTABILIDAD.SALDOCONTABLE)",
+
+  "dimensions": [
+    { "id": "agencia",     "label": "Agencia",              "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "cuenta",      "label": "Cuenta contable",       "group": "Plan de cuentas", "sql": "RTRIM(cc.NOMBRE)" },
+    { "id": "codigoCuenta","label": "Código de cuenta",      "group": "Plan de cuentas", "sql": "cc.CODIGO" },
+    { "id": "grupoMayor",  "label": "Grupo mayor (nivel 1)", "group": "Plan de cuentas", "sql": "CASE LEFT(cc.CODIGO, 1) WHEN '1' THEN 'Activo' WHEN '2' THEN 'Pasivo' WHEN '3' THEN 'Patrimonio' WHEN '4' THEN 'Gastos' WHEN '5' THEN 'Ingresos' WHEN '6' THEN 'Cuentas contingentes' WHEN '7' THEN 'Cuentas de orden' ELSE 'Otro' END" }
+  ],
+
+  "measures": [
+    { "id": "saldo",       "label": "Saldo",           "format": "money", "sql": "SUM(sc.SALDOINICIAL + sc.TOTALDEBITO - sc.TOTALCREDITO)", "description": "El signo ya refleja la naturaleza de la cuenta: Activo/Gastos positivo, Pasivo/Patrimonio/Ingresos negativo." },
+    { "id": "totalDebito", "label": "Movimiento débito (hoy)",  "format": "money", "sql": "SUM(sc.TOTALDEBITO)" },
+    { "id": "totalCredito","label": "Movimiento crédito (hoy)", "format": "money", "sql": "SUM(sc.TOTALCREDITO)" },
+    { "id": "cuentas",     "label": "Cuentas",         "format": "int",   "sql": "COUNT(*)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "grupoMayor", "label": "Grupo mayor", "type": "multi",
+      "sql": "CASE LEFT(cc.CODIGO, 1) WHEN '1' THEN 'Activo' WHEN '2' THEN 'Pasivo' WHEN '3' THEN 'Patrimonio' WHEN '4' THEN 'Gastos' WHEN '5' THEN 'Ingresos' WHEN '6' THEN 'Cuentas contingentes' WHEN '7' THEN 'Cuentas de orden' ELSE 'Otro' END",
+      "catalogSql": "SELECT DISTINCT CASE LEFT(CODIGO, 1) WHEN '1' THEN 'Activo' WHEN '2' THEN 'Pasivo' WHEN '3' THEN 'Patrimonio' WHEN '4' THEN 'Gastos' WHEN '5' THEN 'Ingresos' WHEN '6' THEN 'Cuentas contingentes' WHEN '7' THEN 'Cuentas de orden' ELSE 'Otro' END FROM Softbank.CONTABILIDAD.CUENTACONTABLE WHERE ESDEMOVIMIENTO = 1 AND ACTIVA = 1 ORDER BY 1"
+    }
+  ]
+}

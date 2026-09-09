@@ -18,6 +18,7 @@ import { Proveeduria } from '../pages/Proveeduria'
 import { EstructurasFinancieras } from '../pages/EstructurasFinancieras'
 import { MesaServicio } from '../pages/MesaServicio'
 import { Planificacion } from '../pages/Planificacion'
+import { Reporteria } from '../pages/Reporteria'
 
 /** Componente real por slug de pestaña — única fuente de verdad que usa `TabsWorkspace` para montar cada módulo abierto. */
 export const componentesPorSlug: Record<string, ComponentType> = {
@@ -40,4 +41,5 @@ export const componentesPorSlug: Record<string, ComponentType> = {
   'estructuras-financieras': EstructurasFinancieras,
   'mesa-servicio': MesaServicio,
   planificacion: Planificacion,
+  'reporteria-gerencial': Reporteria,
 }

@@ -44,9 +44,11 @@ public class AuthController(IAuthService authService) : ControllerBase
         var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
         var menus = User.FindAll("menu").Select(c => c.Value).ToList();
         var estructuras = User.FindAll("estructura").Select(c => c.Value).ToList();
+        var datasets = User.FindAll("dataset").Select(c => c.Value).ToList();
+        var opciones = User.FindAll("opcion").Select(c => c.Value).ToList();
         var idAgenciaEfectiva = int.Parse(User.FindFirstValue("agencia") ?? "0");
 
-        return Ok(new SesionActualResult(idUsuario, nombreUsuario, roles, menus, estructuras, idAgenciaEfectiva));
+        return Ok(new SesionActualResult(idUsuario, nombreUsuario, roles, menus, estructuras, datasets, opciones, idAgenciaEfectiva));
     }
 
     [HttpPost("logout")]

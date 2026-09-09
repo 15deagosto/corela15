@@ -1,0 +1,88 @@
+{
+  "id": "cartera",
+  "label": "Cartera de Crédito",
+  "description": "Cartera de crédito con descomposición vigente / vencido / no devenga, calificación de riesgo y provisiones. Validado contra el reporte oficial ÍNDICE DE MOROSIDAD del core.",
+  "roles": [],
+  "supportsSnapshot": true,
+
+  "baseSql": "FROM Softbank.COLOCACION.PRESTAMO {{T}} p JOIN Softbank.COLOCACION.PRESTAMO_CONSOLIDADO {{T}} pc ON pc.IDPRESTAMO = p.ID JOIN Softbank.CREDITO.CALIFICACION_CONTABLE_SEGMENTO ccs ON ccs.ID = p.IDCALIFICACIONCONTABLESEGMENTO LEFT JOIN Softbank.CREDITO.CALIFICACION_CONTABLE cc ON cc.CODIGO = ccs.CODIGOCALIFICACIONCONTABLE LEFT JOIN Softbank.CREDITO.DESTINO_FINANCIERO df ON df.CODIGO = ccs.CODIGODESTINO_FINANCIERO LEFT JOIN Softbank.COLOCACION.CALIFICACION_PRESTAMO_INFORMACION cpi ON cpi.CODIGOCALIFICACIONCONTABLE = ccs.CODIGOCALIFICACIONCONTABLE AND (CASE WHEN pc.DIASMORAACTUAL < 0 THEN 0 ELSE pc.DIASMORAACTUAL END) BETWEEN cpi.DIAINICIO AND cpi.DIAFIN AND cpi.ACTIVO = 1 JOIN Softbank.GENERAL.AGENCIA a ON a.ID = p.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = p.CODIGOUSUARIO LEFT JOIN Softbank.CREDITO.TIPO_PRESTAMO tp ON tp.CODIGO = p.CODIGOTIPOPRESTAMO LEFT JOIN Softbank.COLOCACION.ESTADO_PRESTAMO ep ON ep.CODIGO = p.CODIGOESTADO LEFT JOIN Softbank.COLOCACION.PRESTAMO_CLIENTE pcl ON pcl.IDPRESTAMO = p.ID AND pcl.ESPRINCIPAL = 1 LEFT JOIN (SELECT pr.IDPRESTAMO, SUM(CASE WHEN tv.ESVIGENTE = 1 THEN pr.CALCULADO - pr.COBRADO ELSE 0 END) AS VIGENTE, SUM(CASE WHEN tv.ESVENCIDO = 1 THEN pr.CALCULADO - pr.COBRADO ELSE 0 END) AS VENCIDO, SUM(CASE WHEN tv.ESNODEVENGA = 1 THEN pr.CALCULADO - pr.COBRADO ELSE 0 END) AS NDI FROM Softbank.COLOCACION.PRESTAMO {{T}} pp JOIN Softbank.COLOCACION.PRESTAMO_RUBRO {{T}} pr ON pr.IDPRESTAMO = pp.ID JOIN Softbank.COLOCACION.PRESTAMO_RUBRO_CLASIFICACION {{T}} prc ON prc.IDPRESTAMORUBRO = pr.ID JOIN Softbank.COLOCACION.CLASIFICACION_CARTERA clc ON clc.ID = prc.IDCLASIFICACIONCARTERA JOIN Softbank.COLOCACION.TIPO_VENCIMIENTO tv ON tv.CODIGO = clc.CODIGOTIPOVENCIMIENTO WHERE pp.CODIGOESTADO <> 'C' GROUP BY pr.IDPRESTAMO) s ON s.IDPRESTAMO = p.ID",
+
+  "baseWhere": "p.CODIGOESTADO <> 'C'",
+
+  "dimensions": [
+    { "id": "agencia",      "label": "Agencia",             "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "asesor",       "label": "Asesor",              "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "segmento",     "label": "Segmento contable",   "group": "Producto",     "sql": "RTRIM(cc.NOMBRE)" },
+    { "id": "destino",      "label": "Destino financiero",  "group": "Producto",     "sql": "RTRIM(df.NOMBRE)" },
+    { "id": "tipo",         "label": "Tipo de crédito",     "group": "Producto",     "sql": "RTRIM(tp.NOMBRE)" },
+    { "id": "calificacion", "label": "Calificación",        "group": "Riesgo",       "sql": "CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END" },
+    { "id": "estado",       "label": "Estado del crédito",  "group": "Riesgo",       "sql": "RTRIM(ep.NOMBRE)" },
+    { "id": "bandaMora",    "label": "Banda de mora",       "group": "Riesgo",       "sql": "CASE WHEN pc.DIASMORAACTUAL <= 0 THEN '0 - Al día' WHEN pc.DIASMORAACTUAL <= 15 THEN '1 a 15 días' WHEN pc.DIASMORAACTUAL <= 30 THEN '16 a 30 días' WHEN pc.DIASMORAACTUAL <= 60 THEN '31 a 60 días' WHEN pc.DIASMORAACTUAL <= 90 THEN '61 a 90 días' WHEN pc.DIASMORAACTUAL <= 180 THEN '91 a 180 días' ELSE 'Más de 180 días' END" },
+    { "id": "grupoRiesgo",  "label": "Grupo de riesgo",     "group": "Riesgo",       "sql": "CASE WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) IN ('A-1','A-2','A-3') THEN 'A - Riesgo normal' WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) IN ('B-1','B-2') THEN 'B - Riesgo potencial' WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) IN ('C-1','C-2') THEN 'C - Deficiente' WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) = 'D' THEN 'D - Dudoso recaudo' WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) = 'E' THEN 'E - Pérdida' ELSE 'Sin calificar' END" },
+    { "id": "esAlivio",     "label": "Producto de alivio",  "group": "Producto",     "sql": "CASE WHEN p.CODIGOTIPOPRESTAMO IN ('052','053','056','057') THEN 'Sí' ELSE 'No' END" },
+    { "id": "anio",         "label": "Año de otorgamiento", "group": "Tiempo",       "sql": "YEAR(p.FECHAADJUDICACION)" },
+    { "id": "mes",          "label": "Mes de otorgamiento", "group": "Tiempo",       "sql": "FORMAT(p.FECHAADJUDICACION, 'yyyy-MM')" },
+    { "id": "anioVence",    "label": "Año de vencimiento",  "group": "Tiempo",       "sql": "YEAR(p.FECHAVENCIMIENTO)" },
+    { "id": "frecuencia",   "label": "Frecuencia de pago",  "group": "Condiciones",  "sql": "CAST(p.FRECUENCIAPAGO AS NVARCHAR(20))" },
+    { "id": "vinculado",    "label": "Crédito vinculado",   "group": "Condiciones",  "sql": "CASE WHEN p.ESVINCULADO = 1 THEN 'Sí' ELSE 'No' END" }
+  ],
+
+  "measures": [
+    { "id": "operaciones",   "label": "Operaciones",              "format": "int",   "sql": "COUNT(*)" },
+    { "id": "socios",        "label": "Socios",                   "format": "int",   "sql": "COUNT(DISTINCT pcl.IDCLIENTE)", "description": "Socios distintos como titular principal. No suma codeudores." },
+    { "id": "saldo",         "label": "Cartera bruta",            "format": "money", "sql": "SUM(p.SALDO)" },
+    { "id": "vigente",       "label": "Vigente",                  "format": "money", "sql": "SUM(ISNULL(s.VIGENTE, 0))" },
+    { "id": "vencido",       "label": "Vencido",                  "format": "money", "sql": "SUM(ISNULL(s.VENCIDO, 0))", "higherIsWorse": true },
+    { "id": "ndi",           "label": "No devenga (NDI)",         "format": "money", "sql": "SUM(ISNULL(s.NDI, 0))", "higherIsWorse": true },
+    { "id": "improductiva",  "label": "Cartera improductiva",     "format": "money", "sql": "SUM(ISNULL(s.VENCIDO, 0) + ISNULL(s.NDI, 0))", "higherIsWorse": true, "description": "Vencido + NDI. Es el numerador de la morosidad SEPS." },
+    { "id": "moraSeps",      "label": "Morosidad SEPS",           "format": "pct",   "sql": "(SUM(ISNULL(s.VENCIDO, 0) + ISNULL(s.NDI, 0)) / NULLIF(SUM(p.SALDO), 0)) * 100", "higherIsWorse": true, "description": "(Vencido + NDI) / Cartera bruta. Mostrar solo vencido subreporta la mora." },
+    { "id": "pctVencido",    "label": "% Vencido",                "format": "pct",   "sql": "(SUM(ISNULL(s.VENCIDO, 0)) / NULLIF(SUM(p.SALDO), 0)) * 100", "higherIsWorse": true },
+    { "id": "pctNdi",        "label": "% No devenga",             "format": "pct",   "sql": "(SUM(ISNULL(s.NDI, 0)) / NULLIF(SUM(p.SALDO), 0)) * 100", "higherIsWorse": true },
+    { "id": "carteraRiesgo", "label": "Cartera en riesgo (B+)",   "format": "money", "sql": "SUM(CASE WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) IN ('B-1','B-2','C-1','C-2','D','E') THEN p.SALDO ELSE 0 END)", "higherIsWorse": true },
+    { "id": "pctRiesgo",     "label": "% Cartera en riesgo",      "format": "pct",   "sql": "(SUM(CASE WHEN (CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END) IN ('B-1','B-2','C-1','C-2','D','E') THEN p.SALDO ELSE 0 END) / NULLIF(SUM(p.SALDO), 0)) * 100", "higherIsWorse": true },
+    { "id": "provReq",       "label": "Provisión requerida",      "format": "money", "sql": "SUM(p.SALDO * ISNULL(cpi.PORCENTAJE_FIJO, 0) / 100)", "description": "Saldo por el porcentaje mínimo de la escalera de provisión." },
+    { "id": "pctProvReq",    "label": "% Provisión requerida",    "format": "pct",   "sql": "(SUM(p.SALDO * ISNULL(cpi.PORCENTAJE_FIJO, 0) / 100) / NULLIF(SUM(p.SALDO), 0)) * 100" },
+    { "id": "montoOtorgado", "label": "Monto otorgado",           "format": "money", "sql": "SUM(p.DEUDAINICIAL)" },
+    { "id": "valorEntregado","label": "Valor entregado",          "format": "money", "sql": "SUM(p.VALORENTREGADO)" },
+    { "id": "ticketProm",    "label": "Ticket promedio",          "format": "money", "sql": "SUM(p.SALDO) / NULLIF(COUNT(*), 0)" },
+    { "id": "diasMoraProm",  "label": "Días de mora (prom. pond.)","format": "num",  "sql": "SUM(CAST(CASE WHEN pc.DIASMORAACTUAL < 0 THEN 0 ELSE pc.DIASMORAACTUAL END AS DECIMAL(18,4)) * p.SALDO) / NULLIF(SUM(p.SALDO), 0)", "higherIsWorse": true, "description": "Ponderado por saldo, no promedio simple." },
+    { "id": "diasMoraMax",   "label": "Días de mora máximo",      "format": "int",   "sql": "MAX(CASE WHEN pc.DIASMORAACTUAL < 0 THEN 0 ELSE pc.DIASMORAACTUAL END)", "higherIsWorse": true },
+    { "id": "tasaProm",      "label": "Tasa promedio ponderada",  "format": "pct",   "sql": "SUM(CAST(p.TASA AS DECIMAL(18,6)) * p.SALDO) / NULLIF(SUM(p.SALDO), 0)" },
+    { "id": "plazoProm",     "label": "Cuotas promedio",          "format": "num",   "sql": "SUM(CAST(p.CUOTAS AS DECIMAL(18,4)) * p.SALDO) / NULLIF(SUM(p.SALDO), 0)" }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "asesor", "label": "Asesor", "type": "multi",
+      "sql": "RTRIM(u.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(u.NOMBRE) FROM Softbank.SEGURIDAD.USUARIO u JOIN Softbank.COLOCACION.PRESTAMO p ON p.CODIGOUSUARIO = u.USUARIO WHERE p.CODIGOESTADO <> 'C' ORDER BY 1"
+    },
+    {
+      "id": "segmento", "label": "Segmento contable", "type": "multi",
+      "sql": "RTRIM(cc.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.CREDITO.CALIFICACION_CONTABLE ORDER BY 1"
+    },
+    {
+      "id": "tipo", "label": "Tipo de crédito", "type": "multi",
+      "sql": "RTRIM(tp.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(tp.NOMBRE) FROM Softbank.CREDITO.TIPO_PRESTAMO tp JOIN Softbank.COLOCACION.PRESTAMO p ON p.CODIGOTIPOPRESTAMO = tp.CODIGO WHERE p.CODIGOESTADO <> 'C' ORDER BY 1"
+    },
+    {
+      "id": "calificacion", "label": "Calificación", "type": "multi",
+      "sql": "CASE WHEN p.CODIGOESTADO IN ('J','T') THEN p.CALIFICACION ELSE cpi.CALIFICACION END",
+      "catalogSql": "SELECT DISTINCT CALIFICACION FROM Softbank.COLOCACION.CALIFICACION_PRESTAMO_INFORMACION WHERE ACTIVO = 1 ORDER BY 1"
+    },
+    {
+      "id": "estado", "label": "Estado del crédito", "type": "multi",
+      "sql": "p.CODIGOESTADO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.COLOCACION.ESTADO_PRESTAMO WHERE CODIGO <> 'C' ORDER BY 2"
+    },
+    { "id": "fechaDesde", "label": "Otorgado desde", "type": "dateFrom", "sql": "p.FECHAADJUDICACION" },
+    { "id": "fechaHasta", "label": "Otorgado hasta", "type": "dateTo",   "sql": "p.FECHAADJUDICACION" }
+  ]
+}

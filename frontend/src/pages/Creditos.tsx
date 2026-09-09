@@ -8,6 +8,7 @@ import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/AuthContext'
 
 interface Producto {
   id: number
@@ -2270,29 +2271,60 @@ const COLUMNAS_ENTREGA_RECUPERACION: ColumnaExportable<EntregaRecuperacionItem>[
   { header: 'Diferencia', accessor: (e) => e.diferencia },
 ]
 
+type ReporteCreditosId =
+  | 'concesion'
+  | 'precancelados'
+  | 'vencimientos'
+  | 'cancelados'
+  | 'garantias'
+  | 'mora-asesor'
+  | 'indice-morosidad'
+  | 'spi-no-procesados'
+  | 'cartera-castigada'
+  | 'calificacion'
+  | 'gastos-judiciales'
+  | 'consolidado-tipo-cartera'
+  | 'seguro-desgravamen'
+  | 'castigada-agencia'
+  | 'castigada-cliente'
+  | 'item-credito'
+  | 'vinculados'
+  | 'por-convenio'
+  | 'abonos-convenio'
+  | 'entrega-recuperacion'
+
+const TODOS_LOS_REPORTES: [ReporteCreditosId, string][] = [
+  ['concesion', 'Concesión de crédito'],
+  ['precancelados', 'Créditos precancelados'],
+  ['vencimientos', 'Próximos vencimientos'],
+  ['cancelados', 'Créditos cancelados'],
+  ['garantias', 'Anexo garantías'],
+  ['mora-asesor', 'Créditos en mora por asesor'],
+  ['indice-morosidad', 'Índice de morosidad'],
+  ['spi-no-procesados', 'Débitos SPI no procesados'],
+  ['cartera-castigada', 'Anexo cartera castigada'],
+  ['calificacion', 'Calificación y provisión'],
+  ['gastos-judiciales', 'Gastos judiciales'],
+  ['consolidado-tipo-cartera', 'Consolidado por producto'],
+  ['seguro-desgravamen', 'Seguro desgravamen'],
+  ['castigada-agencia', 'Cartera castigada por agencia'],
+  ['castigada-cliente', 'Cartera castigada por cliente'],
+  ['item-credito', 'Anexo ítems de crédito'],
+  ['vinculados', 'Créditos vinculados'],
+  ['por-convenio', 'Préstamos por convenio'],
+  ['abonos-convenio', 'Abonos por convenio'],
+  ['entrega-recuperacion', 'Entrega vs recuperación'],
+]
+
 function SeccionReportesCreditos() {
-  const [reporte, setReporte] = useState<
-    | 'concesion'
-    | 'precancelados'
-    | 'vencimientos'
-    | 'cancelados'
-    | 'garantias'
-    | 'mora-asesor'
-    | 'indice-morosidad'
-    | 'spi-no-procesados'
-    | 'cartera-castigada'
-    | 'calificacion'
-    | 'gastos-judiciales'
-    | 'consolidado-tipo-cartera'
-    | 'seguro-desgravamen'
-    | 'castigada-agencia'
-    | 'castigada-cliente'
-    | 'item-credito'
-    | 'vinculados'
-    | 'por-convenio'
-    | 'abonos-convenio'
-    | 'entrega-recuperacion'
-  >('concesion')
+  const { tieneOpcion } = useAuth()
+  // Tercer nivel de permiso (ver Opcion.cs): cada reporte es su propia
+  // opción real (`creditos.reportes.<id>`) -- solo se muestran las
+  // pestañas de los reportes que esta persona tiene otorgados, por rol o
+  // directo, nunca la lista completa por defecto.
+  const reportesVisibles = TODOS_LOS_REPORTES.filter(([id]) => tieneOpcion(`creditos.reportes.${id}`))
+
+  const [reporte, setReporte] = useState<ReporteCreditosId>(reportesVisibles[0]?.[0] ?? 'concesion')
   const [desde, setDesde] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
   const [hasta, setHasta] = useState(() => new Date().toISOString().slice(0, 10))
   const [dias, setDias] = useState('30')
@@ -2432,31 +2464,11 @@ function SeccionReportesCreditos() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-lg border border-black/[0.08] p-1">
-          {(
-            [
-              ['concesion', 'Concesión de crédito'],
-              ['precancelados', 'Créditos precancelados'],
-              ['vencimientos', 'Próximos vencimientos'],
-              ['cancelados', 'Créditos cancelados'],
-              ['garantias', 'Anexo garantías'],
-              ['mora-asesor', 'Créditos en mora por asesor'],
-              ['indice-morosidad', 'Índice de morosidad'],
-              ['spi-no-procesados', 'Débitos SPI no procesados'],
-              ['cartera-castigada', 'Anexo cartera castigada'],
-              ['calificacion', 'Calificación y provisión'],
-              ['gastos-judiciales', 'Gastos judiciales'],
-              ['consolidado-tipo-cartera', 'Consolidado por producto'],
-              ['seguro-desgravamen', 'Seguro desgravamen'],
-              ['castigada-agencia', 'Cartera castigada por agencia'],
-              ['castigada-cliente', 'Cartera castigada por cliente'],
-              ['item-credito', 'Anexo ítems de crédito'],
-              ['vinculados', 'Créditos vinculados'],
-              ['por-convenio', 'Préstamos por convenio'],
-              ['abonos-convenio', 'Abonos por convenio'],
-              ['entrega-recuperacion', 'Entrega vs recuperación'],
-            ] as const
-          ).map(([id, label]) => (
+        <div className="flex flex-wrap gap-1 rounded-lg border border-black/[0.08] p-1">
+          {reportesVisibles.length === 0 && (
+            <p className="px-2 py-1 text-xs text-graphite-600">No tenés ningún reporte de Créditos otorgado todavía.</p>
+          )}
+          {reportesVisibles.map(([id, label]) => (
             <button
               key={id}
               type="button"

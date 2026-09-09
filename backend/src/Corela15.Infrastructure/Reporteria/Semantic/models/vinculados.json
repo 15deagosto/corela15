@@ -1,0 +1,42 @@
+{
+  "id": "vinculados",
+  "label": "Créditos Vinculados",
+  "description": "Créditos marcados como vinculados (ESVINCULADO=1): partes relacionadas según el Código Orgánico Monetario y Financiero (administradores, funcionarios que aprueban crédito, sus cónyuges o parientes, sociedades relacionadas). El core tiene un catálogo de causales (CLIENTES.CAUSAVINCULACION) pero las tablas de detalle que las asignarían por crédito (COLOCACION.PRESTAMO_VINCULADO, CREDITO.SOLICITUD_PRESTAMO_VINCULADO) están vacías en este ambiente — por eso este tablero solo puede mostrar el conteo y saldo marcados con el flag, sin desglose por causal. Reportar este vacío a TI/Negocios: si hay créditos vinculados reales, la causal regulatoria debería estar registrada.",
+  "roles": [],
+  "supportsSnapshot": true,
+
+  "baseSql": "FROM Softbank.COLOCACION.PRESTAMO p {{T}} JOIN Softbank.COLOCACION.PRESTAMO_CONSOLIDADO pc {{T}} ON pc.IDPRESTAMO = p.ID JOIN Softbank.GENERAL.AGENCIA a ON a.ID = p.IDAGENCIA AND a.CODIGO <> 'CSD' LEFT JOIN Softbank.SEGURIDAD.USUARIO u ON u.USUARIO = p.CODIGOUSUARIO LEFT JOIN Softbank.CREDITO.TIPO_PRESTAMO tp ON tp.CODIGO = p.CODIGOTIPOPRESTAMO LEFT JOIN Softbank.COLOCACION.ESTADO_PRESTAMO ep ON ep.CODIGO = p.CODIGOESTADO",
+
+  "baseWhere": "p.CODIGOESTADO <> 'C' AND p.ESVINCULADO = 1",
+
+  "dimensions": [
+    { "id": "agencia",     "label": "Agencia",             "group": "Organización", "sql": "RTRIM(a.NOMBRE)" },
+    { "id": "asesor",      "label": "Asesor",               "group": "Organización", "sql": "RTRIM(u.NOMBRE)" },
+    { "id": "tipo",        "label": "Tipo de crédito",       "group": "Producto",     "sql": "RTRIM(tp.NOMBRE)" },
+    { "id": "estado",      "label": "Estado del crédito",    "group": "Riesgo",       "sql": "RTRIM(ep.NOMBRE)" },
+    { "id": "bandaMora",   "label": "Banda de mora",         "group": "Riesgo",       "sql": "CASE WHEN pc.DIASMORAACTUAL <= 0 THEN '0 - Al día' WHEN pc.DIASMORAACTUAL <= 15 THEN '1 a 15 días' WHEN pc.DIASMORAACTUAL <= 30 THEN '16 a 30 días' WHEN pc.DIASMORAACTUAL <= 60 THEN '31 a 60 días' WHEN pc.DIASMORAACTUAL <= 90 THEN '61 a 90 días' ELSE 'Más de 90 días' END" },
+    { "id": "anio",        "label": "Año de otorgamiento",   "group": "Tiempo",       "sql": "YEAR(p.FECHAADJUDICACION)" }
+  ],
+
+  "measures": [
+    { "id": "operaciones",   "label": "Operaciones vinculadas", "format": "int",   "sql": "COUNT(*)" },
+    { "id": "saldo",         "label": "Saldo vinculado",        "format": "money", "sql": "SUM(p.SALDO)" },
+    { "id": "ticketProm",    "label": "Ticket promedio",        "format": "money", "sql": "SUM(p.SALDO) / NULLIF(COUNT(*), 0)" },
+    { "id": "diasMoraProm",  "label": "Días de mora (prom. pond.)", "format": "num", "sql": "SUM(CAST(CASE WHEN pc.DIASMORAACTUAL < 0 THEN 0 ELSE pc.DIASMORAACTUAL END AS DECIMAL(18,4)) * p.SALDO) / NULLIF(SUM(p.SALDO), 0)", "higherIsWorse": true }
+  ],
+
+  "filters": [
+    {
+      "id": "agencia", "label": "Agencia", "type": "multi",
+      "sql": "RTRIM(a.NOMBRE)",
+      "catalogSql": "SELECT DISTINCT RTRIM(NOMBRE) FROM Softbank.GENERAL.AGENCIA WHERE CODIGO <> 'CSD' AND ACTIVA = 1 ORDER BY 1"
+    },
+    {
+      "id": "estado", "label": "Estado del crédito", "type": "multi",
+      "sql": "p.CODIGOESTADO",
+      "catalogSql": "SELECT CODIGO, RTRIM(NOMBRE) FROM Softbank.COLOCACION.ESTADO_PRESTAMO WHERE CODIGO <> 'C' ORDER BY 2"
+    },
+    { "id": "fechaDesde", "label": "Otorgado desde", "type": "dateFrom", "sql": "p.FECHAADJUDICACION" },
+    { "id": "fechaHasta", "label": "Otorgado hasta", "type": "dateTo",   "sql": "p.FECHAADJUDICACION" }
+  ]
+}

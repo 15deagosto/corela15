@@ -51,6 +51,14 @@ public record MenuAsignadoDto(int IdMenu, string Codigo, string Nombre, bool Asi
 public record ActualizarRolMenuRequest(List<int> IdsMenu);
 
 public record TipoEstructuraDto(string Codigo, string Nombre, bool Activo);
+
+public record DatasetReporteriaDto(string Codigo, string Nombre, bool Activo);
+public record DatasetReporteriaAsignadoDto(string Codigo, string Nombre, bool Asignado);
+public record ActualizarRolDatasetReporteriaRequest(string[] CodigosDataset);
+
+public record OpcionDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool Activo);
+public record OpcionAsignadaDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool Asignado);
+public record ActualizarRolOpcionRequest(string[] CodigosOpcion);
 public record CrearTipoEstructuraRequest(string Codigo, string Nombre);
 public record ActualizarTipoEstructuraRequest(string Nombre, bool Activo);
 
@@ -555,6 +563,138 @@ public class ConfiguracionController(
         foreach (var codigo in request.CodigosTipoEstructura.Where(c => !codigosExistentes.Contains(c)))
         {
             db.RolesTipoEstructura.Add(new RolTipoEstructura { IdRol = id, CodigoTipoEstructura = codigo, Activo = true });
+        }
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    // ---- Datasets de Reportería Gerencial (segundo nivel de permiso,
+    // dentro del menú "reporteria-gerencial") — mismo patrón exacto que
+    // tipos-estructura: catálogo simple con CRUD directo, y asignación N:M
+    // por rol (rol_dataset_reporteria) reconciliando la lista completa.
+    // Faltaba desde la Ronda A (el seed inicial solo otorgó los datasets a
+    // ADMINISTRADOR por migración, sin pantalla real para ajustar otros
+    // roles) — cerrado acá.
+
+    [HttpGet("datasets-reporteria")]
+    public async Task<ActionResult<IReadOnlyList<DatasetReporteriaDto>>> DatasetsReporteria(CancellationToken ct)
+    {
+        var resultado = await db.DatasetsReporteria
+            .OrderBy(d => d.Nombre)
+            .Select(d => new DatasetReporteriaDto(d.Codigo, d.Nombre, d.Activo))
+            .ToListAsync(ct);
+        return Ok(resultado);
+    }
+
+    [HttpGet("roles/{id:int}/datasets-reporteria")]
+    public async Task<ActionResult<IReadOnlyList<DatasetReporteriaAsignadoDto>>> DatasetsReporteriaDelRol(int id, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var asignados = await db.RolesDatasetReporteria
+            .Where(rd => rd.IdRol == id && rd.Activo)
+            .Select(rd => rd.CodigoDataset)
+            .ToListAsync(ct);
+
+        var resultado = await db.DatasetsReporteria
+            .Where(d => d.Activo)
+            .OrderBy(d => d.Nombre)
+            .Select(d => new DatasetReporteriaAsignadoDto(d.Codigo, d.Nombre, asignados.Contains(d.Codigo)))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("roles/{id:int}/datasets-reporteria")]
+    public async Task<IActionResult> ActualizarDatasetsReporteriaDelRol(
+        int id, [FromBody] ActualizarRolDatasetReporteriaRequest request, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var existentes = await db.RolesDatasetReporteria.Where(rd => rd.IdRol == id).ToListAsync(ct);
+
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.CodigosDataset.Contains(existente.CodigoDataset);
+        }
+
+        var codigosExistentes = existentes.Select(e => e.CodigoDataset).ToHashSet();
+        foreach (var codigo in request.CodigosDataset.Where(c => !codigosExistentes.Contains(c)))
+        {
+            db.RolesDatasetReporteria.Add(new RolDatasetReporteria { IdRol = id, CodigoDataset = codigo, Activo = true });
+        }
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    // ---- Opciones (tercer nivel de permiso, genérico para cualquier
+    // módulo) — un reporte puntual, una acción puntual. Mismo patrón
+    // exacto que tipos-estructura/datasets-reporteria: catálogo simple +
+    // asignación N:M por rol. A diferencia de esos dos, esta tabla es
+    // reusable por cualquier módulo (el campo CodigoMenu solo agrupa en
+    // esta pantalla, ver Opcion.cs) — sembrada a mano, módulo por módulo,
+    // primer caso real: los 20 reportes de Créditos.
+
+    [HttpGet("opciones")]
+    public async Task<ActionResult<IReadOnlyList<OpcionDto>>> Opciones(CancellationToken ct)
+    {
+        var resultado = await db.Opciones
+            .OrderBy(o => o.CodigoMenu).ThenBy(o => o.Nombre)
+            .Select(o => new OpcionDto(o.Codigo, o.Nombre, o.CodigoMenu, o.Menu.Nombre, o.Activo))
+            .ToListAsync(ct);
+        return Ok(resultado);
+    }
+
+    [HttpGet("roles/{id:int}/opciones")]
+    public async Task<ActionResult<IReadOnlyList<OpcionAsignadaDto>>> OpcionesDelRol(int id, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var asignados = await db.RolesOpcion
+            .Where(ro => ro.IdRol == id && ro.Activo)
+            .Select(ro => ro.CodigoOpcion)
+            .ToListAsync(ct);
+
+        var resultado = await db.Opciones
+            .Where(o => o.Activo)
+            .OrderBy(o => o.CodigoMenu).ThenBy(o => o.Nombre)
+            .Select(o => new OpcionAsignadaDto(o.Codigo, o.Nombre, o.CodigoMenu, o.Menu.Nombre, asignados.Contains(o.Codigo)))
+            .ToListAsync(ct);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("roles/{id:int}/opciones")]
+    public async Task<IActionResult> ActualizarOpcionesDelRol(
+        int id, [FromBody] ActualizarRolOpcionRequest request, CancellationToken ct)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == id, ct))
+        {
+            return NotFound();
+        }
+
+        var existentes = await db.RolesOpcion.Where(ro => ro.IdRol == id).ToListAsync(ct);
+
+        foreach (var existente in existentes)
+        {
+            existente.Activo = request.CodigosOpcion.Contains(existente.CodigoOpcion);
+        }
+
+        var codigosExistentes = existentes.Select(e => e.CodigoOpcion).ToHashSet();
+        foreach (var codigo in request.CodigosOpcion.Where(c => !codigosExistentes.Contains(c)))
+        {
+            db.RolesOpcion.Add(new RolOpcion { IdRol = id, CodigoOpcion = codigo, Activo = true });
         }
 
         await db.SaveChangesAsync(ct);
