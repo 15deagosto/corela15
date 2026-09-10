@@ -39,6 +39,16 @@ export interface Modulo {
    * real de adentro es propia de esa app, separada de Corela15.
    */
   externalUrl?: string
+  /**
+   * Endpoint propio de Corela15 que emite un ticket de sesión real (corto,
+   * de un solo uso) para esa app externa -- si está presente, el clic pide
+   * el ticket primero y abre `externalUrl` ya autenticado con la sesión
+   * REAL de esa persona en la app destino (nunca una cuenta compartida).
+   * Si el pedido falla (sin cuenta del otro lado, sin permiso, error de
+   * red), cae solo al enlace externo simple de siempre -- nunca bloquea
+   * el clic.
+   */
+  ssoTicketEndpoint?: string
 }
 
 // Nombres pensados para quien usa el sistema (cajero, asesor, admin) — no
@@ -205,5 +215,6 @@ export const modulos: Modulo[] = [
     icon: KeyRound,
     estado: 'disponible',
     externalUrl: 'https://credvault.cooperativa15deagosto.fin.ec',
+    ssoTicketEndpoint: '/api/sso/credvault/ticket',
   },
 ]

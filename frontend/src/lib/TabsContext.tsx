@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useLocation, useNavigate } from 'react-router-dom'
 import { modulos } from '../modules'
 import { useAuth } from './AuthContext'
+import { abrirModuloExterno, urlDestinoModuloExterno } from './externalSso'
 
 export interface TabInfo {
   slug: string
@@ -89,12 +90,14 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       navigate('/', { replace: true })
       return
     }
-    const externalUrl = modulo !== TAB_INICIO ? modulos.find((m) => m.slug === modulo.slug)?.externalUrl : undefined
-    if (externalUrl) {
+    const moduloExterno = modulo !== TAB_INICIO ? modulos.find((m) => m.slug === modulo.slug) : undefined
+    if (moduloExterno?.externalUrl) {
       // App real aparte (ver modules.ts) -- si alguien escribe la ruta a
       // mano, redirige afuera en vez de intentar abrir una pestaña interna
       // sin componente real registrado en moduleComponents.tsx.
-      window.location.replace(externalUrl)
+      void urlDestinoModuloExterno(moduloExterno).then((destino) => {
+        if (destino) window.location.replace(destino)
+      })
       navigate('/', { replace: true })
       return
     }
@@ -107,7 +110,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
     if (tab.slug !== 'inicio' && !tieneMenu(tab.slug)) return
     const modulo = modulos.find((m) => m.slug === tab.slug)
     if (modulo?.externalUrl) {
-      window.open(modulo.externalUrl, '_blank', 'noopener,noreferrer')
+      void abrirModuloExterno(modulo)
       return
     }
     setTabs((prev) => (prev.some((t) => t.slug === tab.slug) ? prev : [...prev, tab]))

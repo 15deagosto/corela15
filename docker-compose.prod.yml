@@ -43,6 +43,11 @@ services:
       # Estructura:OF01 -- ningún otro endpoint del sistema la toca.
       # Credencial de SOLO LECTURA (siga_ro), nunca la de PII (cloudstudio).
       Softbank__ConnectionStringRo: ${SOFTBANK_CONNECTION_RO:-}
+      # SSO real hacia CredVault (ver SsoController.cs) -- mismo valor que
+      # SSO_SHARED_SECRET en el .env.prod de credvault-coac, nunca una
+      # contraseña real. Vacío = el ícono sigue funcionando como enlace
+      # externo simple, sin sesión automática.
+      CredVault__SsoSecret: ${CREDVAULT_SSO_SECRET:-}
     expose:
       - "8080"
 

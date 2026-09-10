@@ -2,6 +2,7 @@ import { LayoutDashboard, ExternalLink } from 'lucide-react'
 import { modulos, type EstadoModulo } from '../modules'
 import { useAuth } from '../lib/AuthContext'
 import { useTabs, TAB_INICIO } from '../lib/TabsContext'
+import { abrirModuloExterno } from '../lib/externalSso'
 
 const tagPorEstado: Record<Exclude<EstadoModulo, 'disponible'>, string> = {
   'en-construccion': 'EN DESARROLLO',
@@ -101,7 +102,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               // monta en el workspace de pestañas internas.
               const onClickModulo = m.externalUrl
                 ? () => {
-                    window.open(m.externalUrl, '_blank', 'noopener,noreferrer')
+                    void abrirModuloExterno(m)
                     onClose()
                   }
                 : () => irA({ slug: m.slug, path: m.path, nombre: m.nombre })

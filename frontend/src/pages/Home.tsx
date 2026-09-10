@@ -3,6 +3,7 @@ import { PageHeader } from '../components/PageHeader'
 import { modulos } from '../modules'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
+import { abrirModuloExterno } from '../lib/externalSso'
 
 const estadoTexto = {
   disponible: 'Disponible',
@@ -64,6 +65,14 @@ export function Home() {
                   href={m.externalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  // El href real queda de respaldo (clic derecho, clic con
+                  // rueda, "abrir en pestaña nueva") -- el clic normal se
+                  // intercepta para pedir primero el ticket de sesión real
+                  // y no obligar a loguearse de nuevo del otro lado.
+                  onClick={(e) => {
+                    e.preventDefault()
+                    void abrirModuloExterno(m)
+                  }}
                   title={`Abre ${m.nombre} en una pestaña nueva`}
                   className="btn-hover flex w-full rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm hover:border-gold-500/40"
                 >
