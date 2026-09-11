@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileCheck, Lock, Plus, X, IdCard, Landmark, Percent, CalendarDays, Download, RefreshCw } from 'lucide-react'
+import { FileCheck, Lock, Plus, X, IdCard, Landmark, Percent, CalendarDays, Download, RefreshCw, Package } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -703,6 +703,26 @@ function SeccionGenerarOf01() {
     onSuccess: setResultado,
   })
 
+  // Paquete real de envío -- XML + hash (.txt) comprimidos en un .zip con
+  // el nombre exacto que exige el manual (OF01_RUC_dd-mm-aaaa.zip). El
+  // backend arma el archivo completo; acá solo se dispara la descarga
+  // real del navegador, sin generar nada del lado del cliente.
+  const descargarPaquete = useMutation({
+    mutationFn: async () => {
+      const resp = await api.get(`${BASE}/of01/paquete?fechaCorte=${fechaCorte}`, { responseType: 'blob' })
+      const disposicion = resp.headers['content-disposition'] as string | undefined
+      const nombre = disposicion?.match(/filename="?([^"]+)"?/)?.[1] ?? `OF01_${fechaCorte}.zip`
+      const url = URL.createObjectURL(resp.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nombre
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    },
+  })
+
   // Única pantalla de todo el sistema que puede traer datos reales de
   // Softbank -- protegido por los mismos 2 permisos del módulo completo
   // (Menu:estructuras-financieras + Estructura:OF01). El resto de la app
@@ -743,7 +763,22 @@ function SeccionGenerarOf01() {
         >
           <RefreshCw size={15} className={sincronizar.isPending ? 'animate-spin' : ''} /> Sincronizar desde Softbank
         </button>
+        <button
+          type="button"
+          onClick={() => descargarPaquete.mutate()}
+          disabled={descargarPaquete.isPending}
+          title="Descarga el .zip real (XML + hash de seguridad) con el nombre exacto que exige el manual, listo para subir al Sistema de Gestión Técnica de Información de Acopio de la SEPS"
+          className="btn-hover flex items-center gap-1.5 rounded-lg border border-black/[0.08] px-4 py-2 text-sm font-medium text-graphite-700 disabled:opacity-50"
+        >
+          <Package size={15} /> Descargar paquete de envío (.zip)
+        </button>
       </div>
+
+      {descargarPaquete.isError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          No se pudo generar el paquete — revisá que la empresa tenga RUC configurado (Configuración → Empresa).
+        </div>
+      )}
 
       {sincronizar.isError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
