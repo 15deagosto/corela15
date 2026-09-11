@@ -50,6 +50,7 @@ public class TicketService(Corela15DbContext db) : ITicketService
             CodigoEstado = estadoInicial.Codigo,
             IdAgencia = agencia.Id,
             IdUsuarioAsignado = request.IdUsuarioAsignado,
+            EsProactivo = request.EsProactivo,
             FechaLimiteSla = ahora.AddHours(prioridad.HorasSla),
             CreadoEn = ahora,
             CreadoPor = request.RegistradoPor,
@@ -220,10 +221,11 @@ public class TicketService(Corela15DbContext db) : ITicketService
             .Select(t => new TicketListItemDto(
                 t.Id, t.Numero, t.Titulo,
                 t.Categoria.Nombre, t.Prioridad.Nombre, t.CodigoEstado, t.Estado.Nombre,
-                t.Agencia.Nombre, t.UsuarioAsignado == null ? null : t.UsuarioAsignado.NombreUsuario,
+                t.Agencia.Nombre,
+                t.UsuarioAsignado == null ? null : (t.UsuarioAsignado.Persona != null ? t.UsuarioAsignado.Persona.Nombre : (t.UsuarioAsignado.NombreCompleto ?? t.UsuarioAsignado.NombreUsuario)),
                 t.FechaLimiteSla, t.FechaCierre == null && t.FechaLimiteSla < ahora,
                 t.Calificacion,
-                t.CreadoEn, t.CreadoPor))
+                t.CreadoEn, t.CreadoPor, t.EsProactivo))
             .ToListAsync(cancellationToken);
     }
 
@@ -263,16 +265,20 @@ public class TicketService(Corela15DbContext db) : ITicketService
             .Where(rm => rm.Activo && rm.Menu.Activo && rm.Menu.Codigo == CodigoMenuAgente)
             .Select(rm => rm.IdRol);
 
-        var porRolPermanente = db.Usuarios.Where(u => u.Activo)
+        // Excluye la cuenta genérica de pruebas "admin" -- no es una
+        // persona real a la que se le pueda asignar un ticket, aparecía
+        // en la lista solo porque tiene el rol ADMINISTRADOR con el
+        // permiso de agente.
+        var porRolPermanente = db.Usuarios.Where(u => u.Activo && u.NombreUsuario != "admin")
             .Where(u => u.UsuarioRoles.Any(ur => ur.Activo && idsRolConPermiso.Contains(ur.IdRol)));
 
-        var porRolTemporal = db.Usuarios.Where(u => u.Activo)
+        var porRolTemporal = db.Usuarios.Where(u => u.Activo && u.NombreUsuario != "admin")
             .Where(u => db.UsuariosRolTemporal.Any(urt =>
                 urt.IdUsuario == u.Id && urt.Activo && urt.FechaCaducidad > ahora && idsRolConPermiso.Contains(urt.IdRol)));
 
         return await porRolPermanente.Union(porRolTemporal)
-            .OrderBy(u => u.NombreUsuario)
-            .Select(u => new AgenteDto(u.Id, u.NombreUsuario))
+            .OrderBy(u => u.Persona != null ? u.Persona.Nombre : u.NombreCompleto ?? u.NombreUsuario)
+            .Select(u => new AgenteDto(u.Id, u.Persona != null ? u.Persona.Nombre : (u.NombreCompleto ?? u.NombreUsuario)))
             .ToListAsync(cancellationToken);
     }
 
@@ -292,7 +298,7 @@ public class TicketService(Corela15DbContext db) : ITicketService
         // de más.
         var t = await db.Tickets
             .Include(x => x.Categoria).Include(x => x.Prioridad).Include(x => x.Estado)
-            .Include(x => x.Agencia).Include(x => x.UsuarioAsignado)
+            .Include(x => x.Agencia).Include(x => x.UsuarioAsignado).ThenInclude(u => u!.Persona)
             .FirstAsync(x => x.Id == idTicket, cancellationToken);
 
         var ahora = DateTimeOffset.UtcNow;
@@ -301,12 +307,13 @@ public class TicketService(Corela15DbContext db) : ITicketService
             t.CodigoCategoria, t.Categoria.Nombre,
             t.CodigoPrioridad, t.Prioridad.Nombre,
             t.CodigoEstado, t.Estado.Nombre,
-            t.Agencia.Nombre, t.UsuarioAsignado?.NombreUsuario,
+            t.Agencia.Nombre,
+            t.UsuarioAsignado == null ? null : (t.UsuarioAsignado.Persona?.Nombre ?? t.UsuarioAsignado.NombreCompleto ?? t.UsuarioAsignado.NombreUsuario),
             t.FechaLimiteSla, t.FechaCierre == null && t.FechaLimiteSla < ahora, t.FechaCierre,
             t.FechaPrimeraRespuesta,
             t.FechaPrimeraRespuesta is null ? null : (t.FechaPrimeraRespuesta.Value - t.CreadoEn).TotalHours,
             t.FechaCierre is null ? null : (t.FechaCierre.Value - t.CreadoEn).TotalHours,
             t.Calificacion, t.ComentarioCalificacion,
-            t.CreadoEn, t.CreadoPor);
+            t.CreadoEn, t.CreadoPor, t.EsProactivo);
     }
 }

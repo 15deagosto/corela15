@@ -35,6 +35,17 @@ public class Ticket
     public Guid? IdUsuarioAsignado { get; set; }
     public Usuario? UsuarioAsignado { get; set; }
 
+    /// <summary>
+    /// Mantenimiento/tarea real que TI decidió/detectó por su cuenta (ej.
+    /// cambiar el tóner de una impresora, revisar un switch) -- distinto
+    /// de una incidencia reportada por un usuario. Solo lo puede marcar
+    /// quien crea el ticket con permiso real de agente (validado en el
+    /// controller, nunca confiado del cliente) -- un usuario reportando
+    /// un problema real nunca es "proactivo" por definición. Sirve para
+    /// distinguir trabajo reactivo de preventivo en los reportes de TI.
+    /// </summary>
+    public bool EsProactivo { get; set; }
+
     public DateTimeOffset FechaLimiteSla { get; set; }
     public DateTimeOffset? FechaCierre { get; set; }
 

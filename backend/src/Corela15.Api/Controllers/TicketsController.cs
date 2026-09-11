@@ -8,7 +8,7 @@ namespace Corela15.Api.Controllers;
 
 public record CrearTicketBody(
     string Titulo, string Descripcion, string CodigoCategoria, string CodigoPrioridad,
-    int IdAgencia, Guid? IdUsuarioAsignado);
+    int IdAgencia, Guid? IdUsuarioAsignado, bool EsProactivo = false);
 
 public record ComentarTicketBody(string Comentario);
 
@@ -88,9 +88,15 @@ public class TicketsController(ITicketService service, Corela15DbContext db) : C
     [HttpPost("tickets")]
     public async Task<ActionResult<TicketDto>> Crear(CrearTicketBody body, CancellationToken cancellationToken)
     {
+        // "Proactivo" (mantenimiento que TI inicia por su cuenta, sin que
+        // nadie lo pida) nunca se confía del cliente -- solo un agente real
+        // puede marcarlo así; un usuario reportando un problema real nunca
+        // es "proactivo" por definición, sin importar qué mande el body.
+        var esAgente = User.HasClaim("menu", "mesa-servicio-agente");
         var resultado = await service.CrearAsync(new CrearTicketRequest(
             body.Titulo, body.Descripcion, body.CodigoCategoria, body.CodigoPrioridad,
-            body.IdAgencia, body.IdUsuarioAsignado, User.Identity!.Name!), cancellationToken);
+            body.IdAgencia, body.IdUsuarioAsignado, User.Identity!.Name!,
+            esAgente && body.EsProactivo), cancellationToken);
         return Created($"/api/mesa-servicio/tickets/{resultado.Id}", resultado);
     }
 

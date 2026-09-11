@@ -65,7 +65,8 @@ public record CrearTicketRequest(
     string CodigoPrioridad,
     int IdAgencia,
     Guid? IdUsuarioAsignado,
-    string RegistradoPor);
+    string RegistradoPor,
+    bool EsProactivo = false);
 
 public record ComentarTicketRequest(string Comentario, string RegistradoPor);
 
@@ -79,7 +80,8 @@ public record CalificarTicketRequest(int Calificacion, string? Comentario, strin
 
 public record ListarTicketsFiltro(string? CodigoEstado, Guid? IdUsuarioAsignado, string? CreadoPor);
 
-public record AgenteDto(Guid Id, string NombreUsuario);
+/// <summary>Nombre real (Persona.Nombre, o NombreCompleto si no tiene Persona vinculada) -- nunca el nombre de usuario técnico, para que quien asigna el ticket reconozca a la persona.</summary>
+public record AgenteDto(Guid Id, string Nombre);
 
 public record TicketDto(
     Guid Id, string Numero, string Titulo, string Descripcion,
@@ -91,7 +93,7 @@ public record TicketDto(
     DateTimeOffset? FechaPrimeraRespuesta,
     double? TiempoPrimeraRespuestaHoras, double? TiempoResolucionHoras,
     int? Calificacion, string? ComentarioCalificacion,
-    DateTimeOffset CreadoEn, string CreadoPor);
+    DateTimeOffset CreadoEn, string CreadoPor, bool EsProactivo);
 
 public record TicketListItemDto(
     Guid Id, string Numero, string Titulo,
@@ -99,7 +101,7 @@ public record TicketListItemDto(
     string Agencia, string? UsuarioAsignado,
     DateTimeOffset FechaLimiteSla, bool VencidoSla,
     int? Calificacion,
-    DateTimeOffset CreadoEn, string CreadoPor);
+    DateTimeOffset CreadoEn, string CreadoPor, bool EsProactivo);
 
 public record TicketComentarioDto(string Comentario, string RegistradoPor, DateTimeOffset Fecha);
 

@@ -15,7 +15,7 @@ interface Catalogo {
 
 interface AgenteItem {
   id: string
-  nombreUsuario: string
+  nombre: string
 }
 
 interface TicketListItem {
@@ -33,6 +33,7 @@ interface TicketListItem {
   calificacion: number | null
   creadoEn: string
   creadoPor: string
+  esProactivo: boolean
 }
 
 interface TicketDto {
@@ -58,6 +59,7 @@ interface TicketDto {
   comentarioCalificacion: string | null
   creadoEn: string
   creadoPor: string
+  esProactivo: boolean
 }
 
 interface TicketComentario {
@@ -220,7 +222,14 @@ export function MesaServicio() {
                 title="Doble clic para ver el detalle"
               >
                 <Td>{t.numero}</Td>
-                <Td>{t.titulo}</Td>
+                <Td>
+                  {t.titulo}
+                  {t.esProactivo && (
+                    <span className="ml-1.5 inline-block">
+                      <Badge variant="neutral">Proactivo</Badge>
+                    </span>
+                  )}
+                </Td>
                 <Td>{t.categoria}</Td>
                 <Td>{t.prioridad}</Td>
                 <Td>
@@ -283,6 +292,7 @@ function NuevoTicketModal({
     codigoPrioridad: '',
     idAgencia: 1,
     idUsuarioAsignado: '' as string,
+    esProactivo: false,
   })
 
   const { data: categorias } = useQuery<Catalogo[]>({
@@ -368,7 +378,7 @@ function NuevoTicketModal({
                 <option value="">Seleccionar...</option>
                 {prioridades?.map((p) => (
                   <option key={p.codigo} value={p.codigo}>
-                    {p.nombre} — respuesta en {p.horasSla} h
+                    {esAgente ? `${p.nombre} — respuesta en ${p.horasSla} h` : p.nombre}
                   </option>
                 ))}
               </select>
@@ -385,11 +395,26 @@ function NuevoTicketModal({
                 <option value="">Sin asignar — queda disponible para que cualquier agente lo tome</option>
                 {agentes?.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.nombreUsuario}
+                    {a.nombre}
                   </option>
                 ))}
               </select>
             </div>
+          )}
+          {esAgente && (
+            <label className="flex items-start gap-2 rounded-lg border border-black/[0.06] bg-black/[0.02] p-3 text-xs text-graphite-700">
+              <input
+                type="checkbox"
+                checked={form.esProactivo}
+                onChange={(e) => setForm((f) => ({ ...f, esProactivo: e.target.checked }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium text-graphite-100">Es un mantenimiento que inicio yo mismo</span> — no lo reportó
+                ningún usuario (ej. cambio de tóner, mantenimiento preventivo, revisión de un equipo). Sirve para diferenciar
+                el trabajo proactivo del reactivo en los reportes de TI.
+              </span>
+            </label>
           )}
         </div>
 
@@ -524,6 +549,7 @@ function TicketModal({
         <div className="flex items-center justify-between border-b border-black/[0.06] p-5 pb-4">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-graphite-100">
             <LifeBuoy size={16} /> {ticket.numero} — {ticket.titulo}
+            {ticket.esProactivo && <Badge variant="neutral">Proactivo</Badge>}
           </h2>
           <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
             <X size={18} />
@@ -624,7 +650,7 @@ function TicketModal({
                           <option value="NONE">Sin asignar</option>
                           {agentes?.map((a) => (
                             <option key={a.id} value={a.id}>
-                              {a.nombreUsuario}
+                              {a.nombre}
                             </option>
                           ))}
                         </select>
