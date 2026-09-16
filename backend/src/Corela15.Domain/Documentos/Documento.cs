@@ -68,6 +68,11 @@ public class Documento : AuditableEntity
     public Guid Id { get; set; }
 
     public string Titulo { get; set; } = string.Empty;
+
+    /// <summary>La carpeta real donde vive el documento — es lo que decide quién puede verlo/editarlo (ver <see cref="CarpetaAcceso"/>). Área queda como metadato de clasificación para la matriz de cobertura, ya no controla acceso.</summary>
+    public Guid IdCarpeta { get; set; }
+    public Carpeta Carpeta { get; set; } = null!;
+
     public AreaDocumental Area { get; set; }
     public TipoDocumento Tipo { get; set; }
     public string Version { get; set; } = "1.0";
@@ -104,24 +109,53 @@ public enum NivelAccesoDocumental
 }
 
 /// <summary>
-/// ACL real por área — pedido explícito del usuario ("como TI no quiero
-/// que alguien más vea lo que subo ahí"), mismo modelo mental que una
-/// carpeta compartida de red: se busca por usuario y se le da acceso de
-/// Lectura o de Escritura a un área puntual. Sin fila acá, el usuario NO
-/// ve nada de esa área — deny-by-default real, no una excepción. Un
-/// usuario puede tener acceso a varias áreas (una fila por área,
-/// única por usuario+área — para subir de Lectura a Escritura se edita
-/// la fila existente, nunca se duplica). ADMINISTRADOR y quien tenga el
-/// menú `biblioteca-documentos-gerencia` ven/administran TODAS las áreas
-/// sin necesidad de ninguna fila acá — mismo patrón ya usado en
-/// Planificación (`planificacion-gerencia`).
+/// Carpeta real, jerárquica (árbol, vía <see cref="IdCarpetaPadre"/>) —
+/// reemplaza el ACL fijo por las 15 áreas: el usuario pidió explícitamente
+/// que sea "como compartir por red" — cualquiera con Escritura sobre una
+/// carpeta puede crear subcarpetas adentro y decidir, carpeta por
+/// carpeta, quién más entra (ver <see cref="CarpetaAcceso"/>). Las 15
+/// áreas reales originales (`AreaDocumental`) quedaron sembradas como
+/// carpetas raíz (migración `Documentos_CarpetasReales`) para no perder
+/// la organización ya levantada por TI — desde ahí, cada jefatura puede
+/// seguir creando su propio árbol de subcarpetas.
 /// </summary>
-public class AreaAccesoUsuario
+public class Carpeta
 {
     public Guid Id { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public Guid? IdCarpetaPadre { get; set; }
+    public Carpeta? CarpetaPadre { get; set; }
+    public bool Activa { get; set; } = true;
+    public DateTimeOffset CreadoEn { get; set; }
+    public string CreadoPor { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// ACL real por carpeta — pedido explícito del usuario ("por carpeta
+/// debería ser... como compartir por red: en una carpeta con 5 adentro,
+/// en una de esas solo quiero poner ciertos usuarios"). Se busca por
+/// usuario y se le da acceso de Lectura o de Escritura a una carpeta
+/// puntual. Sin fila acá, el usuario NO ve nada de esa carpeta —
+/// deny-by-default real. Herencia real, no acumulativa: una carpeta SIN
+/// filas propias hereda el ACL de la carpeta padre más cercana que sí
+/// tenga filas (recursivo hasta la raíz); en cuanto una carpeta tiene AL
+/// MENOS una fila propia, esas filas son las únicas que aplican para
+/// ella y sus descendientes (hasta el próximo corte de herencia) — así
+/// es como se logra el caso real pedido: la carpeta padre puede tener 10
+/// personas con acceso, y una subcarpeta puntual puede reducirlo a solo
+/// 2, agregando filas propias ahí (nunca hace falta "restar" a nadie,
+/// solo declarar de nuevo la lista completa que sí aplica a esa
+/// subcarpeta). ADMINISTRADOR y quien tenga el menú
+/// `biblioteca-documentos-gerencia` ven/administran TODAS las carpetas
+/// sin necesidad de ninguna fila acá.
+/// </summary>
+public class CarpetaAcceso
+{
+    public Guid Id { get; set; }
+    public Guid IdCarpeta { get; set; }
+    public Carpeta Carpeta { get; set; } = null!;
     public Guid IdUsuario { get; set; }
     public Usuario Usuario { get; set; } = null!;
-    public AreaDocumental Area { get; set; }
     public NivelAccesoDocumental NivelAcceso { get; set; }
     public DateTimeOffset CreadoEn { get; set; }
     public string CreadoPor { get; set; } = string.Empty;

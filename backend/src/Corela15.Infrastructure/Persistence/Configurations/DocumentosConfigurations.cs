@@ -24,6 +24,9 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
         b.Property(x => x.ModificadoPor).HasMaxLength(100);
 
+        b.HasOne(x => x.Carpeta).WithMany().HasForeignKey(x => x.IdCarpeta).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.IdCarpeta);
         b.HasIndex(x => x.Area);
         b.HasIndex(x => x.Tipo);
         b.HasIndex(x => x.Estado);
@@ -34,20 +37,36 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
     }
 }
 
-public class AreaAccesoUsuarioConfiguration : IEntityTypeConfiguration<AreaAccesoUsuario>
+public class CarpetaConfiguration : IEntityTypeConfiguration<Carpeta>
 {
-    public void Configure(EntityTypeBuilder<AreaAccesoUsuario> b)
+    public void Configure(EntityTypeBuilder<Carpeta> b)
     {
-        b.ToTable("area_acceso_usuario", "documentos");
+        b.ToTable("carpeta", "documentos");
         b.HasKey(x => x.Id);
-        b.Property(x => x.Area).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.Nombre).HasMaxLength(150).IsRequired();
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.CarpetaPadre).WithMany().HasForeignKey(x => x.IdCarpetaPadre).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => x.IdCarpetaPadre);
+        b.HasIndex(x => x.Activa);
+    }
+}
+
+public class CarpetaAccesoConfiguration : IEntityTypeConfiguration<CarpetaAcceso>
+{
+    public void Configure(EntityTypeBuilder<CarpetaAcceso> b)
+    {
+        b.ToTable("carpeta_acceso", "documentos");
+        b.HasKey(x => x.Id);
         b.Property(x => x.NivelAcceso).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
 
+        b.HasOne(x => x.Carpeta).WithMany().HasForeignKey(x => x.IdCarpeta).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
 
-        // Única por usuario+área -- subir de Lectura a Escritura edita la
+        // Única por carpeta+usuario -- subir de Lectura a Escritura edita la
         // fila existente, nunca duplica.
-        b.HasIndex(x => new { x.IdUsuario, x.Area }).IsUnique();
+        b.HasIndex(x => new { x.IdCarpeta, x.IdUsuario }).IsUnique();
     }
 }

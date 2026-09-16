@@ -118,6 +118,7 @@ builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<Corela15.Application.Documentos.IDocumentoStorageService, Corela15.Infrastructure.Services.FileSystemDocumentoStorageService>();
 builder.Services.AddScoped<Corela15.Application.Documentos.IDocumentoService, Corela15.Infrastructure.Services.DocumentoService>();
 builder.Services.AddScoped<Corela15.Application.Documentos.IAccesoDocumentalService, Corela15.Infrastructure.Services.AccesoDocumentalService>();
+builder.Services.AddScoped<Corela15.Application.Documentos.ICarpetaService, Corela15.Infrastructure.Services.CarpetaService>();
 builder.Services.AddScoped<IWhatsAppCloudApiClient, WhatsAppCloudApiClient>();
 builder.Services.AddHttpClient("whatsapp-cloud-api");
 builder.Services.AddScoped<IComunicacionService, ComunicacionService>();

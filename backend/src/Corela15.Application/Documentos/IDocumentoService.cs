@@ -19,23 +19,37 @@ public interface IDocumentoService
 
     Task<DescargaDocumentoResult> DescargarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
-    /// <summary>Cobertura documental real: por cada área, cuántos documentos vigentes/total tiene de cada tipo — reservado a quien ve todas las áreas (expone info de todas a la vez).</summary>
+    /// <summary>Cobertura documental real: por cada área, cuántos documentos vigentes/total tiene de cada tipo — reservado a quien ve todas las carpetas (expone info de toda la biblioteca a la vez).</summary>
     Task<MatrizDocumentalResult> ObtenerMatrizAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Administra el ACL real por área — ver AreaAccesoUsuario.cs. Reservado a quien ve todas las áreas (ADMINISTRADOR o biblioteca-documentos-gerencia).</summary>
+/// <summary>Administra el árbol real de carpetas — ver Carpeta.cs.</summary>
+public interface ICarpetaService
+{
+    /// <summary>Solo las carpetas donde el usuario tiene al menos Lectura efectiva (o todas, si VeTodo).</summary>
+    Task<IReadOnlyList<CarpetaItem>> ListarAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    /// <summary>Crear una carpeta raíz exige VeTodo; crear una subcarpeta exige Escritura sobre la carpeta padre.</summary>
+    Task<Guid> CrearAsync(CrearCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    Task RenombrarAsync(Guid id, RenombrarCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    Task DesactivarAsync(Guid id, string modificadoPor, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Administra el ACL real por carpeta — ver CarpetaAcceso.cs. Otorgar/quitar/listar accesos de una carpeta exige Escritura efectiva sobre esa carpeta (o VeTodo) — el dueño de una carpeta puede compartirla, mismo criterio que una carpeta de red.</summary>
 public interface IAccesoDocumentalService
 {
-    Task<IReadOnlyList<AreaAccesoItem>> ListarAsync(string? area, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CarpetaAccesoItem>> ListarAsync(Guid idCarpeta, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UsuarioParaAccesoItem>> BuscarUsuariosAsync(string q, CancellationToken cancellationToken = default);
 
-    Task OtorgarAsync(OtorgarAccesoAreaRequest request, CancellationToken cancellationToken = default);
+    Task OtorgarAsync(Guid idCarpeta, OtorgarAccesoCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
-    Task QuitarAsync(Guid id, CancellationToken cancellationToken = default);
+    Task QuitarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
-    /// <summary>Resuelve el ACL real de un usuario puntual (sus filas de AreaAccesoUsuario) — usado por el controller para armar el ContextoAccesoDocumental de cada request.</summary>
-    Task<IReadOnlyDictionary<string, string>> ObtenerAccesoPorAreaAsync(Guid idUsuario, CancellationToken cancellationToken = default);
+    /// <summary>Resuelve el ACL efectivo real de un usuario (con herencia por carpeta, ver CarpetaAcceso) — usado por el controller para armar el ContextoAccesoDocumental de cada request.</summary>
+    Task<IReadOnlyDictionary<Guid, string>> ResolverAccesoEfectivoAsync(Guid idUsuario, CancellationToken cancellationToken = default);
 }
 
 public class DocumentoInvalidoException()
@@ -56,14 +70,23 @@ public class ArchivoDemasiadoGrandeException(int maxMb)
 public class ValorCatalogoDocumentoInvalidoException(string campo, string valor)
     : SolicitudInvalidaExceptionGenerica($"'{valor}' no es un valor válido para {campo}");
 
+public class CarpetaInvalidaException()
+    : ReglaDeNegocioException("La carpeta no existe o fue desactivada");
+
+public class NombreCarpetaRequeridoException()
+    : SolicitudInvalidaExceptionGenerica("El nombre de la carpeta es obligatorio");
+
+public class CarpetaConContenidoException()
+    : ReglaDeNegocioException("No se puede desactivar una carpeta con documentos activos o subcarpetas activas — mové o desactivá el contenido primero");
+
 /// <summary>
-/// El usuario no tiene Escritura sobre el área del documento (o de la
-/// nueva área, si intenta moverlo) — 422, nunca 403 (en este sistema un
-/// 403 siempre significa sesión con claims viejos, ver
+/// El usuario no tiene Escritura sobre la carpeta del documento (o de la
+/// carpeta destino, si intenta moverlo) — 422, nunca 403 (en este sistema
+/// un 403 siempre significa sesión con claims viejos, ver
 /// frontend/src/lib/api.ts, nunca una regla de negocio real).
 /// </summary>
-public class AccesoDocumentalDenegadoException(string area)
-    : ReglaDeNegocioException($"No tenés acceso de escritura sobre el área '{area}'");
+public class AccesoDocumentalDenegadoException(string carpeta)
+    : ReglaDeNegocioException($"No tenés acceso de escritura sobre la carpeta '{carpeta}'");
 
 public class UsuarioAccesoInvalidoException()
     : ReglaDeNegocioException("El usuario no existe o está inactivo");

@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2 } from 'lucide-react'
+import {
+  Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2,
+  Folder, FolderPlus, ChevronRight, ChevronDown, Users,
+} from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
@@ -14,11 +17,23 @@ interface CatalogoItem {
   nombre: string
 }
 
+interface CarpetaItem {
+  id: string
+  nombre: string
+  idCarpetaPadre: string | null
+  activa: boolean
+  nivelAcceso: string
+  puedeEscribir: boolean
+  puedeAdministrarAcceso: boolean
+}
+
 interface DocumentoItem {
   id: string
-  titulo: string
+  idCarpeta: string
+  nombreCarpeta: string
   area: string
   tipo: string
+  titulo: string
   version: string
   estado: string
   nombreArchivoOriginal: string
@@ -47,17 +62,22 @@ interface MatrizDocumental {
   filas: MatrizFila[]
 }
 
-/** ACL real por área — "veTodo" (ADMINISTRADOR o biblioteca-documentos-gerencia) ve/administra todo sin filas de accesoPorArea. Mismo modelo mental que una carpeta compartida de red: sin fila acá, no se ve nada de esa área. */
+/**
+ * ACL real por carpeta — "como compartir por red": sin fila acá, no se ve
+ * nada de esa carpeta. "veTodo" (ADMINISTRADOR o biblioteca-documentos-
+ * gerencia) ve/administra todo sin filas.
+ */
 interface MiAcceso {
   veTodo: boolean
-  accesoPorArea: Record<string, string>
+  accesoPorCarpeta: Record<string, string>
 }
 
-interface AreaAccesoItem {
+interface CarpetaAccesoItem {
   id: string
   idUsuario: string
   nombreUsuario: string
-  area: string
+  idCarpeta: string
+  nombreCarpeta: string
   nivelAcceso: string
   creadoEn: string
   creadoPor: string
@@ -82,16 +102,6 @@ function estadoVariant(estado: string) {
 
 function nombreCatalogo(catalogo: CatalogoItem[] | undefined, codigo: string) {
   return catalogo?.find((c) => c.codigo === codigo)?.nombre ?? codigo
-}
-
-function tieneLectura(acceso: MiAcceso | undefined, area: string) {
-  if (!acceso) return false
-  return acceso.veTodo || area in acceso.accesoPorArea
-}
-
-function tieneEscritura(acceso: MiAcceso | undefined, area: string) {
-  if (!acceso) return false
-  return acceso.veTodo || acceso.accesoPorArea[area] === 'Escritura'
 }
 
 const inputClase =
@@ -120,12 +130,302 @@ function useMiAcceso() {
   })
 }
 
+function useCarpetas() {
+  return useQuery<CarpetaItem[]>({
+    queryKey: ['biblioteca-documentos-carpetas'],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos/carpetas')).data,
+  })
+}
+
+/** Árbol real de carpetas — construido en el cliente desde la lista plana (id + idCarpetaPadre) que ya vino filtrada por acceso real. */
+function FolderTree({
+  carpetas,
+  seleccionada,
+  onSeleccionar,
+}: {
+  carpetas: CarpetaItem[]
+  seleccionada: string | null
+  onSeleccionar: (id: string) => void
+}) {
+  const [colapsadas, setColapsadas] = useState<Set<string>>(new Set())
+  const hijosPorPadre = useMemo(() => {
+    const mapa = new Map<string | null, CarpetaItem[]>()
+    for (const c of carpetas) {
+      const clave = c.idCarpetaPadre
+      if (!mapa.has(clave)) mapa.set(clave, [])
+      mapa.get(clave)!.push(c)
+    }
+    for (const lista of mapa.values()) lista.sort((a, b) => a.nombre.localeCompare(b.nombre))
+    return mapa
+  }, [carpetas])
+
+  function renderizar(padreId: string | null, nivel: number): React.ReactNode {
+    const hijos = hijosPorPadre.get(padreId) ?? []
+    return hijos.map((c) => {
+      const tieneHijos = (hijosPorPadre.get(c.id)?.length ?? 0) > 0
+      const colapsada = colapsadas.has(c.id)
+      return (
+        <div key={c.id}>
+          <button
+            type="button"
+            onClick={() => onSeleccionar(c.id)}
+            style={{ paddingLeft: `${8 + nivel * 16}px` }}
+            className={`flex w-full items-center gap-1.5 rounded-lg py-1.5 pr-2 text-left text-xs transition-colors ${
+              seleccionada === c.id ? 'bg-gold-500/10 font-medium text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
+            }`}
+          >
+            {tieneHijos ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setColapsadas((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(c.id)) next.delete(c.id)
+                    else next.add(c.id)
+                    return next
+                  })
+                }}
+                className="flex-shrink-0"
+              >
+                {colapsada ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+              </span>
+            ) : (
+              <span className="w-[13px] flex-shrink-0" />
+            )}
+            <Folder size={13} className="flex-shrink-0" />
+            <span className="truncate">{c.nombre}</span>
+            {c.nivelAcceso === 'Lectura' && <Lock size={10} className="ml-auto flex-shrink-0 text-graphite-400" />}
+          </button>
+          {!colapsada && renderizar(c.id, nivel + 1)}
+        </div>
+      )
+    })
+  }
+
+  if (carpetas.length === 0) {
+    return <p className="p-3 text-xs text-graphite-500">No tenés acceso a ninguna carpeta todavía.</p>
+  }
+
+  return <div className="flex flex-col gap-0.5">{renderizar(null, 0)}</div>
+}
+
+function NuevaCarpetaModal({
+  idCarpetaPadre,
+  onClose,
+}: {
+  idCarpetaPadre: string | null
+  onClose: (idNueva?: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const [nombre, setNombre] = useState('')
+
+  const crear = useMutation({
+    mutationFn: async () => (await api.post('/api/biblioteca-documentos/carpetas', { nombre, idCarpetaPadre })).data,
+    onSuccess: (data: { id: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-carpetas'] })
+      onClose(data.id)
+    },
+  })
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => onClose()}>
+        <div className="glass-card w-full max-w-sm rounded-xl p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="font-medium text-graphite-100">{idCarpetaPadre ? 'Nueva subcarpeta' : 'Nueva carpeta raíz'}</h3>
+            <button type="button" onClick={() => onClose()} className="text-graphite-600 hover:text-graphite-100">
+              <X size={18} />
+            </button>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!nombre.trim()) return
+              crear.mutate()
+            }}
+            className="flex flex-col gap-3"
+          >
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-graphite-600">Nombre</span>
+              <input required autoFocus type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className={inputClase} />
+            </label>
+            <button type="submit" disabled={crear.isPending} className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+              {crear.isPending ? 'Creando…' : 'Crear carpeta'}
+            </button>
+            {crear.isError && <p className="text-sm text-red-700">{mensajeError(crear.error, 'No se pudo crear la carpeta.')}</p>}
+          </form>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
+function BuscarUsuarioAcceso({ onSeleccionar }: { onSeleccionar: (u: { id: string; nombreUsuario: string }) => void }) {
+  const [q, setQ] = useState('')
+  const { data: usuarios } = useQuery<{ id: string; nombreUsuario: string }[]>({
+    queryKey: ['biblioteca-documentos-buscar-usuario', q],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos/accesos/usuarios/buscar', { params: { q } })).data,
+    enabled: q.length >= 2,
+  })
+
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Buscar usuario por nombre…"
+        className={`${inputClase} py-1.5`}
+      />
+      {q.length >= 2 && (usuarios?.length ?? 0) > 0 && (
+        <div className="max-h-32 overflow-y-auto rounded-lg border border-black/[0.08] bg-white">
+          {usuarios?.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => {
+                onSeleccionar(u)
+                setQ('')
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs hover:bg-black/[0.02]"
+            >
+              {u.nombreUsuario}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AccesosCarpetaModal({ carpeta, onClose }: { carpeta: CarpetaItem; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<{ id: string; nombreUsuario: string } | null>(null)
+  const [nivelOtorgar, setNivelOtorgar] = useState('Lectura')
+
+  const { data: accesos, isLoading } = useQuery<CarpetaAccesoItem[]>({
+    queryKey: ['biblioteca-documentos-accesos', carpeta.id],
+    queryFn: async () => (await api.get(`/api/biblioteca-documentos/carpetas/${carpeta.id}/accesos`)).data,
+  })
+
+  const otorgar = useMutation({
+    mutationFn: async () =>
+      api.post(`/api/biblioteca-documentos/carpetas/${carpeta.id}/accesos`, {
+        idUsuario: usuarioSeleccionado!.id,
+        nivelAcceso: nivelOtorgar,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos', carpeta.id] })
+      setUsuarioSeleccionado(null)
+      setNivelOtorgar('Lectura')
+    },
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (id: string) => api.delete(`/api/biblioteca-documentos/accesos/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos', carpeta.id] }),
+  })
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="glass-card flex max-h-[85vh] w-full max-w-xl flex-col overflow-y-auto rounded-xl p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-medium text-graphite-100">
+              <Users size={16} /> Accesos de "{carpeta.nombre}"
+            </h3>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="mb-4 text-xs text-graphite-500">
+            Mismo modelo que una carpeta compartida de red: se busca un usuario y se le da acceso de Lectura o de
+            Escritura a esta carpeta puntual. Una subcarpeta sin accesos propios hereda estos; en cuanto una
+            subcarpeta tiene sus propios accesos, esos son los únicos que aplican ahí (no se suman a los de acá).
+          </p>
+
+          <div className="mb-4 rounded-xl border border-black/[0.06] p-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+              <div className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-graphite-600">Usuario</span>
+                {usuarioSeleccionado ? (
+                  <div className="flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm">
+                    {usuarioSeleccionado.nombreUsuario}
+                    <button type="button" onClick={() => setUsuarioSeleccionado(null)} className="text-graphite-500 hover:text-red-700">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <BuscarUsuarioAcceso onSeleccionar={setUsuarioSeleccionado} />
+                )}
+              </div>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-graphite-600">Nivel</span>
+                <select value={nivelOtorgar} onChange={(e) => setNivelOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
+                  <option value="Lectura">Lectura</option>
+                  <option value="Escritura">Escritura</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={!usuarioSeleccionado || otorgar.isPending}
+              onClick={() => otorgar.mutate()}
+              className="btn-hover mt-3 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {otorgar.isPending ? 'Otorgando…' : 'Otorgar acceso'}
+            </button>
+            {otorgar.isError && <p className="mt-2 text-sm text-red-700">{mensajeError(otorgar.error, 'No se pudo otorgar el acceso.')}</p>}
+          </div>
+
+          <TableContainer>
+            <thead>
+              <tr>
+                <Th>Usuario</Th>
+                <Th>Nivel</Th>
+                <Th>Otorgado por</Th>
+                <Th></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && <EmptyState>Cargando…</EmptyState>}
+              {!isLoading && (accesos?.length ?? 0) === 0 && <EmptyState>Sin accesos propios — hereda de la carpeta padre</EmptyState>}
+              {accesos?.map((a) => (
+                <tr key={a.id} className="border-b border-black/[0.04] last:border-0">
+                  <Td className="font-medium">{a.nombreUsuario}</Td>
+                  <Td>
+                    <Badge variant={a.nivelAcceso === 'Escritura' ? 'alerta' : 'neutral'}>{a.nivelAcceso}</Badge>
+                  </Td>
+                  <Td>{a.creadoPor}</Td>
+                  <Td>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`¿Quitar el acceso de ${a.nombreUsuario} a "${carpeta.nombre}"?`)) quitar.mutate(a.id)
+                      }}
+                      className="text-red-700 hover:underline"
+                      title="Quitar acceso"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableContainer>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
 function NuevoDocumentoModal({
-  areasEscribibles,
+  carpeta,
+  areas,
   tipos,
   onClose,
 }: {
-  areasEscribibles: CatalogoItem[]
+  carpeta: CarpetaItem
+  areas: CatalogoItem[]
   tipos: CatalogoItem[]
   onClose: () => void
 }) {
@@ -145,6 +445,7 @@ function NuevoDocumentoModal({
     mutationFn: async () => {
       const form = new FormData()
       form.append('Titulo', titulo)
+      form.append('IdCarpeta', carpeta.id)
       form.append('Area', area)
       form.append('Tipo', tipo)
       form.append('Version', version)
@@ -172,12 +473,13 @@ function NuevoDocumentoModal({
           className="glass-card flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-xl p-5"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-medium text-graphite-100">Nuevo documento</h3>
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="font-medium text-graphite-100">Nuevo documento en "{carpeta.nombre}"</h3>
             <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
               <X size={18} />
             </button>
           </div>
+          <p className="mb-4 text-xs text-graphite-500">Se sube directo a la carpeta seleccionada — movelo después si hace falta.</p>
 
           <form
             className="grid grid-cols-1 gap-4 sm:grid-cols-2"
@@ -193,18 +495,15 @@ function NuevoDocumentoModal({
             </label>
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-graphite-600">Área responsable</span>
+              <span className="text-graphite-600">Área (clasificación, no controla acceso)</span>
               <select required value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
                 <option value="">Seleccionar…</option>
-                {areasEscribibles.map((a) => (
+                {areas.map((a) => (
                   <option key={a.codigo} value={a.codigo}>
                     {a.nombre}
                   </option>
                 ))}
               </select>
-              {areasEscribibles.length === 0 && (
-                <span className="text-xs text-red-700">No tenés acceso de escritura a ninguna área todavía.</span>
-              )}
             </label>
 
             <label className="flex flex-col gap-1 text-sm">
@@ -263,7 +562,7 @@ function NuevoDocumentoModal({
             <div className="sm:col-span-2">
               <button
                 type="submit"
-                disabled={crear.isPending || areasEscribibles.length === 0}
+                disabled={crear.isPending}
                 className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {crear.isPending ? 'Subiendo…' : 'Guardar documento'}
@@ -285,17 +584,17 @@ type TabGestion = 'metadatos' | 'version'
 function GestionarDocumentoModal({
   documento,
   areas,
-  areasEscribibles,
   tipos,
   estados,
+  carpetasEscribibles,
   puedeEditar,
   onClose,
 }: {
   documento: DocumentoItem
   areas: CatalogoItem[]
-  areasEscribibles: CatalogoItem[]
   tipos: CatalogoItem[]
   estados: CatalogoItem[]
+  carpetasEscribibles: CarpetaItem[]
   puedeEditar: boolean
   onClose: () => void
 }) {
@@ -303,6 +602,7 @@ function GestionarDocumentoModal({
   const [tab, setTab] = useState<TabGestion>('metadatos')
 
   const [titulo, setTitulo] = useState(documento.titulo)
+  const [idCarpeta, setIdCarpeta] = useState(documento.idCarpeta)
   const [area, setArea] = useState(documento.area)
   const [tipo, setTipo] = useState(documento.tipo)
   const [estado, setEstado] = useState(documento.estado)
@@ -315,18 +615,20 @@ function GestionarDocumentoModal({
   const [nuevaVersion, setNuevaVersion] = useState('')
   const [archivoNuevo, setArchivoNuevo] = useState<File | null>(null)
 
-  // El selector de área en edición siempre ofrece, además de las áreas
-  // donde el usuario tiene Escritura, la área ACTUAL del documento (para
-  // no forzar un cambio de área solo por estar viendo el formulario).
-  const opcionesArea = [
-    ...areasEscribibles,
-    ...(areasEscribibles.some((a) => a.codigo === documento.area) ? [] : [{ codigo: documento.area, nombre: nombreCatalogo(areas, documento.area) }]),
+  // El selector de carpeta al mover siempre ofrece, además de las
+  // carpetas donde el usuario tiene Escritura, la carpeta ACTUAL del
+  // documento (para no forzar un cambio solo por estar viendo el modal).
+  const opcionesCarpeta = [
+    ...carpetasEscribibles,
+    ...(carpetasEscribibles.some((c) => c.id === documento.idCarpeta)
+      ? []
+      : [{ id: documento.idCarpeta, nombre: documento.nombreCarpeta } as CarpetaItem]),
   ]
 
   const guardarMetadatos = useMutation({
     mutationFn: async () =>
       api.put(`/api/biblioteca-documentos/${documento.id}`, {
-        titulo, area, tipo, estado,
+        titulo, idCarpeta, area, tipo, estado,
         instanciaAprobacion: instanciaAprobacion || null,
         instanciaRevision: instanciaRevision || null,
         fechaAprobacion: fechaAprobacion || null,
@@ -436,7 +738,7 @@ function GestionarDocumentoModal({
               {tab === 'metadatos' && (
                 <fieldset disabled={!puedeEditar}>
                   {!puedeEditar && (
-                    <p className="mb-3 text-xs text-graphite-500">No tenés acceso de escritura sobre el área de este documento — solo lectura.</p>
+                    <p className="mb-3 text-xs text-graphite-500">No tenés acceso de escritura sobre la carpeta de este documento — solo lectura.</p>
                   )}
                   <form
                     className="grid grid-cols-1 gap-4 sm:grid-cols-2"
@@ -450,9 +752,17 @@ function GestionarDocumentoModal({
                       <input required type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)} className={inputClase} />
                     </label>
                     <label className="flex flex-col gap-1 text-sm">
-                      <span className="text-graphite-600">Área</span>
+                      <span className="text-graphite-600">Carpeta</span>
+                      <select value={idCarpeta} onChange={(e) => setIdCarpeta(e.target.value)} className={inputClase}>
+                        {opcionesCarpeta.map((c) => (
+                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Área (clasificación)</span>
                       <select value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
-                        {opcionesArea.map((a) => (
+                        {areas.map((a) => (
                           <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
                         ))}
                       </select>
@@ -473,7 +783,6 @@ function GestionarDocumentoModal({
                         ))}
                       </select>
                     </label>
-                    <div />
                     <label className="flex flex-col gap-1 text-sm">
                       <span className="text-graphite-600">Instancia de aprobación</span>
                       <input type="text" value={instanciaAprobacion} onChange={(e) => setInstanciaAprobacion(e.target.value)} className={inputClase} />
@@ -597,214 +906,45 @@ function MatrizCobertura({ areas, tipos }: { areas: CatalogoItem[]; tipos: Catal
         </tbody>
       </table>
       <p className="mt-3 text-xs text-graphite-500">
-        vigentes/total por área × tipo — una celda vacía es un hueco real de cobertura documental que esa jefatura
-        todavía no ha subido.
+        vigentes/total por área × tipo (metadato de clasificación, ya no controla acceso) — una celda vacía es un
+        hueco real de cobertura documental que esa jefatura todavía no ha subido.
       </p>
-    </div>
-  )
-}
-
-function BuscarUsuarioAcceso({ onSeleccionar }: { onSeleccionar: (u: { id: string; nombreUsuario: string }) => void }) {
-  const [q, setQ] = useState('')
-  const { data: usuarios } = useQuery<{ id: string; nombreUsuario: string }[]>({
-    queryKey: ['biblioteca-documentos-buscar-usuario', q],
-    queryFn: async () => (await api.get('/api/biblioteca-documentos/accesos/usuarios/buscar', { params: { q } })).data,
-    enabled: q.length >= 2,
-  })
-
-  return (
-    <div className="flex flex-col gap-1">
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Buscar usuario por nombre…"
-        className={`${inputClase} py-1.5`}
-      />
-      {q.length >= 2 && (usuarios?.length ?? 0) > 0 && (
-        <div className="max-h-32 overflow-y-auto rounded-lg border border-black/[0.08] bg-white">
-          {usuarios?.map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => {
-                onSeleccionar(u)
-                setQ('')
-              }}
-              className="block w-full px-3 py-1.5 text-left text-xs hover:bg-black/[0.02]"
-            >
-              {u.nombreUsuario}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SeccionAccesos({ areas }: { areas: CatalogoItem[] }) {
-  const queryClient = useQueryClient()
-  const [filtroArea, setFiltroArea] = useState('')
-  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<{ id: string; nombreUsuario: string } | null>(null)
-  const [areaOtorgar, setAreaOtorgar] = useState('')
-  const [nivelOtorgar, setNivelOtorgar] = useState('Lectura')
-
-  const { data: accesos, isLoading } = useQuery<AreaAccesoItem[]>({
-    queryKey: ['biblioteca-documentos-accesos', filtroArea],
-    queryFn: async () => (await api.get('/api/biblioteca-documentos/accesos', { params: { area: filtroArea || undefined } })).data,
-  })
-
-  const otorgar = useMutation({
-    mutationFn: async () =>
-      api.post('/api/biblioteca-documentos/accesos', {
-        idUsuario: usuarioSeleccionado!.id,
-        area: areaOtorgar,
-        nivelAcceso: nivelOtorgar,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos'] })
-      setUsuarioSeleccionado(null)
-      setAreaOtorgar('')
-      setNivelOtorgar('Lectura')
-    },
-  })
-
-  const quitar = useMutation({
-    mutationFn: async (id: string) => api.delete(`/api/biblioteca-documentos/accesos/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos'] }),
-  })
-
-  return (
-    <div>
-      <p className="mb-4 text-xs text-graphite-500">
-        Mismo modelo que una carpeta compartida de red: por defecto nadie ve los documentos de un área ajena — acá se
-        otorga acceso de Lectura o Escritura por usuario y área. Escritura incluye Lectura (crear, editar, subir
-        nueva versión, desactivar).
-      </p>
-
-      <div className="glass-card mb-6 rounded-xl p-4">
-        <h3 className="mb-3 text-sm font-medium text-graphite-100">Otorgar acceso</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
-          <div className="flex flex-col gap-1 text-xs sm:col-span-2">
-            <span className="text-graphite-600">Usuario</span>
-            {usuarioSeleccionado ? (
-              <div className="flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm">
-                {usuarioSeleccionado.nombreUsuario}
-                <button type="button" onClick={() => setUsuarioSeleccionado(null)} className="text-graphite-500 hover:text-red-700">
-                  <X size={14} />
-                </button>
-              </div>
-            ) : (
-              <BuscarUsuarioAcceso onSeleccionar={setUsuarioSeleccionado} />
-            )}
-          </div>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-graphite-600">Área</span>
-            <select value={areaOtorgar} onChange={(e) => setAreaOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
-              <option value="">Seleccionar…</option>
-              {areas.map((a) => (
-                <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-graphite-600">Nivel</span>
-            <select value={nivelOtorgar} onChange={(e) => setNivelOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
-              <option value="Lectura">Lectura</option>
-              <option value="Escritura">Escritura</option>
-            </select>
-          </label>
-        </div>
-        <button
-          type="button"
-          disabled={!usuarioSeleccionado || !areaOtorgar || otorgar.isPending}
-          onClick={() => otorgar.mutate()}
-          className="btn-hover mt-3 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {otorgar.isPending ? 'Otorgando…' : 'Otorgar acceso'}
-        </button>
-        {otorgar.isError && <p className="mt-2 text-sm text-red-700">{mensajeError(otorgar.error, 'No se pudo otorgar el acceso.')}</p>}
-      </div>
-
-      <label className="mb-3 flex max-w-xs flex-col gap-1 text-xs">
-        <span className="text-graphite-600">Filtrar por área</span>
-        <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${inputClase} py-1.5`}>
-          <option value="">Todas</option>
-          {areas.map((a) => (
-            <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
-          ))}
-        </select>
-      </label>
-
-      <TableContainer>
-        <thead>
-          <tr>
-            <Th>Usuario</Th>
-            <Th>Área</Th>
-            <Th>Nivel</Th>
-            <Th>Otorgado por</Th>
-            <Th></Th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading && <EmptyState>Cargando…</EmptyState>}
-          {!isLoading && (accesos?.length ?? 0) === 0 && <EmptyState>Sin accesos otorgados todavía</EmptyState>}
-          {accesos?.map((a) => (
-            <tr key={a.id} className="border-b border-black/[0.04] last:border-0">
-              <Td className="font-medium">{a.nombreUsuario}</Td>
-              <Td>{nombreCatalogo(areas, a.area)}</Td>
-              <Td>
-                <Badge variant={a.nivelAcceso === 'Escritura' ? 'alerta' : 'neutral'}>{a.nivelAcceso}</Badge>
-              </Td>
-              <Td>{a.creadoPor}</Td>
-              <Td>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`¿Quitar el acceso de ${a.nombreUsuario} a ${nombreCatalogo(areas, a.area)}?`)) quitar.mutate(a.id)
-                  }}
-                  className="text-red-700 hover:underline"
-                  title="Quitar acceso"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </TableContainer>
     </div>
   )
 }
 
 export function BibliotecaDocumentos() {
   const { data: miAcceso } = useMiAcceso()
+  const { data: carpetas } = useCarpetas()
   const { areas, tipos, estados } = useCatalogos()
-  const [tab, setTab] = useState<'documentos' | 'matriz' | 'accesos'>('documentos')
-  const [mostrarNuevo, setMostrarNuevo] = useState(false)
+  const [tab, setTab] = useState<'documentos' | 'matriz'>('documentos')
+  const [carpetaSeleccionada, setCarpetaSeleccionada] = useState<string | null>(null)
+  const [mostrarNuevoDoc, setMostrarNuevoDoc] = useState(false)
+  const [mostrarNuevaCarpeta, setMostrarNuevaCarpeta] = useState(false)
+  const [mostrarAccesos, setMostrarAccesos] = useState(false)
   const [seleccionado, setSeleccionado] = useState<DocumentoItem | null>(null)
-  const [filtroArea, setFiltroArea] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [busqueda, setBusqueda] = useState('')
 
   const veTodo = miAcceso?.veTodo ?? false
-  const areasEscribibles = (areas ?? []).filter((a) => tieneEscritura(miAcceso, a.codigo))
-  const areasLegibles = veTodo ? (areas ?? []) : (areas ?? []).filter((a) => tieneLectura(miAcceso, a.codigo))
-  const puedeCrear = areasEscribibles.length > 0
+  const carpetaActual = carpetas?.find((c) => c.id === carpetaSeleccionada) ?? null
+  const carpetasEscribibles = (carpetas ?? []).filter((c) => c.puedeEscribir)
 
   const { data: documentos, isLoading } = useQuery<DocumentoItem[]>({
-    queryKey: ['biblioteca-documentos', filtroArea, filtroTipo, filtroEstado, busqueda],
+    queryKey: ['biblioteca-documentos', carpetaSeleccionada, filtroTipo, filtroEstado, busqueda],
     queryFn: async () =>
       (
         await api.get('/api/biblioteca-documentos', {
-          params: { area: filtroArea || undefined, tipo: filtroTipo || undefined, estado: filtroEstado || undefined, q: busqueda || undefined },
+          params: { idCarpeta: carpetaSeleccionada || undefined, tipo: filtroTipo || undefined, estado: filtroEstado || undefined, q: busqueda || undefined },
         })
       ).data,
-    enabled: !!miAcceso,
+    enabled: !!miAcceso && !!carpetaSeleccionada,
   })
 
   const columnas: ColumnaExportable<DocumentoItem>[] = [
     { header: 'Título', accessor: (d) => d.titulo },
+    { header: 'Carpeta', accessor: (d) => d.nombreCarpeta },
     { header: 'Área', accessor: (d) => nombreCatalogo(areas, d.area) },
     { header: 'Tipo', accessor: (d) => nombreCatalogo(tipos, d.tipo) },
     { header: 'Versión', accessor: (d) => d.version },
@@ -819,26 +959,42 @@ export function BibliotecaDocumentos() {
       <PageHeader
         icon={Library}
         title="Biblioteca de Documentos"
-        subtitle="Políticas, reglamentos, manuales, procedimientos y formatos institucionales — archivo real en el NAS de la cooperativa"
+        subtitle="Políticas, reglamentos, manuales, procedimientos y formatos institucionales — organizados en carpetas reales, cada una con su propio control de acceso, igual que una carpeta compartida de red"
         actions={
           tab === 'documentos' &&
-          puedeCrear && (
-            <button
-              type="button"
-              onClick={() => setMostrarNuevo(true)}
-              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
-            >
-              <Plus size={16} /> Nuevo documento
-            </button>
+          carpetaActual && (
+            <div className="flex items-center gap-2">
+              {carpetaActual.puedeAdministrarAcceso && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarAccesos(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-black/[0.08] px-3 py-2 text-sm font-medium text-graphite-100 hover:bg-black/[0.02]"
+                >
+                  <Users size={15} /> Accesos
+                </button>
+              )}
+              {carpetaActual.puedeEscribir && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarNuevaCarpeta(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-black/[0.08] px-3 py-2 text-sm font-medium text-graphite-100 hover:bg-black/[0.02]"
+                >
+                  <FolderPlus size={15} /> Subcarpeta
+                </button>
+              )}
+              {carpetaActual.puedeEscribir && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarNuevoDoc(true)}
+                  className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
+                >
+                  <Plus size={16} /> Nuevo documento
+                </button>
+              )}
+            </div>
           )
         }
       />
-
-      {!veTodo && (
-        <p className="mb-4 flex items-center gap-1.5 text-xs text-graphite-500">
-          <Lock size={12} /> Solo ves los documentos de las áreas a las que tenés acceso otorgado.
-        </p>
-      )}
 
       <div className="mb-4 flex gap-1 border-b border-black/[0.06]">
         <button
@@ -849,130 +1005,156 @@ export function BibliotecaDocumentos() {
           Documentos
         </button>
         {veTodo && (
-          <>
-            <button
-              type="button"
-              onClick={() => setTab('matriz')}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
-            >
-              <Grid3x3 size={14} /> Matriz de cobertura
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('accesos')}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'accesos' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
-            >
-              <Lock size={14} /> Accesos por área
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => setTab('matriz')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
+          >
+            <Grid3x3 size={14} /> Matriz de cobertura
+          </button>
         )}
       </div>
 
-      {mostrarNuevo && tipos && (
-        <NuevoDocumentoModal areasEscribibles={areasEscribibles} tipos={tipos} onClose={() => setMostrarNuevo(false)} />
+      {tab === 'documentos' && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_1fr]">
+          <div className="glass-card rounded-xl p-2">
+            <div className="mb-1 flex items-center justify-between px-2 pt-1">
+              <span className="text-xs font-medium text-graphite-500">Carpetas</span>
+              {veTodo && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarNuevaCarpeta(true)}
+                  title="Nueva carpeta raíz"
+                  className="text-graphite-500 hover:text-gold-500"
+                >
+                  <Plus size={14} />
+                </button>
+              )}
+            </div>
+            {carpetas ? (
+              <FolderTree carpetas={carpetas} seleccionada={carpetaSeleccionada} onSeleccionar={setCarpetaSeleccionada} />
+            ) : (
+              <p className="p-3 text-xs text-graphite-500">Cargando…</p>
+            )}
+          </div>
+
+          <div>
+            {!carpetaActual ? (
+              <div className="glass-card flex flex-col items-center justify-center gap-2 rounded-xl p-10 text-center">
+                <Folder size={28} className="text-graphite-300" />
+                <p className="text-sm text-graphite-500">Elegí una carpeta de la izquierda para ver sus documentos.</p>
+              </div>
+            ) : (
+              <>
+                {carpetaActual.nivelAcceso === 'Lectura' && (
+                  <p className="mb-3 flex items-center gap-1.5 text-xs text-graphite-500">
+                    <Lock size={12} /> Solo lectura en "{carpetaActual.nombre}" — no tenés acceso de escritura acá.
+                  </p>
+                )}
+                <div className="mb-4 flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="text-graphite-600">Tipo</span>
+                    <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className={`${inputClase} py-1.5`}>
+                      <option value="">Todos</option>
+                      {tipos?.map((t) => (
+                        <option key={t.codigo} value={t.codigo}>{t.nombre}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="text-graphite-600">Estado</span>
+                    <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className={`${inputClase} py-1.5`}>
+                      <option value="">Todos</option>
+                      {estados?.map((e) => (
+                        <option key={e.codigo} value={e.codigo}>{e.nombre}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-1 flex-col gap-1 text-xs">
+                    <span className="text-graphite-600">Buscar</span>
+                    <input type="text" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Título o notas…" className={`${inputClase} py-1.5`} />
+                  </label>
+                  <BotonesExportar nombreArchivo="biblioteca-documentos" titulo="Biblioteca de Documentos" columnas={columnas} filas={documentos ?? []} />
+                </div>
+
+                <p className="mb-3 text-xs text-graphite-500">Doble clic en una fila para gestionar (metadatos, mover, nueva versión, descargar, desactivar).</p>
+
+                <TableContainer>
+                  <thead>
+                    <tr>
+                      <Th>Título</Th>
+                      <Th>Área</Th>
+                      <Th>Tipo</Th>
+                      <Th>Versión</Th>
+                      <Th>Estado</Th>
+                      <Th>Archivo</Th>
+                      <Th>Próxima revisión</Th>
+                      <Th>Subido por</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoading && <EmptyState>Cargando…</EmptyState>}
+                    {!isLoading && (documentos?.length ?? 0) === 0 && <EmptyState>No hay documentos en esta carpeta con el filtro actual</EmptyState>}
+                    {documentos?.map((d) => (
+                      <tr
+                        key={d.id}
+                        onDoubleClick={() => setSeleccionado(d)}
+                        title="Doble clic para gestionar"
+                        className="cursor-pointer border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]"
+                      >
+                        <Td className="font-medium">{d.titulo}</Td>
+                        <Td>{nombreCatalogo(areas, d.area)}</Td>
+                        <Td>{nombreCatalogo(tipos, d.tipo)}</Td>
+                        <Td>{d.version}</Td>
+                        <Td>
+                          <Badge variant={estadoVariant(d.estado)}>{nombreCatalogo(estados, d.estado)}</Badge>
+                        </Td>
+                        <Td className="max-w-[220px] truncate" title={d.nombreArchivoOriginal}>
+                          {d.nombreArchivoOriginal} <span className="text-graphite-400">({formatoTamano(d.tamanoBytes)})</span>
+                        </Td>
+                        <Td>{d.proximaRevision ?? '—'}</Td>
+                        <Td>{d.creadoPor}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableContainer>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'matriz' && veTodo && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
+
+      {mostrarNuevaCarpeta && (
+        <NuevaCarpetaModal
+          idCarpetaPadre={carpetaActual?.id ?? null}
+          onClose={(idNueva) => {
+            setMostrarNuevaCarpeta(false)
+            if (idNueva) setCarpetaSeleccionada(idNueva)
+          }}
+        />
+      )}
+
+      {mostrarNuevoDoc && carpetaActual && tipos && areas && (
+        <NuevoDocumentoModal carpeta={carpetaActual} areas={areas} tipos={tipos} onClose={() => setMostrarNuevoDoc(false)} />
+      )}
+
+      {mostrarAccesos && carpetaActual && (
+        <AccesosCarpetaModal carpeta={carpetaActual} onClose={() => setMostrarAccesos(false)} />
       )}
 
       {seleccionado && areas && tipos && estados && (
         <GestionarDocumentoModal
           documento={seleccionado}
           areas={areas}
-          areasEscribibles={areasEscribibles}
           tipos={tipos}
           estados={estados}
-          puedeEditar={tieneEscritura(miAcceso, seleccionado.area)}
+          carpetasEscribibles={carpetasEscribibles}
+          puedeEditar={veTodo || (miAcceso?.accesoPorCarpeta[seleccionado.idCarpeta] === 'Escritura')}
           onClose={() => setSeleccionado(null)}
         />
       )}
-
-      {tab === 'documentos' && (
-        <>
-          <div className="mb-4 flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-graphite-600">Área</span>
-              <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${inputClase} py-1.5`}>
-                <option value="">Todas (las que puedo ver)</option>
-                {areasLegibles.map((a) => (
-                  <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-graphite-600">Tipo</span>
-              <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className={`${inputClase} py-1.5`}>
-                <option value="">Todos</option>
-                {tipos?.map((t) => (
-                  <option key={t.codigo} value={t.codigo}>{t.nombre}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-graphite-600">Estado</span>
-              <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className={`${inputClase} py-1.5`}>
-                <option value="">Todos</option>
-                {estados?.map((e) => (
-                  <option key={e.codigo} value={e.codigo}>{e.nombre}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-1 flex-col gap-1 text-xs">
-              <span className="text-graphite-600">Buscar</span>
-              <input type="text" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Título o notas…" className={`${inputClase} py-1.5`} />
-            </label>
-            <BotonesExportar nombreArchivo="biblioteca-documentos" titulo="Biblioteca de Documentos" columnas={columnas} filas={documentos ?? []} />
-          </div>
-
-          <p className="mb-3 text-xs text-graphite-500">Doble clic en una fila para gestionar (metadatos, nueva versión, descargar, desactivar).</p>
-
-          <TableContainer>
-            <thead>
-              <tr>
-                <Th>Título</Th>
-                <Th>Área</Th>
-                <Th>Tipo</Th>
-                <Th>Versión</Th>
-                <Th>Estado</Th>
-                <Th>Archivo</Th>
-                <Th>Próxima revisión</Th>
-                <Th>Subido por</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {(isLoading || !miAcceso) && <EmptyState>Cargando…</EmptyState>}
-              {!isLoading && miAcceso && (documentos?.length ?? 0) === 0 && (
-                <EmptyState>
-                  {areasLegibles.length === 0 && !veTodo
-                    ? 'No tenés acceso a ningún área todavía — pedile a un administrador que te lo otorgue.'
-                    : 'No hay documentos que coincidan con el filtro'}
-                </EmptyState>
-              )}
-              {documentos?.map((d) => (
-                <tr
-                  key={d.id}
-                  onDoubleClick={() => setSeleccionado(d)}
-                  title="Doble clic para gestionar"
-                  className="cursor-pointer border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]"
-                >
-                  <Td className="font-medium">{d.titulo}</Td>
-                  <Td>{nombreCatalogo(areas, d.area)}</Td>
-                  <Td>{nombreCatalogo(tipos, d.tipo)}</Td>
-                  <Td>{d.version}</Td>
-                  <Td>
-                    <Badge variant={estadoVariant(d.estado)}>{nombreCatalogo(estados, d.estado)}</Badge>
-                  </Td>
-                  <Td className="max-w-[220px] truncate" title={d.nombreArchivoOriginal}>
-                    {d.nombreArchivoOriginal} <span className="text-graphite-400">({formatoTamano(d.tamanoBytes)})</span>
-                  </Td>
-                  <Td>{d.proximaRevision ?? '—'}</Td>
-                  <Td>{d.creadoPor}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableContainer>
-        </>
-      )}
-
-      {tab === 'matriz' && veTodo && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
-      {tab === 'accesos' && veTodo && areas && <SeccionAccesos areas={areas} />}
     </div>
   )
 }
