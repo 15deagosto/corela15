@@ -1192,6 +1192,10 @@ interface S01Elemento {
   genero: string
   valorCertifAportacion: number
   fechaIngreso: string
+  asambleaGeneral: boolean
+  fechaRepresentanteAsamblea: string | null
+  directivo: boolean
+  fechaDirectivo: string | null
 }
 
 interface S01Reporte {
@@ -1263,6 +1267,8 @@ function SeccionReporteS01() {
                 <Th>Género</Th>
                 <Th>Certificados</Th>
                 <Th>Fecha ingreso</Th>
+                <Th>Asamblea Gral.</Th>
+                <Th>Directivo</Th>
               </tr>
             </thead>
             <tbody>
@@ -1277,6 +1283,20 @@ function SeccionReporteS01() {
                   <Td>{e.genero}</Td>
                   <Td className="tabular-nums">${e.valorCertifAportacion.toFixed(2)}</Td>
                   <Td>{e.fechaIngreso}</Td>
+                  <Td>
+                    {e.asambleaGeneral ? (
+                      <Badge variant="exito" title={e.fechaRepresentanteAsamblea ? `Desde ${e.fechaRepresentanteAsamblea}` : undefined}>Sí</Badge>
+                    ) : (
+                      <Badge variant="neutral">No</Badge>
+                    )}
+                  </Td>
+                  <Td>
+                    {e.directivo ? (
+                      <Badge variant="exito" title={e.fechaDirectivo ? `Desde ${e.fechaDirectivo}` : undefined}>Sí</Badge>
+                    ) : (
+                      <Badge variant="neutral">No</Badge>
+                    )}
+                  </Td>
                 </tr>
               ))}
             </tbody>

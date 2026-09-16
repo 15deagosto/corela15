@@ -30,7 +30,8 @@ public record S01Cabecera(string CodigoEstructura, string Ruc, DateOnly FechaCor
 
 public record S01ElementoDetalle(
     string TipoIdentificacion, string NumeroIdentificacion, string? PaisNacimiento, string ApellidosNombres,
-    DateOnly FechaNacimiento, string Genero, decimal ValorCertifAportacion, DateOnly FechaIngreso);
+    DateOnly FechaNacimiento, string Genero, decimal ValorCertifAportacion, DateOnly FechaIngreso,
+    bool AsambleaGeneral, DateOnly? FechaRepresentanteAsamblea, bool Directivo, DateOnly? FechaDirectivo);
 
 public record S01Result(S01Cabecera Cabecera, IReadOnlyList<S01ElementoDetalle> Detalle, IReadOnlyList<string> Advertencias);
 
@@ -520,6 +521,12 @@ public class SociosController(Corela15DbContext db, IDatosPersonaService datosPe
             .OrderBy(c => c.Persona.Nombre)
             .ToListAsync(cancellationToken);
 
+        var membresiasPorPersona = (await db.MiembrosOrganoGobierno
+            .Where(m => m.Activo)
+            .ToListAsync(cancellationToken))
+            .GroupBy(m => m.IdPersona)
+            .ToDictionary(g => g.Key, g => g.First());
+
         var clientesJuridicosActivos = await db.Clientes
             .CountAsync(c => c.Estado == EstadoCliente.Activo && c.Persona.PersonaJuridica != null, cancellationToken);
         if (clientesJuridicosActivos > 0)
@@ -540,14 +547,21 @@ public class SociosController(Corela15DbContext db, IDatosPersonaService datosPe
             var paisNacimiento = cliente.Persona.Pais?.Codigo == "EC" ? "ECU" : null;
             var valorCertificado = certificadosPorCliente.GetValueOrDefault(cliente.Id, 0m);
 
+            var membresia = membresiasPorPersona.GetValueOrDefault(cliente.IdPersona);
+            var asambleaGeneral = membresia?.EsAsambleaGeneral ?? false;
+            var fechaRepresentanteAsamblea = membresia?.FechaIniciaAsambleaGeneral;
+            var directivo = (membresia?.EsConsejoAdministracion ?? false) || (membresia?.EsConsejoVigilancia ?? false);
+            var fechaDirectivo = membresia?.FechaIniciaConsejoAdministracion ?? membresia?.FechaIniciaConsejoVigilancia;
+
             detalle.Add(new S01ElementoDetalle(
                 codigoTipoId, cliente.Persona.Identificacion, paisNacimiento, cliente.Persona.Nombre,
                 cliente.Persona.PersonaNatural!.FechaNacimiento, cliente.Persona.PersonaNatural!.EsMasculino ? "M" : "F",
-                valorCertificado, DateOnly.FromDateTime(cliente.CreadoEn.UtcDateTime)));
+                valorCertificado, DateOnly.FromDateTime(cliente.CreadoEn.UtcDateTime),
+                asambleaGeneral, fechaRepresentanteAsamblea, directivo, fechaDirectivo));
         }
 
         advertencias.Add("fechaIngreso se calcula como la fecha de creación del registro de cliente (Cliente.CreadoEn) — este core no captura una fecha de ingreso como socio distinta de esa, documentado como una aproximación real, no un dato inventado.");
-        advertencias.Add("asambleaGeneral/fechaRepresentanteAsamblea/directivo/fechaDirectivo (campos opcionales del XSD real) no se incluyen — este core no modela participación en asamblea ni consejo directivo (equivalente a SUJETO.CONSEJOVIGILANCIA en Softbank, fuera de alcance).");
+        advertencias.Add("asambleaGeneral/fechaRepresentanteAsamblea se toman de sujeto.miembro_organo_gobierno.EsAsambleaGeneral/FechaIniciaAsambleaGeneral; directivo/fechaDirectivo se derivan de EsConsejoAdministracion || EsConsejoVigilancia (el XSD real solo distingue \"directivo\" en general, no por consejo específico) — verificado contra el ejemplo real de referencia (agosto 2026), que reporta ambos campos en \"NO\" para socios sin membresía en ningún órgano de gobierno.");
 
         return Ok(new S01Result(
             new S01Cabecera("S01", ruc, hoy, detalle.Count), detalle, advertencias));
