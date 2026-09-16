@@ -48,6 +48,18 @@ public class InversionPortafolio
 
     public EstadoInversionPortafolio Estado { get; set; } = EstadoInversionPortafolio.Activa;
 
+    // Calificación de riesgo real (verificado contra el I02 real de
+    // referencia, agosto 2026 — cada inversión trae su propia
+    // calificación + calificadora + fecha + provisión constituida).
+    // Aditivos, nullable: una inversión sin calificación cargada
+    // simplemente no la tiene todavía, no es un error.
+    public string? CodigoCalificacionRiesgo { get; set; }
+    public CalificacionRiesgo? CalificacionRiesgo { get; set; }
+    public string? CodigoCalificadoraRiesgo { get; set; }
+    public CalificadoraRiesgo? CalificadoraRiesgo { get; set; }
+    public DateOnly? FechaUltimaCalificacion { get; set; }
+    public decimal? ProvisionConstituida { get; set; }
+
     public DateTimeOffset CreadoEn { get; set; }
     public string CreadoPor { get; set; } = string.Empty;
     public DateTimeOffset? ModificadoEn { get; set; }

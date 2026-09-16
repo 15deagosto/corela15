@@ -25,7 +25,7 @@ public class InversionPortafolioService(Corela15DbContext db, IComprobanteContab
     // popular y solidario (COAC/Caja Central, tipos 003/006) vs sector
     // privado (bancos/mutualistas/sociedades, 001/002/004/005) son series
     // distintas del mismo grupo, la clasificación real que exige el CUC.
-    private static string ResolverCuentaInversion(int diasPlazo, bool esSectorFinancieroPopular)
+    public static string ResolverCuentaInversion(int diasPlazo, bool esSectorFinancieroPopular)
     {
         // 1305xx real (Mantenidas hasta su vencimiento): serie 50-70 para
         // sector financiero popular y solidario, serie 05-25 para sector
@@ -46,7 +46,7 @@ public class InversionPortafolioService(Corela15DbContext db, IComprobanteContab
         return "1305" + sufijo;
     }
 
-    private static bool EsSectorFinancieroPopular(string codigoTipoInstitucion) =>
+    public static bool EsSectorFinancieroPopular(string codigoTipoInstitucion) =>
         codigoTipoInstitucion is "003" or "006";
 
     public async Task<InversionAbiertaResult> AbrirAsync(

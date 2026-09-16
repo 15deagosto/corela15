@@ -40,15 +40,42 @@ public class InversionPortafolioConfiguration : IEntityTypeConfiguration<Inversi
         b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
         b.Property(x => x.ModificadoPor).HasMaxLength(100);
+        b.Property(x => x.CodigoCalificacionRiesgo).HasMaxLength(10);
+        b.Property(x => x.CodigoCalificadoraRiesgo).HasMaxLength(10);
+        b.Property(x => x.ProvisionConstituida).HasColumnType("numeric(18,2)");
 
         b.HasOne(x => x.Agencia).WithMany().HasForeignKey(x => x.IdAgencia).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Institucion).WithMany().HasForeignKey(x => x.CodigoInstitucion).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.CalificacionRiesgo).WithMany().HasForeignKey(x => x.CodigoCalificacionRiesgo).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.CalificadoraRiesgo).WithMany().HasForeignKey(x => x.CodigoCalificadoraRiesgo).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.Documento).IsUnique();
 
         // Dos operaciones simultáneas sobre la misma inversión (cancelar +
         // renovar) no deben pisarse — mismo patrón que Deposito.
         b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
+    }
+}
+
+public class CalificacionRiesgoConfiguration : IEntityTypeConfiguration<CalificacionRiesgo>
+{
+    public void Configure(EntityTypeBuilder<CalificacionRiesgo> b)
+    {
+        b.ToTable("calificacion_riesgo", "portafolio");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(10);
+        b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
+    }
+}
+
+public class CalificadoraRiesgoConfiguration : IEntityTypeConfiguration<CalificadoraRiesgo>
+{
+    public void Configure(EntityTypeBuilder<CalificadoraRiesgo> b)
+    {
+        b.ToTable("calificadora_riesgo", "portafolio");
+        b.HasKey(x => x.Codigo);
+        b.Property(x => x.Codigo).HasMaxLength(10);
+        b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
     }
 }
 

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Briefcase, Plus, X, RefreshCw } from 'lucide-react'
+import { Briefcase, Plus, X, RefreshCw, ShieldCheck } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { ModalPortal } from '../components/ModalPortal'
+import { BotonesExportar } from '../components/BotonesExportar'
+import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
 
 interface Institucion {
@@ -23,6 +25,38 @@ interface Inversion {
   fechaCompra: string
   fechaVencimiento: string
   estado: string
+  codigoCalificacionRiesgo: string | null
+  nombreCalificacionRiesgo: string | null
+  codigoCalificadoraRiesgo: string | null
+  nombreCalificadoraRiesgo: string | null
+  fechaUltimaCalificacion: string | null
+  provisionConstituida: number | null
+}
+
+interface CatalogoItem {
+  codigo: string
+  nombre: string
+  activo: boolean
+}
+
+interface I02Elemento {
+  documento: string
+  nombreInstitucion: string
+  fechaCompra: string
+  fechaVencimiento: string
+  cuentaContable: string
+  valorLibros: number
+  estado: string
+  codigoCalificacionRiesgo: string | null
+  codigoCalificadoraRiesgo: string | null
+  fechaUltimaCalificacion: string | null
+  tasa: number
+  provisionConstituida: number | null
+}
+
+interface I02Reporte {
+  cabecera: { codigoEstructura: string; ruc: string; fechaCorte: string; numeroTotalRegistros: number }
+  detalle: I02Elemento[]
 }
 
 function formatoUsd(monto: number) {
@@ -279,10 +313,220 @@ function RenovarInversionModal({ inversion, onClose }: { inversion: Inversion; o
   )
 }
 
+function CalificarRiesgoModal({
+  inversion,
+  calificaciones,
+  calificadoras,
+  onClose,
+}: {
+  inversion: Inversion
+  calificaciones: CatalogoItem[]
+  calificadoras: CatalogoItem[]
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [codigoCalificacionRiesgo, setCodigoCalificacionRiesgo] = useState(inversion.codigoCalificacionRiesgo ?? '')
+  const [codigoCalificadoraRiesgo, setCodigoCalificadoraRiesgo] = useState(inversion.codigoCalificadoraRiesgo ?? '')
+  const [fechaUltimaCalificacion, setFechaUltimaCalificacion] = useState(inversion.fechaUltimaCalificacion ?? '')
+  const [provisionConstituida, setProvisionConstituida] = useState(String(inversion.provisionConstituida ?? ''))
+
+  const guardar = useMutation({
+    mutationFn: async () =>
+      api.patch(`/api/portafolio/inversiones/${inversion.id}/calificacion-riesgo`, {
+        codigoCalificacionRiesgo: codigoCalificacionRiesgo || null,
+        codigoCalificadoraRiesgo: codigoCalificadoraRiesgo || null,
+        fechaUltimaCalificacion: fechaUltimaCalificacion || null,
+        provisionConstituida: provisionConstituida === '' ? null : Number(provisionConstituida),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portafolio-inversiones'] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="glass-card animate-zoom-in max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-medium text-graphite-100">Calificación de riesgo — {inversion.documento}</h3>
+          <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+            <X size={18} />
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-graphite-600">
+          Catálogo real SEPS (estructura I02) — calificación del emisor/depositario y la calificadora que la emitió.
+        </p>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            guardar.mutate()
+          }}
+        >
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Calificación de riesgo</span>
+            <select
+              value={codigoCalificacionRiesgo}
+              onChange={(e) => setCodigoCalificacionRiesgo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            >
+              <option value="">Sin calificar</option>
+              {calificaciones.map((c) => (
+                <option key={c.codigo} value={c.codigo}>
+                  {c.codigo} — {c.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Calificadora</span>
+            <select
+              value={codigoCalificadoraRiesgo}
+              onChange={(e) => setCodigoCalificadoraRiesgo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            >
+              <option value="">Sin especificar</option>
+              {calificadoras.map((c) => (
+                <option key={c.codigo} value={c.codigo}>
+                  {c.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Fecha de la última calificación</span>
+            <input
+              type="date"
+              value={fechaUltimaCalificacion}
+              onChange={(e) => setFechaUltimaCalificacion(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Provisión constituida (opcional)</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={provisionConstituida}
+              onChange={(e) => setProvisionConstituida(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={guardar.isPending}
+            className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {guardar.isPending ? 'Guardando…' : 'Guardar calificación'}
+          </button>
+          {guardar.isError && (
+            <p className="text-sm text-red-700">
+              {(guardar.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+                'No se pudo guardar la calificación.'}
+            </p>
+          )}
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const COLUMNAS_I02: ColumnaExportable<I02Elemento>[] = [
+  { header: 'Documento', accessor: (e) => e.documento },
+  { header: 'Institución', accessor: (e) => e.nombreInstitucion },
+  { header: 'Cuenta contable', accessor: (e) => e.cuentaContable },
+  { header: 'Valor en libros', accessor: (e) => e.valorLibros.toFixed(2) },
+  { header: 'Tasa', accessor: (e) => `${(e.tasa * 100).toFixed(2)}%` },
+  { header: 'Fecha compra', accessor: (e) => e.fechaCompra },
+  { header: 'Fecha vencimiento', accessor: (e) => e.fechaVencimiento },
+  { header: 'Calificación', accessor: (e) => e.codigoCalificacionRiesgo ?? '—' },
+  { header: 'Calificadora', accessor: (e) => e.codigoCalificadoraRiesgo ?? '—' },
+  { header: 'Fecha calificación', accessor: (e) => e.fechaUltimaCalificacion ?? '—' },
+  { header: 'Provisión constituida', accessor: (e) => e.provisionConstituida?.toFixed(2) ?? '—' },
+]
+
+function SeccionReporteI02() {
+  const { data, isLoading, isError } = useQuery<I02Reporte>({
+    queryKey: ['portafolio-reporte-i02'],
+    queryFn: async () => (await api.get('/api/portafolio/reportes/i02')).data,
+  })
+
+  return (
+    <div>
+      <p className="mb-4 text-xs text-graphite-600">
+        Estructura real "Saldos de Inversiones I02" (SEPS) — cuenta contable resuelta con la misma regla real que ya
+        usa el motor de apertura/renovación (plazo × sector de la institución contraparte), nunca un valor fijo.
+      </p>
+      {isLoading && <p className="text-sm text-graphite-600">Cargando…</p>}
+      {isError && <p className="text-sm text-red-700">No se pudo generar el reporte.</p>}
+      {data && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="glass-card rounded-xl p-3">
+                <p className="text-xs text-graphite-600">Estructura</p>
+                <p className="text-lg font-semibold text-graphite-100">{data.cabecera.codigoEstructura}</p>
+              </div>
+              <div className="glass-card rounded-xl p-3">
+                <p className="text-xs text-graphite-600">Fecha de corte</p>
+                <p className="text-lg font-semibold text-graphite-100">{data.cabecera.fechaCorte}</p>
+              </div>
+              <div className="glass-card rounded-xl p-3">
+                <p className="text-xs text-graphite-600">Registros</p>
+                <p className="text-lg font-semibold text-graphite-100">{data.cabecera.numeroTotalRegistros}</p>
+              </div>
+            </div>
+            <BotonesExportar
+              nombreArchivo="portafolio-i02"
+              titulo="Saldos de Inversiones (I02)"
+              subtitulo={`Fecha de corte: ${data.cabecera.fechaCorte}`}
+              columnas={COLUMNAS_I02}
+              filas={data.detalle}
+            />
+          </div>
+          <TableContainer>
+            <thead>
+              <tr>
+                <Th>Documento</Th>
+                <Th>Institución</Th>
+                <Th>Cuenta contable</Th>
+                <Th>Valor en libros</Th>
+                <Th>Calificación</Th>
+                <Th>Calificadora</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.detalle.length === 0 && <EmptyState>Sin inversiones activas</EmptyState>}
+              {data.detalle.map((e, i) => (
+                <tr key={i} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]">
+                  <Td className="font-medium">{e.documento}</Td>
+                  <Td>{e.nombreInstitucion}</Td>
+                  <Td className="tabular-nums">{e.cuentaContable}</Td>
+                  <Td className="tabular-nums">{formatoUsd(e.valorLibros)}</Td>
+                  <Td>{e.codigoCalificacionRiesgo ?? <Badge variant="neutral">Sin calificar</Badge>}</Td>
+                  <Td>{e.codigoCalificadoraRiesgo ?? '—'}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableContainer>
+        </>
+      )}
+    </div>
+  )
+}
+
+const TABS = [
+  { id: 'listado', label: 'Listado' },
+  { id: 'reporte-i02', label: 'Reporte I02 (SEPS)' },
+] as const
+
 export function Portafolio() {
   const queryClient = useQueryClient()
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('listado')
   const [mostrarForm, setMostrarForm] = useState(false)
   const [inversionARenovar, setInversionARenovar] = useState<Inversion | null>(null)
+  const [inversionACalificar, setInversionACalificar] = useState<Inversion | null>(null)
 
   const { data: instituciones } = useQuery<Institucion[]>({
     queryKey: ['portafolio-instituciones'],
@@ -292,6 +536,16 @@ export function Portafolio() {
   const { data: inversiones, isLoading } = useQuery<Inversion[]>({
     queryKey: ['portafolio-inversiones'],
     queryFn: async () => (await api.get('/api/portafolio/inversiones')).data,
+  })
+
+  const { data: calificaciones } = useQuery<CatalogoItem[]>({
+    queryKey: ['portafolio-calificaciones-riesgo'],
+    queryFn: async () => (await api.get('/api/portafolio/calificaciones-riesgo')).data,
+  })
+
+  const { data: calificadoras } = useQuery<CatalogoItem[]>({
+    queryKey: ['portafolio-calificadoras-riesgo'],
+    queryFn: async () => (await api.get('/api/portafolio/calificadoras-riesgo')).data,
   })
 
   const cancelar = useMutation({
@@ -325,11 +579,41 @@ export function Portafolio() {
         }
       />
 
+      <div className="mb-4 flex gap-1 border-b border-black/[0.06]">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`px-3 py-2 text-sm font-medium ${
+              tab === t.id ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600 hover:text-graphite-100'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reporte-i02' && <SeccionReporteI02 />}
+
+      {tab === 'listado' && (
+        <>
       {mostrarForm && instituciones && <AbrirInversionForm instituciones={instituciones} onClose={() => setMostrarForm(false)} />}
 
       {inversionARenovar && (
         <ModalPortal>
           <RenovarInversionModal inversion={inversionARenovar} onClose={() => setInversionARenovar(null)} />
+        </ModalPortal>
+      )}
+
+      {inversionACalificar && calificaciones && calificadoras && (
+        <ModalPortal>
+          <CalificarRiesgoModal
+            inversion={inversionACalificar}
+            calificaciones={calificaciones}
+            calificadoras={calificadoras}
+            onClose={() => setInversionACalificar(null)}
+          />
         </ModalPortal>
       )}
 
@@ -358,6 +642,7 @@ export function Portafolio() {
             <Th>Tasa</Th>
             <Th>Compra</Th>
             <Th>Vencimiento</Th>
+            <Th>Calificación</Th>
             <Th>Estado</Th>
             <Th>Acciones</Th>
           </tr>
@@ -374,33 +659,56 @@ export function Portafolio() {
               <Td>{i.fechaCompra}</Td>
               <Td>{i.fechaVencimiento}</Td>
               <Td>
+                {i.codigoCalificacionRiesgo ? (
+                  <Badge
+                    variant="exito"
+                    title={i.fechaUltimaCalificacion ? `Calificado el ${i.fechaUltimaCalificacion}` : undefined}
+                  >
+                    {i.codigoCalificacionRiesgo}
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral">Sin calificar</Badge>
+                )}
+              </Td>
+              <Td>
                 <Badge variant={estadoVariant(i.estado)}>{i.estado}</Badge>
               </Td>
               <Td>
-                {i.estado === 'Activa' && (
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setInversionARenovar(i)}
-                      className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
-                    >
-                      <RefreshCw size={13} /> Renovar
-                    </button>
-                    <button
-                      type="button"
-                      disabled={cancelar.isPending}
-                      onClick={() => cancelar.mutate(i.id)}
-                      className="text-xs font-medium text-petrol-700 hover:underline disabled:opacity-50"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setInversionACalificar(i)}
+                    className="flex items-center gap-1 text-xs font-medium text-petrol-700 hover:underline"
+                  >
+                    <ShieldCheck size={13} /> Calificar
+                  </button>
+                  {i.estado === 'Activa' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setInversionARenovar(i)}
+                        className="flex items-center gap-1 text-xs font-medium text-gold-400 hover:underline"
+                      >
+                        <RefreshCw size={13} /> Renovar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cancelar.isPending}
+                        onClick={() => cancelar.mutate(i.id)}
+                        className="text-xs font-medium text-petrol-700 hover:underline disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  )}
+                </div>
               </Td>
             </tr>
           ))}
         </tbody>
       </TableContainer>
+        </>
+      )}
     </div>
   )
 }

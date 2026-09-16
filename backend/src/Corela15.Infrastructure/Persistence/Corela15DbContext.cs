@@ -261,6 +261,8 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Institucion> Instituciones => Set<Institucion>();
     public DbSet<InversionPortafolio> InversionesPortafolio => Set<InversionPortafolio>();
     public DbSet<InversionRenovacion> InversionesRenovacion => Set<InversionRenovacion>();
+    public DbSet<CalificacionRiesgo> CalificacionesRiesgo => Set<CalificacionRiesgo>();
+    public DbSet<CalificadoraRiesgo> CalificadorasRiesgo => Set<CalificadoraRiesgo>();
 
     // RIESGOOPERATIVO / REPORTECONTROL (Nivel 8)
     public DbSet<MacroProceso> MacroProcesos => Set<MacroProceso>();
