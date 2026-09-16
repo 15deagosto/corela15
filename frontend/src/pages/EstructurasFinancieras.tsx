@@ -55,7 +55,24 @@ interface Of01Result {
   advertencias: string[]
 }
 
+interface B11Cuenta {
+  codigo: string
+  nombre: string
+  total: number
+}
+
+interface B11Result {
+  codigoEstructura: string
+  ruc: string
+  fechaCorte: string
+  numeroRegistros: number
+  valorCuadre: number
+  detalle: B11Cuenta[]
+  advertencias: string[]
+}
+
 const BASE = '/api/estructuras-financieras/obligaciones'
+const BASE_B11 = '/api/estructuras-financieras/b11'
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50'
@@ -67,17 +84,22 @@ function estadoVariant(codigo: string): 'exito' | 'peligro' | 'neutral' | 'alert
   return 'exito'
 }
 
-const TABS_MODULO = [
-  { id: 'obligaciones', label: 'Obligaciones financieras' },
-  { id: 'generar', label: 'Generar OF01' },
+// Cada pestaña se gatea por SU PROPIA estructura, no por un permiso único
+// del módulo entero — bug real corregido: antes toda la página quedaba
+// bloqueada si el usuario no tenía OF01, aunque sí tuviera B11 (o
+// viceversa). El módulo ahora muestra solo las pestañas de las
+// estructuras que el usuario realmente tiene otorgadas.
+const TODAS_LAS_TABS = [
+  { id: 'obligaciones', label: 'Obligaciones financieras', estructura: 'OF01' },
+  { id: 'generar-of01', label: 'Generar OF01', estructura: 'OF01' },
+  { id: 'generar-b11', label: 'Generar B11', estructura: 'B11' },
 ] as const
-type TabModulo = (typeof TABS_MODULO)[number]['id']
+type TabModulo = (typeof TODAS_LAS_TABS)[number]['id']
 
 export function EstructurasFinancieras() {
   const { tieneEstructura } = useAuth()
-  const [tab, setTab] = useState<TabModulo>('obligaciones')
-
-  const autorizado = tieneEstructura('OF01')
+  const tabsDisponibles = TODAS_LAS_TABS.filter((t) => tieneEstructura(t.estructura))
+  const [tab, setTab] = useState<TabModulo | null>(tabsDisponibles[0]?.id ?? null)
 
   return (
     <div className="animate-fade-in">
@@ -87,21 +109,22 @@ export function EstructurasFinancieras() {
         subtitle="Generador de estructuras regulatorias — captura de datos, validación y exportación"
       />
 
-      {!autorizado ? (
+      {tabsDisponibles.length === 0 ? (
         <div className="glass-card rounded-xl p-5">
           <div className="mb-2 flex items-center gap-2">
             <Lock size={15} className="text-graphite-600" />
-            <h3 className="font-medium text-graphite-100">Obligaciones Financieras (OF01)</h3>
+            <h3 className="font-medium text-graphite-100">Sin estructuras asignadas</h3>
           </div>
           <p className="text-sm text-graphite-600">
-            No tienes permiso para esta estructura — pídele a un administrador que te lo asigne desde
-            Configuración → Roles → Estructuras.
+            No tenés permiso para ninguna estructura de este módulo — pedile a un administrador que te asigne
+            alguna desde Configuración → Roles → Estructuras (o directo desde Usuarios y roles → Gestionar →
+            Permisos directos).
           </p>
         </div>
       ) : (
         <>
           <div className="mb-4 flex gap-1 border-b border-black/[0.06]">
-            {TABS_MODULO.map((t) => (
+            {tabsDisponibles.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -117,7 +140,9 @@ export function EstructurasFinancieras() {
             ))}
           </div>
 
-          {tab === 'obligaciones' ? <SeccionObligaciones /> : <SeccionGenerarOf01 />}
+          {tab === 'obligaciones' && <SeccionObligaciones />}
+          {tab === 'generar-of01' && <SeccionGenerarOf01 />}
+          {tab === 'generar-b11' && <SeccionGenerarB11 />}
         </>
       )}
     </div>
@@ -774,6 +799,12 @@ function SeccionGenerarOf01() {
         </button>
       </div>
 
+      {generar.isError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {mensajeError(generar.error)}
+        </div>
+      )}
+
       {descargarPaquete.isError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
           No se pudo generar el paquete — revisá que la empresa tenga RUC configurado (Configuración → Empresa).
@@ -897,4 +928,155 @@ const COLUMNAS_OF01 = [
   { header: 'Fecha vencimiento', accessor: (r: Record<string, unknown>) => String(r.fechaVencimiento) },
   { header: 'Periodicidad de pago', accessor: (r: Record<string, unknown>) => String(r.codigoPeriodicidadPago) },
   { header: 'Clase', accessor: (r: Record<string, unknown>) => String(r.codigoClase) },
+]
+
+// Estructura B11 (Balance de Comprobación) — calculada en vivo desde el
+// ledger real de Softbank (agencia CSD, con la eliminación real de
+// transferencias internas 1908/2908 aplicada), verificada byte a byte
+// contra el archivo real de referencia (SEPS, corte 31/08/2026): los 5
+// elementos (ACTIVO/PASIVO/PATRIMONIO/GASTOS/INGRESOS) coinciden exactos.
+function SeccionGenerarB11() {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const [fechaCorte, setFechaCorte] = useState(hoy)
+  const [resultado, setResultado] = useState<B11Result | null>(null)
+
+  const generar = useMutation({
+    mutationFn: async () => (await api.get(`${BASE_B11}/generar?fechaCorte=${fechaCorte}`)).data as B11Result,
+    onSuccess: setResultado,
+  })
+
+  const descargarPaquete = useMutation({
+    mutationFn: async () => {
+      const resp = await api.get(`${BASE_B11}/paquete?fechaCorte=${fechaCorte}`, { responseType: 'blob' })
+      const disposicion = resp.headers['content-disposition'] as string | undefined
+      const nombre = disposicion?.match(/filename="?([^"]+)"?/)?.[1] ?? `B11_${fechaCorte}.zip`
+      const url = URL.createObjectURL(resp.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nombre
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <p className="rounded-lg border border-petrol-800/20 bg-petrol-800/5 px-3 py-2 text-xs text-graphite-600">
+        Se calcula en vivo desde el ledger real de Softbank (agencia consolidada, solo lectura) — no depende de datos
+        capturados acá. Formato de envío (XML + hash MD5 + zip) verificado byte a byte contra un archivo real de
+        referencia.
+      </p>
+
+      <div className="glass-card flex flex-wrap items-end gap-3 rounded-xl p-4">
+        <Campo label="Fecha de corte">
+          <input type="date" value={fechaCorte} onChange={(e) => setFechaCorte(e.target.value)} className={INPUT_CLASS} />
+        </Campo>
+        <button
+          type="button"
+          onClick={() => generar.mutate()}
+          disabled={generar.isPending}
+          className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          <Download size={15} /> {generar.isPending ? 'Generando…' : 'Generar B11'}
+        </button>
+        <button
+          type="button"
+          onClick={() => descargarPaquete.mutate()}
+          disabled={descargarPaquete.isPending}
+          title="Descarga el .zip real (XML + hash MD5) con el nombre exacto que exige el manual"
+          className="btn-hover flex items-center gap-1.5 rounded-lg border border-black/[0.08] px-4 py-2 text-sm font-medium text-graphite-700 disabled:opacity-50"
+        >
+          <Package size={15} /> Descargar paquete de envío (.zip)
+        </button>
+      </div>
+
+      {generar.isError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{mensajeError(generar.error)}</div>
+      )}
+      {descargarPaquete.isError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          No se pudo generar el paquete — revisá que la empresa tenga RUC configurado (Configuración → Empresa).
+        </div>
+      )}
+
+      {resultado && (
+        <>
+          {resultado.advertencias.length > 0 && (
+            <div className="glass-card rounded-xl border border-gold-500/30 bg-gold-500/5 p-4">
+              <h4 className="mb-1 text-xs font-semibold text-gold-600">Advertencias</h4>
+              <ul className="list-inside list-disc text-xs text-graphite-600">
+                {resultado.advertencias.map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="glass-card grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-5">
+            <div>
+              <p className="text-xs text-graphite-600">Estructura</p>
+              <p className="font-medium text-graphite-100">{resultado.codigoEstructura}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">RUC</p>
+              <p className="font-medium text-graphite-100">{resultado.ruc}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">Fecha de corte</p>
+              <p className="font-medium text-graphite-100">{resultado.fechaCorte}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">Registros</p>
+              <p className="font-medium text-graphite-100">{resultado.numeroRegistros}</p>
+            </div>
+            <div>
+              <p className="text-xs text-graphite-600">Valor de cuadre</p>
+              <p className="font-medium text-graphite-100">${resultado.valorCuadre.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <BotonesExportar
+              nombreArchivo={`B11_${resultado.fechaCorte}`}
+              titulo="B11 — Balance de Comprobación"
+              subtitulo={`RUC ${resultado.ruc} · Corte ${resultado.fechaCorte}`}
+              columnas={COLUMNAS_B11}
+              filas={resultado.detalle}
+            />
+          </div>
+
+          <TableContainer>
+            <thead>
+              <tr>
+                <Th>Código</Th>
+                <Th>Nombre</Th>
+                <Th>Total</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {resultado.detalle.length === 0 ? (
+                <EmptyState>Sin registros a esta fecha de corte.</EmptyState>
+              ) : (
+                resultado.detalle.map((d, i) => (
+                  <tr key={i} className="border-t border-black/[0.04]">
+                    <Td>{d.codigo}</Td>
+                    <Td>{d.nombre}</Td>
+                    <Td className="text-right tabular-nums">${d.total.toFixed(2)}</Td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </TableContainer>
+        </>
+      )}
+    </div>
+  )
+}
+
+const COLUMNAS_B11 = [
+  { header: 'Código', accessor: (r: B11Cuenta) => r.codigo },
+  { header: 'Nombre', accessor: (r: B11Cuenta) => r.nombre },
+  { header: 'Total', accessor: (r: B11Cuenta) => r.total },
 ]

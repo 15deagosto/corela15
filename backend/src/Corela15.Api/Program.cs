@@ -101,6 +101,7 @@ builder.Services.AddScoped<IChequeService, ChequeService>();
 builder.Services.AddScoped<ISolicitudPedidoService, SolicitudPedidoService>();
 builder.Services.AddScoped<IObligacionFinancieraService, ObligacionFinancieraService>();
 builder.Services.AddScoped<IObligacionSyncService, ObligacionSyncService>();
+builder.Services.AddScoped<IB11Service, B11Service>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IPlanificacionService, PlanificacionService>();
 builder.Services.AddScoped<IEventoRiesgoService, EventoRiesgoService>();
@@ -225,7 +226,7 @@ var codigosMenu = new[]
 // puntuales puede generar cada usuario. "OF01" primero, con espacio real
 // para sumar más sin tocar este arreglo si se agregan por catálogo — acá
 // solo se declaran las policies base ya conocidas al arrancar.
-var codigosTipoEstructura = new[] { "OF01" };
+var codigosTipoEstructura = new[] { "OF01", "B11" };
 
 // Mismo patrón, para el módulo "Reportería Gerencial" (ver
 // DatasetReporteria.cs) — qué datasets del motor semántico (portado de
