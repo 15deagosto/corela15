@@ -53,6 +53,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
 
     // DOCUMENTOS (biblioteca documental, portada de CredVault)
     public DbSet<Documento> Documentos => Set<Documento>();
+    public DbSet<AreaAccesoUsuario> AreaAccesosDocumentales => Set<AreaAccesoUsuario>();
 
     // SUJETO
     public DbSet<Persona> Personas => Set<Persona>();

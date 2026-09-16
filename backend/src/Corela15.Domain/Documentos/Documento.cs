@@ -1,4 +1,5 @@
 using Corela15.Domain.Common;
+using Corela15.Domain.Seguridad;
 
 namespace Corela15.Domain.Documentos;
 
@@ -94,4 +95,34 @@ public class Documento : AuditableEntity
 
     /// <summary>Nunca DELETE real, mismo criterio de todo el core — solo se desactiva.</summary>
     public bool Activo { get; set; } = true;
+}
+
+public enum NivelAccesoDocumental
+{
+    Lectura = 1,
+    Escritura = 2,
+}
+
+/// <summary>
+/// ACL real por área — pedido explícito del usuario ("como TI no quiero
+/// que alguien más vea lo que subo ahí"), mismo modelo mental que una
+/// carpeta compartida de red: se busca por usuario y se le da acceso de
+/// Lectura o de Escritura a un área puntual. Sin fila acá, el usuario NO
+/// ve nada de esa área — deny-by-default real, no una excepción. Un
+/// usuario puede tener acceso a varias áreas (una fila por área,
+/// única por usuario+área — para subir de Lectura a Escritura se edita
+/// la fila existente, nunca se duplica). ADMINISTRADOR y quien tenga el
+/// menú `biblioteca-documentos-gerencia` ven/administran TODAS las áreas
+/// sin necesidad de ninguna fila acá — mismo patrón ya usado en
+/// Planificación (`planificacion-gerencia`).
+/// </summary>
+public class AreaAccesoUsuario
+{
+    public Guid Id { get; set; }
+    public Guid IdUsuario { get; set; }
+    public Usuario Usuario { get; set; } = null!;
+    public AreaDocumental Area { get; set; }
+    public NivelAccesoDocumental NivelAcceso { get; set; }
+    public DateTimeOffset CreadoEn { get; set; }
+    public string CreadoPor { get; set; } = string.Empty;
 }

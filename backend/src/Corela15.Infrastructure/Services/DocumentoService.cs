@@ -5,18 +5,27 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Corela15.Infrastructure.Services;
 
-/// <summary>Ver <see cref="IDocumentoService"/> — portado real de CredVault (apps.documents.Document/DocumentViewSet), nativo del core ahora.</summary>
+/// <summary>
+/// Ver <see cref="IDocumentoService"/> — portado real de CredVault
+/// (apps.documents.Document/DocumentViewSet), nativo del core ahora. Cada
+/// método real de lectura/escritura recibe un
+/// <see cref="ContextoAccesoDocumental"/> ya resuelto (rol ADMINISTRADOR
+/// + menú `biblioteca-documentos-gerencia` + ACL real por área, ver
+/// AreaAccesoUsuario) y lo aplica como deny-by-default real — sin acceso
+/// explícito a un área, el usuario no ve ni puede tocar sus documentos.
+/// </summary>
 public class DocumentoService(Corela15DbContext db, IDocumentoStorageService storage) : IDocumentoService
 {
     private const int MaxMb = 20;
     private static readonly HashSet<string> ExtensionesPermitidas =
         new(StringComparer.OrdinalIgnoreCase) { "pdf", "doc", "docx", "xls", "xlsx", "txt", "ppt", "pptx" };
 
-    public async Task<Guid> CrearAsync(CrearDocumentoRequest request, Stream archivo, string nombreArchivoOriginal, string contentType, long tamanoBytes, CancellationToken cancellationToken = default)
+    public async Task<Guid> CrearAsync(CrearDocumentoRequest request, Stream archivo, string nombreArchivoOriginal, string contentType, long tamanoBytes, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Titulo)) throw new TituloDocumentoRequeridoException();
         var area = ParsearEnum<AreaDocumental>("área", request.Area);
         var tipo = ParsearEnum<TipoDocumento>("tipo", request.Tipo);
+        if (!contexto.TieneEscritura(area.ToString())) throw new AccesoDocumentalDenegadoException(area.ToString());
         ValidarArchivo(nombreArchivoOriginal, tamanoBytes);
 
         var ruta = await storage.GuardarAsync(archivo, nombreArchivoOriginal, cancellationToken);
@@ -48,13 +57,19 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         return documento.Id;
     }
 
-    public async Task ActualizarAsync(Guid id, ActualizarDocumentoRequest request, CancellationToken cancellationToken = default)
+    public async Task ActualizarAsync(Guid id, ActualizarDocumentoRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
-        var documento = await BuscarActivoAsync(id, cancellationToken);
+        var documento = await BuscarConEscrituraAsync(id, contexto, cancellationToken);
         if (string.IsNullOrWhiteSpace(request.Titulo)) throw new TituloDocumentoRequeridoException();
         var area = ParsearEnum<AreaDocumental>("área", request.Area);
         var tipo = ParsearEnum<TipoDocumento>("tipo", request.Tipo);
         var estado = ParsearEnum<EstadoDocumento>("estado", request.Estado);
+
+        // Si además intenta MOVER el documento a otra área, necesita
+        // Escritura también sobre la área destino — moverlo a un área
+        // ajena sin permiso ahí sería una forma real de eludir el ACL.
+        if (area != documento.Area && !contexto.TieneEscritura(area.ToString()))
+            throw new AccesoDocumentalDenegadoException(area.ToString());
 
         documento.Titulo = request.Titulo.Trim();
         documento.Area = area;
@@ -71,9 +86,9 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task SubirNuevaVersionAsync(Guid id, SubirNuevaVersionRequest request, Stream archivo, string nombreArchivoOriginal, string contentType, long tamanoBytes, CancellationToken cancellationToken = default)
+    public async Task SubirNuevaVersionAsync(Guid id, SubirNuevaVersionRequest request, Stream archivo, string nombreArchivoOriginal, string contentType, long tamanoBytes, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
-        var documento = await BuscarActivoAsync(id, cancellationToken);
+        var documento = await BuscarConEscrituraAsync(id, contexto, cancellationToken);
         ValidarArchivo(nombreArchivoOriginal, tamanoBytes);
 
         // El archivo anterior se queda en el NAS tal cual — nunca se borra
@@ -92,23 +107,33 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DesactivarAsync(Guid id, string modificadoPor, CancellationToken cancellationToken = default)
+    public async Task DesactivarAsync(Guid id, string modificadoPor, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
-        var documento = await BuscarActivoAsync(id, cancellationToken);
+        var documento = await BuscarConEscrituraAsync(id, contexto, cancellationToken);
         documento.Activo = false;
         documento.ModificadoEn = DateTimeOffset.UtcNow;
         documento.ModificadoPor = modificadoPor;
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<DocumentoListItem>> ListarAsync(ListarDocumentosFiltro filtro, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<DocumentoListItem>> ListarAsync(ListarDocumentosFiltro filtro, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
+        // Si pide un área puntual sin lectura ahí, no es un error --
+        // simplemente no hay nada visible para mostrar (mismo criterio
+        // "deny-by-default silencioso" que una carpeta compartida real).
+        if (!string.IsNullOrWhiteSpace(filtro.Area) && !contexto.TieneLectura(filtro.Area))
+            return [];
+
         var query = db.Documentos.Where(d => d.Activo).AsQueryable();
 
-        // El enum se resuelve ANTES de entrar al árbol de expresión de EF
-        // (nunca llamando ParsearEnum dentro del lambda) — EF no puede
-        // traducir un método C# arbitrario a SQL, solo comparaciones
-        // contra un valor ya resuelto.
+        if (!contexto.VeTodo)
+        {
+            var areasVisibles = contexto.AccesoPorArea.Keys
+                .Select(a => Enum.Parse<AreaDocumental>(a))
+                .ToList();
+            query = query.Where(d => areasVisibles.Contains(d.Area));
+        }
+
         if (!string.IsNullOrWhiteSpace(filtro.Area))
         {
             var area = ParsearEnum<AreaDocumental>("área", filtro.Area);
@@ -134,21 +159,29 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         return lista.Select(Proyectar).ToList();
     }
 
-    public async Task<DocumentoListItem?> ObtenerAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<DocumentoListItem?> ObtenerAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
         var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
-        return documento is null ? null : Proyectar(documento);
+        // Sin lectura sobre el área -- se trata igual que "no existe", nunca
+        // se distingue (no hay que confirmarle a nadie que un documento
+        // ajeno existe).
+        if (documento is null || !contexto.TieneLectura(documento.Area.ToString())) return null;
+        return Proyectar(documento);
     }
 
-    public async Task<DescargaDocumentoResult> DescargarAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<DescargaDocumentoResult> DescargarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
-        var documento = await BuscarActivoAsync(id, cancellationToken);
+        var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
+        if (documento is null || !contexto.TieneLectura(documento.Area.ToString())) throw new DocumentoInvalidoException();
+
         var contenido = await storage.AbrirAsync(documento.RutaAlmacenamiento, cancellationToken);
         return new DescargaDocumentoResult(contenido, documento.NombreArchivoOriginal, documento.ContentType);
     }
 
-    public async Task<MatrizDocumentalResult> ObtenerMatrizAsync(CancellationToken cancellationToken = default)
+    public async Task<MatrizDocumentalResult> ObtenerMatrizAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
+        if (!contexto.VeTodo) throw new AccesoDocumentalDenegadoException("todas (matriz de cobertura)");
+
         // Siempre sobre el universo completo de áreas×tipos, nunca sobre
         // filtros de un listado — mismo criterio real de CredVault
         // (matriz de cobertura documental).
@@ -171,10 +204,12 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         return new MatrizDocumentalResult(filas);
     }
 
-    private async Task<Documento> BuscarActivoAsync(Guid id, CancellationToken cancellationToken)
+    private async Task<Documento> BuscarConEscrituraAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken)
     {
-        var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
-        return documento ?? throw new DocumentoInvalidoException();
+        var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken)
+            ?? throw new DocumentoInvalidoException();
+        if (!contexto.TieneEscritura(documento.Area.ToString())) throw new AccesoDocumentalDenegadoException(documento.Area.ToString());
+        return documento;
     }
 
     private static void ValidarArchivo(string nombreOriginal, long tamanoBytes)

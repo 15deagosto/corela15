@@ -33,3 +33,21 @@ public class DocumentoConfiguration : IEntityTypeConfiguration<Documento>
         b.Property<uint>("xmin").HasColumnName("xmin").IsRowVersion();
     }
 }
+
+public class AreaAccesoUsuarioConfiguration : IEntityTypeConfiguration<AreaAccesoUsuario>
+{
+    public void Configure(EntityTypeBuilder<AreaAccesoUsuario> b)
+    {
+        b.ToTable("area_acceso_usuario", "documentos");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Area).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.NivelAcceso).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+
+        // Única por usuario+área -- subir de Lectura a Escritura edita la
+        // fila existente, nunca duplica.
+        b.HasIndex(x => new { x.IdUsuario, x.Area }).IsUnique();
+    }
+}

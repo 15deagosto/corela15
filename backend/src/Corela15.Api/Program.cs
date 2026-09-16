@@ -117,6 +117,7 @@ builder.Services.AddScoped<ISocioService, SocioService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<Corela15.Application.Documentos.IDocumentoStorageService, Corela15.Infrastructure.Services.FileSystemDocumentoStorageService>();
 builder.Services.AddScoped<Corela15.Application.Documentos.IDocumentoService, Corela15.Infrastructure.Services.DocumentoService>();
+builder.Services.AddScoped<Corela15.Application.Documentos.IAccesoDocumentalService, Corela15.Infrastructure.Services.AccesoDocumentalService>();
 builder.Services.AddScoped<IWhatsAppCloudApiClient, WhatsAppCloudApiClient>();
 builder.Services.AddHttpClient("whatsapp-cloud-api");
 builder.Services.AddScoped<IComunicacionService, ComunicacionService>();
@@ -220,7 +221,7 @@ var codigosMenu = new[]
     "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
     "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
     "planificacion", "planificacion-gerencia", "credvault", "reporteria-gerencial",
-    "mensajeria-whatsapp", "comunicacion-interna", "biblioteca-documentos",
+    "mensajeria-whatsapp", "comunicacion-interna", "biblioteca-documentos", "biblioteca-documentos-gerencia",
 };
 
 // Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —

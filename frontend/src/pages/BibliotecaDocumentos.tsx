@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Library, Plus, X, Download, UploadCloud, Ban, Grid3x3 } from 'lucide-react'
+import { Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import { api } from '../lib/api'
-import { useAuth } from '../lib/AuthContext'
 import type { ColumnaExportable } from '../lib/exportar'
 
 interface CatalogoItem {
@@ -48,6 +47,22 @@ interface MatrizDocumental {
   filas: MatrizFila[]
 }
 
+/** ACL real por área — "veTodo" (ADMINISTRADOR o biblioteca-documentos-gerencia) ve/administra todo sin filas de accesoPorArea. Mismo modelo mental que una carpeta compartida de red: sin fila acá, no se ve nada de esa área. */
+interface MiAcceso {
+  veTodo: boolean
+  accesoPorArea: Record<string, string>
+}
+
+interface AreaAccesoItem {
+  id: string
+  idUsuario: string
+  nombreUsuario: string
+  area: string
+  nivelAcceso: string
+  creadoEn: string
+  creadoPor: string
+}
+
 function mensajeError(error: unknown, fallback: string) {
   return (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? fallback
 }
@@ -69,6 +84,16 @@ function nombreCatalogo(catalogo: CatalogoItem[] | undefined, codigo: string) {
   return catalogo?.find((c) => c.codigo === codigo)?.nombre ?? codigo
 }
 
+function tieneLectura(acceso: MiAcceso | undefined, area: string) {
+  if (!acceso) return false
+  return acceso.veTodo || area in acceso.accesoPorArea
+}
+
+function tieneEscritura(acceso: MiAcceso | undefined, area: string) {
+  if (!acceso) return false
+  return acceso.veTodo || acceso.accesoPorArea[area] === 'Escritura'
+}
+
 const inputClase =
   'rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50'
 
@@ -88,12 +113,19 @@ function useCatalogos() {
   return { areas: areas.data, tipos: tipos.data, estados: estados.data }
 }
 
+function useMiAcceso() {
+  return useQuery<MiAcceso>({
+    queryKey: ['biblioteca-documentos-mi-acceso'],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos/mi-acceso')).data,
+  })
+}
+
 function NuevoDocumentoModal({
-  areas,
+  areasEscribibles,
   tipos,
   onClose,
 }: {
-  areas: CatalogoItem[]
+  areasEscribibles: CatalogoItem[]
   tipos: CatalogoItem[]
   onClose: () => void
 }) {
@@ -164,12 +196,15 @@ function NuevoDocumentoModal({
               <span className="text-graphite-600">Área responsable</span>
               <select required value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
                 <option value="">Seleccionar…</option>
-                {areas.map((a) => (
+                {areasEscribibles.map((a) => (
                   <option key={a.codigo} value={a.codigo}>
                     {a.nombre}
                   </option>
                 ))}
               </select>
+              {areasEscribibles.length === 0 && (
+                <span className="text-xs text-red-700">No tenés acceso de escritura a ninguna área todavía.</span>
+              )}
             </label>
 
             <label className="flex flex-col gap-1 text-sm">
@@ -228,7 +263,7 @@ function NuevoDocumentoModal({
             <div className="sm:col-span-2">
               <button
                 type="submit"
-                disabled={crear.isPending}
+                disabled={crear.isPending || areasEscribibles.length === 0}
                 className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {crear.isPending ? 'Subiendo…' : 'Guardar documento'}
@@ -250,20 +285,18 @@ type TabGestion = 'metadatos' | 'version'
 function GestionarDocumentoModal({
   documento,
   areas,
+  areasEscribibles,
   tipos,
   estados,
   puedeEditar,
-  puedeSubirVersion,
-  puedeDesactivar,
   onClose,
 }: {
   documento: DocumentoItem
   areas: CatalogoItem[]
+  areasEscribibles: CatalogoItem[]
   tipos: CatalogoItem[]
   estados: CatalogoItem[]
   puedeEditar: boolean
-  puedeSubirVersion: boolean
-  puedeDesactivar: boolean
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -281,6 +314,14 @@ function GestionarDocumentoModal({
 
   const [nuevaVersion, setNuevaVersion] = useState('')
   const [archivoNuevo, setArchivoNuevo] = useState<File | null>(null)
+
+  // El selector de área en edición siempre ofrece, además de las áreas
+  // donde el usuario tiene Escritura, la área ACTUAL del documento (para
+  // no forzar un cambio de área solo por estar viendo el formulario).
+  const opcionesArea = [
+    ...areasEscribibles,
+    ...(areasEscribibles.some((a) => a.codigo === documento.area) ? [] : [{ codigo: documento.area, nombre: nombreCatalogo(areas, documento.area) }]),
+  ]
 
   const guardarMetadatos = useMutation({
     mutationFn: async () =>
@@ -362,7 +403,7 @@ function GestionarDocumentoModal({
               >
                 Metadatos
               </button>
-              {puedeSubirVersion && (
+              {puedeEditar && (
                 <button
                   type="button"
                   onClick={() => setTab('version')}
@@ -377,7 +418,7 @@ function GestionarDocumentoModal({
                 <button type="button" onClick={descargar} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-petrol-700 hover:bg-black/[0.02]">
                   <Download size={13} /> Descargar
                 </button>
-                {puedeDesactivar && (
+                {puedeEditar && (
                   <button
                     type="button"
                     onClick={() => {
@@ -395,7 +436,7 @@ function GestionarDocumentoModal({
               {tab === 'metadatos' && (
                 <fieldset disabled={!puedeEditar}>
                   {!puedeEditar && (
-                    <p className="mb-3 text-xs text-graphite-500">No tenés permiso para editar metadatos — solo lectura.</p>
+                    <p className="mb-3 text-xs text-graphite-500">No tenés acceso de escritura sobre el área de este documento — solo lectura.</p>
                   )}
                   <form
                     className="grid grid-cols-1 gap-4 sm:grid-cols-2"
@@ -411,7 +452,7 @@ function GestionarDocumentoModal({
                     <label className="flex flex-col gap-1 text-sm">
                       <span className="text-graphite-600">Área</span>
                       <select value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
-                        {areas.map((a) => (
+                        {opcionesArea.map((a) => (
                           <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
                         ))}
                       </select>
@@ -467,7 +508,7 @@ function GestionarDocumentoModal({
                 </fieldset>
               )}
 
-              {tab === 'version' && puedeSubirVersion && (
+              {tab === 'version' && puedeEditar && (
                 <form
                   className="flex flex-col gap-4"
                   onSubmit={(e) => {
@@ -563,22 +604,193 @@ function MatrizCobertura({ areas, tipos }: { areas: CatalogoItem[]; tipos: Catal
   )
 }
 
-export function BibliotecaDocumentos() {
-  const { tieneOpcion } = useAuth()
-  const puedeCrear = tieneOpcion('biblioteca-documentos.crear')
-  const puedeEditar = tieneOpcion('biblioteca-documentos.editar')
-  const puedeSubirVersion = tieneOpcion('biblioteca-documentos.nueva-version')
-  const puedeDesactivar = tieneOpcion('biblioteca-documentos.desactivar')
-  const puedeVerMatriz = tieneOpcion('biblioteca-documentos.matriz')
+function BuscarUsuarioAcceso({ onSeleccionar }: { onSeleccionar: (u: { id: string; nombreUsuario: string }) => void }) {
+  const [q, setQ] = useState('')
+  const { data: usuarios } = useQuery<{ id: string; nombreUsuario: string }[]>({
+    queryKey: ['biblioteca-documentos-buscar-usuario', q],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos/accesos/usuarios/buscar', { params: { q } })).data,
+    enabled: q.length >= 2,
+  })
 
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Buscar usuario por nombre…"
+        className={`${inputClase} py-1.5`}
+      />
+      {q.length >= 2 && (usuarios?.length ?? 0) > 0 && (
+        <div className="max-h-32 overflow-y-auto rounded-lg border border-black/[0.08] bg-white">
+          {usuarios?.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => {
+                onSeleccionar(u)
+                setQ('')
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs hover:bg-black/[0.02]"
+            >
+              {u.nombreUsuario}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SeccionAccesos({ areas }: { areas: CatalogoItem[] }) {
+  const queryClient = useQueryClient()
+  const [filtroArea, setFiltroArea] = useState('')
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<{ id: string; nombreUsuario: string } | null>(null)
+  const [areaOtorgar, setAreaOtorgar] = useState('')
+  const [nivelOtorgar, setNivelOtorgar] = useState('Lectura')
+
+  const { data: accesos, isLoading } = useQuery<AreaAccesoItem[]>({
+    queryKey: ['biblioteca-documentos-accesos', filtroArea],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos/accesos', { params: { area: filtroArea || undefined } })).data,
+  })
+
+  const otorgar = useMutation({
+    mutationFn: async () =>
+      api.post('/api/biblioteca-documentos/accesos', {
+        idUsuario: usuarioSeleccionado!.id,
+        area: areaOtorgar,
+        nivelAcceso: nivelOtorgar,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos'] })
+      setUsuarioSeleccionado(null)
+      setAreaOtorgar('')
+      setNivelOtorgar('Lectura')
+    },
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (id: string) => api.delete(`/api/biblioteca-documentos/accesos/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-accesos'] }),
+  })
+
+  return (
+    <div>
+      <p className="mb-4 text-xs text-graphite-500">
+        Mismo modelo que una carpeta compartida de red: por defecto nadie ve los documentos de un área ajena — acá se
+        otorga acceso de Lectura o Escritura por usuario y área. Escritura incluye Lectura (crear, editar, subir
+        nueva versión, desactivar).
+      </p>
+
+      <div className="glass-card mb-6 rounded-xl p-4">
+        <h3 className="mb-3 text-sm font-medium text-graphite-100">Otorgar acceso</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+          <div className="flex flex-col gap-1 text-xs sm:col-span-2">
+            <span className="text-graphite-600">Usuario</span>
+            {usuarioSeleccionado ? (
+              <div className="flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm">
+                {usuarioSeleccionado.nombreUsuario}
+                <button type="button" onClick={() => setUsuarioSeleccionado(null)} className="text-graphite-500 hover:text-red-700">
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <BuscarUsuarioAcceso onSeleccionar={setUsuarioSeleccionado} />
+            )}
+          </div>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-graphite-600">Área</span>
+            <select value={areaOtorgar} onChange={(e) => setAreaOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
+              <option value="">Seleccionar…</option>
+              {areas.map((a) => (
+                <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-graphite-600">Nivel</span>
+            <select value={nivelOtorgar} onChange={(e) => setNivelOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
+              <option value="Lectura">Lectura</option>
+              <option value="Escritura">Escritura</option>
+            </select>
+          </label>
+        </div>
+        <button
+          type="button"
+          disabled={!usuarioSeleccionado || !areaOtorgar || otorgar.isPending}
+          onClick={() => otorgar.mutate()}
+          className="btn-hover mt-3 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {otorgar.isPending ? 'Otorgando…' : 'Otorgar acceso'}
+        </button>
+        {otorgar.isError && <p className="mt-2 text-sm text-red-700">{mensajeError(otorgar.error, 'No se pudo otorgar el acceso.')}</p>}
+      </div>
+
+      <label className="mb-3 flex max-w-xs flex-col gap-1 text-xs">
+        <span className="text-graphite-600">Filtrar por área</span>
+        <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${inputClase} py-1.5`}>
+          <option value="">Todas</option>
+          {areas.map((a) => (
+            <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
+          ))}
+        </select>
+      </label>
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Usuario</Th>
+            <Th>Área</Th>
+            <Th>Nivel</Th>
+            <Th>Otorgado por</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (accesos?.length ?? 0) === 0 && <EmptyState>Sin accesos otorgados todavía</EmptyState>}
+          {accesos?.map((a) => (
+            <tr key={a.id} className="border-b border-black/[0.04] last:border-0">
+              <Td className="font-medium">{a.nombreUsuario}</Td>
+              <Td>{nombreCatalogo(areas, a.area)}</Td>
+              <Td>
+                <Badge variant={a.nivelAcceso === 'Escritura' ? 'alerta' : 'neutral'}>{a.nivelAcceso}</Badge>
+              </Td>
+              <Td>{a.creadoPor}</Td>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`¿Quitar el acceso de ${a.nombreUsuario} a ${nombreCatalogo(areas, a.area)}?`)) quitar.mutate(a.id)
+                  }}
+                  className="text-red-700 hover:underline"
+                  title="Quitar acceso"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+    </div>
+  )
+}
+
+export function BibliotecaDocumentos() {
+  const { data: miAcceso } = useMiAcceso()
   const { areas, tipos, estados } = useCatalogos()
-  const [tab, setTab] = useState<'documentos' | 'matriz'>('documentos')
+  const [tab, setTab] = useState<'documentos' | 'matriz' | 'accesos'>('documentos')
   const [mostrarNuevo, setMostrarNuevo] = useState(false)
   const [seleccionado, setSeleccionado] = useState<DocumentoItem | null>(null)
   const [filtroArea, setFiltroArea] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [busqueda, setBusqueda] = useState('')
+
+  const veTodo = miAcceso?.veTodo ?? false
+  const areasEscribibles = (areas ?? []).filter((a) => tieneEscritura(miAcceso, a.codigo))
+  const areasLegibles = veTodo ? (areas ?? []) : (areas ?? []).filter((a) => tieneLectura(miAcceso, a.codigo))
+  const puedeCrear = areasEscribibles.length > 0
 
   const { data: documentos, isLoading } = useQuery<DocumentoItem[]>({
     queryKey: ['biblioteca-documentos', filtroArea, filtroTipo, filtroEstado, busqueda],
@@ -588,6 +800,7 @@ export function BibliotecaDocumentos() {
           params: { area: filtroArea || undefined, tipo: filtroTipo || undefined, estado: filtroEstado || undefined, q: busqueda || undefined },
         })
       ).data,
+    enabled: !!miAcceso,
   })
 
   const columnas: ColumnaExportable<DocumentoItem>[] = [
@@ -621,6 +834,12 @@ export function BibliotecaDocumentos() {
         }
       />
 
+      {!veTodo && (
+        <p className="mb-4 flex items-center gap-1.5 text-xs text-graphite-500">
+          <Lock size={12} /> Solo ves los documentos de las áreas a las que tenés acceso otorgado.
+        </p>
+      )}
+
       <div className="mb-4 flex gap-1 border-b border-black/[0.06]">
         <button
           type="button"
@@ -629,30 +848,38 @@ export function BibliotecaDocumentos() {
         >
           Documentos
         </button>
-        {puedeVerMatriz && (
-          <button
-            type="button"
-            onClick={() => setTab('matriz')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
-          >
-            <Grid3x3 size={14} /> Matriz de cobertura
-          </button>
+        {veTodo && (
+          <>
+            <button
+              type="button"
+              onClick={() => setTab('matriz')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
+            >
+              <Grid3x3 size={14} /> Matriz de cobertura
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('accesos')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'accesos' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
+            >
+              <Lock size={14} /> Accesos por área
+            </button>
+          </>
         )}
       </div>
 
-      {mostrarNuevo && puedeCrear && areas && tipos && (
-        <NuevoDocumentoModal areas={areas} tipos={tipos} onClose={() => setMostrarNuevo(false)} />
+      {mostrarNuevo && tipos && (
+        <NuevoDocumentoModal areasEscribibles={areasEscribibles} tipos={tipos} onClose={() => setMostrarNuevo(false)} />
       )}
 
       {seleccionado && areas && tipos && estados && (
         <GestionarDocumentoModal
           documento={seleccionado}
           areas={areas}
+          areasEscribibles={areasEscribibles}
           tipos={tipos}
           estados={estados}
-          puedeEditar={puedeEditar}
-          puedeSubirVersion={puedeSubirVersion}
-          puedeDesactivar={puedeDesactivar}
+          puedeEditar={tieneEscritura(miAcceso, seleccionado.area)}
           onClose={() => setSeleccionado(null)}
         />
       )}
@@ -663,8 +890,8 @@ export function BibliotecaDocumentos() {
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-graphite-600">Área</span>
               <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${inputClase} py-1.5`}>
-                <option value="">Todas</option>
-                {areas?.map((a) => (
+                <option value="">Todas (las que puedo ver)</option>
+                {areasLegibles.map((a) => (
                   <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
                 ))}
               </select>
@@ -710,8 +937,14 @@ export function BibliotecaDocumentos() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && <EmptyState>Cargando…</EmptyState>}
-              {!isLoading && (documentos?.length ?? 0) === 0 && <EmptyState>No hay documentos que coincidan con el filtro</EmptyState>}
+              {(isLoading || !miAcceso) && <EmptyState>Cargando…</EmptyState>}
+              {!isLoading && miAcceso && (documentos?.length ?? 0) === 0 && (
+                <EmptyState>
+                  {areasLegibles.length === 0 && !veTodo
+                    ? 'No tenés acceso a ningún área todavía — pedile a un administrador que te lo otorgue.'
+                    : 'No hay documentos que coincidan con el filtro'}
+                </EmptyState>
+              )}
               {documentos?.map((d) => (
                 <tr
                   key={d.id}
@@ -738,7 +971,8 @@ export function BibliotecaDocumentos() {
         </>
       )}
 
-      {tab === 'matriz' && puedeVerMatriz && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
+      {tab === 'matriz' && veTodo && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
+      {tab === 'accesos' && veTodo && areas && <SeccionAccesos areas={areas} />}
     </div>
   )
 }

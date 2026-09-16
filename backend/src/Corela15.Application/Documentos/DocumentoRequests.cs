@@ -30,3 +30,23 @@ public record MatrizFilaResult(string Area, IReadOnlyDictionary<string, MatrizCe
 public record MatrizDocumentalResult(IReadOnlyList<MatrizFilaResult> Filas);
 
 public record DescargaDocumentoResult(Stream Contenido, string NombreArchivo, string ContentType);
+
+/// <summary>
+/// Resuelto una vez por request en el controller (rol ADMINISTRADOR +
+/// claim de menú `biblioteca-documentos-gerencia` + las filas reales de
+/// <see cref="Corela15.Domain.Documentos.AreaAccesoUsuario"/> del usuario
+/// actual) y pasado a cada método de <see cref="IDocumentoService"/> —
+/// el servicio nunca vuelve a consultar quién es el usuario, solo aplica
+/// este contexto ya resuelto.
+/// </summary>
+public record ContextoAccesoDocumental(bool VeTodo, IReadOnlyDictionary<string, string> AccesoPorArea)
+{
+    public bool TieneLectura(string area) => VeTodo || AccesoPorArea.ContainsKey(area);
+    public bool TieneEscritura(string area) => VeTodo || (AccesoPorArea.TryGetValue(area, out var nivel) && nivel == "Escritura");
+}
+
+public record AreaAccesoItem(Guid Id, Guid IdUsuario, string NombreUsuario, string Area, string NivelAcceso, DateTimeOffset CreadoEn, string CreadoPor);
+
+public record OtorgarAccesoAreaRequest(Guid IdUsuario, string Area, string NivelAcceso, string RegistradoPor);
+
+public record UsuarioParaAccesoItem(Guid Id, string NombreUsuario);
