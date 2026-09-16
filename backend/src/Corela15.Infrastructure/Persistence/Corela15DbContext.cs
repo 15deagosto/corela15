@@ -12,6 +12,7 @@ using Corela15.Domain.Contabilidad;
 using Corela15.Domain.Cumplimiento;
 using Corela15.Domain.Credito;
 using Corela15.Domain.CuentasPorCobrar;
+using Corela15.Domain.Documentos;
 using Corela15.Domain.FlujoTrabajo;
 using Corela15.Domain.General;
 using Corela15.Domain.HerramientaRural;
@@ -49,6 +50,9 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     // FINANCIERO
     public DbSet<Cheque> Cheques => Set<Cheque>();
     public DbSet<ChequeProtesto> ChequesProtesto => Set<ChequeProtesto>();
+
+    // DOCUMENTOS (biblioteca documental, portada de CredVault)
+    public DbSet<Documento> Documentos => Set<Documento>();
 
     // SUJETO
     public DbSet<Persona> Personas => Set<Persona>();

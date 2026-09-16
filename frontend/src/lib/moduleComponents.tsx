@@ -21,6 +21,7 @@ import { Planificacion } from '../pages/Planificacion'
 import { Reporteria } from '../pages/Reporteria'
 import { MensajeriaWhatsapp } from '../pages/MensajeriaWhatsapp'
 import { ComunicacionInterna } from '../pages/ComunicacionInterna'
+import { BibliotecaDocumentos } from '../pages/BibliotecaDocumentos'
 
 /** Componente real por slug de pestaña — única fuente de verdad que usa `TabsWorkspace` para montar cada módulo abierto. */
 export const componentesPorSlug: Record<string, ComponentType> = {
@@ -46,4 +47,5 @@ export const componentesPorSlug: Record<string, ComponentType> = {
   'reporteria-gerencial': Reporteria,
   'mensajeria-whatsapp': MensajeriaWhatsapp,
   'comunicacion-interna': ComunicacionInterna,
+  'biblioteca-documentos': BibliotecaDocumentos,
 }

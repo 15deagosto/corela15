@@ -57,6 +57,16 @@ services:
       WhatsApp__AccessToken: ${WHATSAPP_ACCESS_TOKEN:-}
       WhatsApp__TemplateName: ${WHATSAPP_TEMPLATE_NAME:-aviso_cooperativa}
       WhatsApp__TemplateLanguage: ${WHATSAPP_TEMPLATE_LANGUAGE:-es}
+      # Biblioteca de Documentos — dónde vive el archivo físico real (ver
+      # FileSystemDocumentoStorageService.cs). HOY es un volumen Docker
+      # local (temporal, mientras se crea el recurso compartido en el NAS
+      # de la cooperativa, WD My Cloud Pro 192.168.0.25) — cuando exista,
+      # cambiar el volumen `documentos_data` de abajo a CIFS (mismo punto
+      # de montaje `/app/documentos-nas`, sin tocar esta línea ni el
+      # código de la app).
+      Documentos__RutaAlmacenamiento: /app/documentos-nas
+    volumes:
+      - documentos_data:/app/documentos-nas
     expose:
       - "8080"
 
@@ -86,3 +96,4 @@ services:
 
 volumes:
   pgdata:
+  documentos_data:

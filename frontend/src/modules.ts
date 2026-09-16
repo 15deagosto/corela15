@@ -20,6 +20,7 @@ import {
   BarChart3,
   MessageCircle,
   MessagesSquare,
+  Library,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -234,5 +235,13 @@ export const modulos: Modulo[] = [
     estado: 'disponible',
     externalUrl: 'https://credvault.cooperativa15deagosto.fin.ec',
     ssoTicketEndpoint: '/api/sso/credvault/ticket',
+  },
+  {
+    slug: 'biblioteca-documentos',
+    path: '/biblioteca-documentos',
+    nombre: 'Biblioteca de Documentos',
+    descripcion: 'Políticas, reglamentos, manuales y formatos institucionales — archivo real en el NAS',
+    icon: Library,
+    estado: 'disponible',
   },
 ]
