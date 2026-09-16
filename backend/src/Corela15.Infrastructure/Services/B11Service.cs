@@ -99,18 +99,22 @@ public class B11Service(Corela15DbContext db) : IB11Service
             var resultado = cuenta.EsMayor
                 // La fórmula real (SALDOINICIAL+TOTALDEBITO-TOTALCREDITO) da
                 // el saldo natural de una cuenta Deudora tal cual, pero el
-                // elemento (dígito 1: Pasivo/Patrimonio/Ingresos) se
-                // reporta siempre en positivo en el archivo real —
-                // verificado byte a byte (PASIVO real = 17.126.447,96, no
-                // -17.126.447,96). **El signo se decide por el ELEMENTO
-                // (cuenta.Grupo), nunca por la naturaleza de la hoja
-                // individual**: una cuenta contra-activo real (ej. 1499
-                // Provisión, naturaleza Acreedora pero elemento Activo) NO
-                // se invierte — sigue restando dentro de Activo, tal como
-                // ya lo hacía la fórmula cruda (confirmado: invertir por
-                // naturaleza de hoja rompía el total real de ACTIVO al
-                // duplicar en positivo las provisiones/depreciaciones).
-                ? saldosLeaf.GetValueOrDefault(cuenta.Codigo, 0m) * (EsElementoAcreedor(cuenta.Grupo) ? -1m : 1m)
+                // elemento (Pasivo/Patrimonio/Ingresos) se reporta siempre en
+                // positivo en el archivo real — verificado byte a byte
+                // contra agosto Y julio (incluye 3602/3604 dentro de
+                // Patrimonio: SÍ se invierten junto con el resto, no son una
+                // excepción de signo — solo están en CuentasNegativasPermitidas
+                // para la validación de "puede ser negativa", un concern
+                // distinto). **Cuentas de Orden (elemento 7) es la única
+                // excepción real de "flip por elemento completo"**: mezcla
+                // dos ramas reales de naturaleza opuesta (grupo 71 Deudora /
+                // grupo 74 Acreedora) — un flip a nivel de elemento no puede
+                // distinguirlas, ahí el flip es por naturaleza de la propia
+                // hoja. El resto (Activo/Gastos) nunca se invierte — una
+                // cuenta contra-activo real (1499, Acreedora pero elemento
+                // Activo) NO se invierte, sigue restando dentro de Activo.
+                ? saldosLeaf.GetValueOrDefault(cuenta.Codigo, 0m) *
+                    (EsElementoAcreedor(cuenta.Grupo) || (cuenta.Grupo == GrupoCuc.CuentasDeOrden && cuenta.Naturaleza == NaturalezaCuenta.Acreedora) ? -1m : 1m)
                 : hijosPorPadre.GetValueOrDefault(cuenta.Id, []).Sum(CalcularSaldo);
 
             saldoCalculado[cuenta.Id] = resultado;
