@@ -7,6 +7,7 @@ using Corela15.Domain.Financiero;
 using Corela15.Domain.Clientes;
 using Corela15.Domain.Cobranza;
 using Corela15.Domain.Colocacion;
+using Corela15.Domain.Comunicacion;
 using Corela15.Domain.Contabilidad;
 using Corela15.Domain.Cumplimiento;
 using Corela15.Domain.Credito;
@@ -18,6 +19,7 @@ using Corela15.Domain.Inversion;
 using Corela15.Domain.LavadoActivos;
 using Corela15.Domain.Marketing;
 using Corela15.Domain.MesaServicio;
+using Corela15.Domain.Mensajeria;
 using Corela15.Domain.Planificacion;
 using Corela15.Domain.Nomina;
 using Corela15.Domain.Obligacion;
@@ -297,6 +299,14 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Indicador> Indicadores => Set<Indicador>();
     public DbSet<PlanificacionAnual> PlanificacionesAnuales => Set<PlanificacionAnual>();
     public DbSet<TipoProductoAgrario> TiposProductoAgrario => Set<TipoProductoAgrario>();
+
+    // Mensajería (WhatsApp)
+    public DbSet<MensajeWhatsapp> MensajesWhatsapp => Set<MensajeWhatsapp>();
+
+    // Comunicación interna (chat propio)
+    public DbSet<Canal> Canales => Set<Canal>();
+    public DbSet<CanalMiembro> CanalesMiembros => Set<CanalMiembro>();
+    public DbSet<Mensaje> Mensajes => Set<Mensaje>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

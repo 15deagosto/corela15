@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260914141903_Mensajeria_WhatsappBitacora")]
+    partial class Mensajeria_WhatsappBitacora
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2888,133 +2891,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tipo_vencimiento_codigo");
 
                     b.ToTable("tipo_vencimiento", "colocacion");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Comunicacion.Canal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean")
-                        .HasColumnName("activo");
-
-                    b.Property<string>("ClaveDirecta")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)")
-                        .HasColumnName("clave_directa");
-
-                    b.Property<DateTimeOffset>("CreadoEn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("creado_en");
-
-                    b.Property<string>("CreadoPor")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("creado_por");
-
-                    b.Property<string>("Descripcion")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("descripcion");
-
-                    b.Property<bool>("EsDirecto")
-                        .HasColumnType("boolean")
-                        .HasColumnName("es_directo");
-
-                    b.Property<string>("Nombre")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("nombre");
-
-                    b.HasKey("Id")
-                        .HasName("pk_canal");
-
-                    b.HasIndex("ClaveDirecta")
-                        .IsUnique()
-                        .HasDatabaseName("ix_canal_clave_directa");
-
-                    b.ToTable("canal", "comunicacion");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Comunicacion.CanalMiembro", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean")
-                        .HasColumnName("activo");
-
-                    b.Property<DateTimeOffset>("CreadoEn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("creado_en");
-
-                    b.Property<DateTimeOffset?>("FechaUltimaLectura")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fecha_ultima_lectura");
-
-                    b.Property<Guid>("IdCanal")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_canal");
-
-                    b.Property<Guid>("IdUsuario")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_usuario");
-
-                    b.HasKey("Id")
-                        .HasName("pk_canal_miembro");
-
-                    b.HasIndex("IdUsuario")
-                        .HasDatabaseName("ix_canal_miembro_id_usuario");
-
-                    b.HasIndex("IdCanal", "IdUsuario")
-                        .IsUnique()
-                        .HasDatabaseName("ix_canal_miembro_id_canal_id_usuario");
-
-                    b.ToTable("canal_miembro", "comunicacion");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Comunicacion.Mensaje", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreadoEn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("creado_en");
-
-                    b.Property<Guid>("IdCanal")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_canal");
-
-                    b.Property<Guid>("IdUsuarioRemitente")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_usuario_remitente");
-
-                    b.Property<string>("Texto")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("texto");
-
-                    b.HasKey("Id")
-                        .HasName("pk_mensaje");
-
-                    b.HasIndex("IdUsuarioRemitente")
-                        .HasDatabaseName("ix_mensaje_id_usuario_remitente");
-
-                    b.HasIndex("IdCanal", "CreadoEn")
-                        .HasDatabaseName("ix_mensaje_id_canal_creado_en");
-
-                    b.ToTable("mensaje", "comunicacion");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Contabilidad.CierreEjercicio", b =>
@@ -11198,48 +11074,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_rubro_tipo_rubro_codigo_tipo_rubro");
 
                     b.Navigation("TipoRubro");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Comunicacion.CanalMiembro", b =>
-                {
-                    b.HasOne("Corela15.Domain.Comunicacion.Canal", "Canal")
-                        .WithMany()
-                        .HasForeignKey("IdCanal")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_canal_miembro_canal_id_canal");
-
-                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
-                        .WithMany()
-                        .HasForeignKey("IdUsuario")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_canal_miembro_usuarios_id_usuario");
-
-                    b.Navigation("Canal");
-
-                    b.Navigation("Usuario");
-                });
-
-            modelBuilder.Entity("Corela15.Domain.Comunicacion.Mensaje", b =>
-                {
-                    b.HasOne("Corela15.Domain.Comunicacion.Canal", "Canal")
-                        .WithMany()
-                        .HasForeignKey("IdCanal")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_mensaje_canal_id_canal");
-
-                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "UsuarioRemitente")
-                        .WithMany()
-                        .HasForeignKey("IdUsuarioRemitente")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_mensaje_usuarios_id_usuario_remitente");
-
-                    b.Navigation("Canal");
-
-                    b.Navigation("UsuarioRemitente");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Contabilidad.CierreEjercicio", b =>

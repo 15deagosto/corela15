@@ -1,9 +1,11 @@
 using Corela15.Api.ExceptionHandling;
+using Corela15.Api.Hubs;
 using Corela15.Api.Idempotencia;
 using Corela15.Application.ActivoFijo;
 using Corela15.Application.Ahorros;
 using Corela15.Application.Cajas;
 using Corela15.Application.Cobranza;
+using Corela15.Application.Comunicacion;
 using Corela15.Application.Financiero;
 using Corela15.Application.Cumplimiento;
 using Corela15.Application.LavadoActivos;
@@ -13,6 +15,7 @@ using Corela15.Application.Contabilidad;
 using Corela15.Application.CuentasPorCobrar;
 using Corela15.Application.Inversion;
 using Corela15.Application.MesaServicio;
+using Corela15.Application.Mensajeria;
 using Corela15.Application.Planificacion;
 using Corela15.Application.Nomina;
 using Corela15.Application.Obligacion;
@@ -110,6 +113,13 @@ builder.Services.AddScoped<IPerfilLavadoActivosService, PerfilLavadoActivosServi
 builder.Services.AddScoped<IDatosPersonaService, DatosPersonaService>();
 builder.Services.AddScoped<IReclamoService, ReclamoService>();
 builder.Services.AddScoped<ISocioService, SocioService>();
+builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
+builder.Services.AddScoped<IWhatsAppCloudApiClient, WhatsAppCloudApiClient>();
+builder.Services.AddHttpClient("whatsapp-cloud-api");
+builder.Services.AddScoped<IComunicacionService, ComunicacionService>();
+builder.Services.AddScoped<IComunicacionNotificador, SignalRComunicacionNotificador>();
+builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IUserIdProvider, ClaimsUserIdProvider>();
+builder.Services.AddSignalR();
 builder.Services.AddHostedService<AutoDebitoSpiBackgroundService>();
 builder.Services.AddScoped<IdempotenciaFilter>();
 
@@ -157,6 +167,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         // real hasta que el token expirara solo a las 8h.
         options.Events = new JwtBearerEvents
         {
+            // Un WebSocket no puede llevar el header Authorization en el
+            // handshake -- el cliente de SignalR (accessTokenFactory) lo
+            // manda como query string en su lugar. Patrón oficial
+            // documentado de ASP.NET Core para SignalR + JWT, acotado
+            // solo a la ruta del hub para no debilitar la autenticación
+            // del resto de la API (que sigue exigiendo el header real).
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/comunicacion"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
             OnTokenValidated = async context =>
             {
                 var jtiClaim = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
@@ -191,6 +217,7 @@ var codigosMenu = new[]
     "cobranzas-cumplimiento", "cajas", "nomina", "tesoreria", "riesgo", "configuracion", "activofijo", "portafolio",
     "financiero", "proveeduria", "estructuras-financieras", "mesa-servicio", "mesa-servicio-agente",
     "planificacion", "planificacion-gerencia", "credvault", "reporteria-gerencial",
+    "mensajeria-whatsapp", "comunicacion-interna",
 };
 
 // Segundo nivel de permiso, más fino que el menú (ver TipoEstructura.cs) —
@@ -308,6 +335,7 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<ComunicacionHub>("/hubs/comunicacion");
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestampUtc = DateTimeOffset.UtcNow })).AllowAnonymous();
 

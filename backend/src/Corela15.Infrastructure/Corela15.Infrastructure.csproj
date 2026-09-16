@@ -21,6 +21,11 @@
     <!-- IConfiguration.GetValue<T>(), usado por el motor de Reportería Gerencial (Query/QueryCompiler.cs, QueryExecutor.cs). -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
+    <!-- IHttpClientFactory, usado por WhatsAppCloudApiClient (Mensajería) para
+         el único HTTP real saliente del backend hacia un servicio externo
+         (Meta Cloud API), de escritura, distinto de las dos excepciones de
+         solo lectura documentadas más abajo. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

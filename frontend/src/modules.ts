@@ -18,6 +18,8 @@ import {
   CalendarRange,
   KeyRound,
   BarChart3,
+  MessageCircle,
+  MessagesSquare,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -197,6 +199,22 @@ export const modulos: Modulo[] = [
     nombre: 'Planificación',
     descripcion: 'Planificación semanal de actividades por área',
     icon: CalendarRange,
+    estado: 'disponible',
+  },
+  {
+    slug: 'mensajeria-whatsapp',
+    path: '/mensajeria-whatsapp',
+    nombre: 'Mensajería (WhatsApp)',
+    descripcion: 'Enviar un WhatsApp a un socio usando un número real de la cooperativa',
+    icon: MessageCircle,
+    estado: 'disponible',
+  },
+  {
+    slug: 'comunicacion-interna',
+    path: '/comunicacion-interna',
+    nombre: 'Comunicación interna',
+    descripcion: 'Chat propio entre áreas (ej. Cajas y Balcón de Servicio) y mensajes directos',
+    icon: MessagesSquare,
     estado: 'disponible',
   },
   {

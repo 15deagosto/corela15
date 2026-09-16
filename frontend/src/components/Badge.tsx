@@ -10,11 +10,15 @@ const variantes = {
 interface BadgeProps {
   children: ReactNode
   variant?: keyof typeof variantes
+  title?: string
 }
 
-export function Badge({ children, variant = 'neutral' }: BadgeProps) {
+export function Badge({ children, variant = 'neutral', title }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantes[variant]}`}>
+    <span
+      title={title}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantes[variant]}`}
+    >
       {children}
     </span>
   )

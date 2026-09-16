@@ -48,6 +48,15 @@ services:
       # contraseña real. Vacío = el ícono sigue funcionando como enlace
       # externo simple, sin sesión automática.
       CredVault__SsoSecret: ${CREDVAULT_SSO_SECRET:-}
+      # Mensajería (WhatsApp) — WhatsApp Business Platform (Meta Cloud API),
+      # ver WhatsAppCloudApiClient.cs. Vacío = el módulo queda "dormido"
+      # (WhatsAppNoConfiguradoException, 422, mensaje claro) hasta que TI
+      # verifique la cuenta de Meta Business Manager y cargue las
+      # credenciales reales — no bloquea el resto del despliegue.
+      WhatsApp__PhoneNumberId: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WhatsApp__AccessToken: ${WHATSAPP_ACCESS_TOKEN:-}
+      WhatsApp__TemplateName: ${WHATSAPP_TEMPLATE_NAME:-aviso_cooperativa}
+      WhatsApp__TemplateLanguage: ${WHATSAPP_TEMPLATE_LANGUAGE:-es}
     expose:
       - "8080"
 
