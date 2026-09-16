@@ -57,9 +57,28 @@ public class B11Controller(IB11Service service) : ControllerBase
         return File(memoria.ToArray(), "application/zip", $"{baseNombre}.zip");
     }
 
+    /// <summary>
+    /// Reconstruye la jerarquía real del archivo oficial —
+    /// <c>elemento(1 dígito)</c> &gt; <c>grupo(2)</c> &gt; <c>cuenta(4)</c> &gt;
+    /// <c>subcuenta(6)</c> — verificada directamente contra el XML real de
+    /// referencia (nunca una lista plana de <c>&lt;cuenta&gt;</c>, como
+    /// tenía la primera versión de este generador). El padre de cada
+    /// código se deriva de su propia longitud (mismo criterio ya usado en
+    /// toda la siembra del CUC), no hace falta IdCuentaPadre acá porque
+    /// <see cref="IB11Service"/> ya entrega el detalle plano ordenado por
+    /// código con el saldo ya calculado bottom-up para cada nivel.
+    /// </summary>
     private static string ArmarXml(B11Result r)
     {
         static string Num(decimal v) => v.ToString("0.00", CultureInfo.InvariantCulture);
+        static string TagPorNivel(int longitud) => longitud switch
+        {
+            1 => "elemento",
+            2 => "grupo",
+            4 => "cuenta",
+            6 => "subcuenta",
+            _ => "cuenta", // códigos anómalos reales (ej. "671") ya excluidos aguas arriba
+        };
 
         XNamespace ns = "http://www.seps.gob.ec/balances";
         var raiz = new XElement(ns + "balance",
@@ -71,12 +90,31 @@ public class B11Controller(IB11Service service) : ControllerBase
             new XAttribute("numRegistro", r.NumeroRegistros),
             new XAttribute("valorCuadre", Num(r.ValorCuadre)));
 
-        foreach (var d in r.Detalle)
+        // Nombres reales del archivo oficial van en MAYÚSCULAS (verificado
+        // byte a byte) — el catálogo propio de Corela15 los guarda con
+        // mayúscula inicial normal, se transforma solo acá, al armar el
+        // XML de envío, nunca se toca el catálogo.
+        var elementos = new Dictionary<string, XElement>();
+        foreach (var d in r.Detalle.OrderBy(x => x.Codigo))
         {
-            raiz.Add(new XElement(ns + "cuenta",
+            var nodo = new XElement(ns + TagPorNivel(d.Codigo.Length),
                 new XAttribute("codigo", d.Codigo),
-                new XAttribute("nombre", d.Nombre),
-                new XAttribute("total", Num(d.Total))));
+                new XAttribute("nombre", d.Nombre.ToUpperInvariant()),
+                new XAttribute("total", Num(d.Total)));
+            elementos[d.Codigo] = nodo;
+
+            var codigoPadre = d.Codigo.Length switch
+            {
+                2 => d.Codigo[..1],
+                4 => d.Codigo[..2],
+                6 => d.Codigo[..4],
+                _ => null,
+            };
+
+            if (codigoPadre is not null && elementos.TryGetValue(codigoPadre, out var padre))
+                padre.Add(nodo);
+            else
+                raiz.Add(nodo);
         }
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", null), raiz);

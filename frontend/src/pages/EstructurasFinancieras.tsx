@@ -736,7 +736,13 @@ function SeccionGenerarOf01() {
     mutationFn: async () => {
       const resp = await api.get(`${BASE}/of01/paquete?fechaCorte=${fechaCorte}`, { responseType: 'blob' })
       const disposicion = resp.headers['content-disposition'] as string | undefined
-      const nombre = disposicion?.match(/filename="?([^"]+)"?/)?.[1] ?? `OF01_${fechaCorte}.zip`
+      // El header real llega SIN comillas alrededor de filename= (verificado
+      // en vivo: `filename=B11_...zip; filename*=UTF-8''B11_...zip`) —
+      // bug real encontrado: la regex anterior solo excluía comillas, y sin
+      // ninguna comilla en el header se comía TODO el resto de la cadena
+      // (incluido el parámetro filename* completo) como nombre de archivo.
+      // Ahora corta también en el primer ';'.
+      const nombre = disposicion?.match(/filename="?([^";]+)"?/)?.[1] ?? `OF01_${fechaCorte}.zip`
       const url = URL.createObjectURL(resp.data as Blob)
       const a = document.createElement('a')
       a.href = url
@@ -949,7 +955,7 @@ function SeccionGenerarB11() {
     mutationFn: async () => {
       const resp = await api.get(`${BASE_B11}/paquete?fechaCorte=${fechaCorte}`, { responseType: 'blob' })
       const disposicion = resp.headers['content-disposition'] as string | undefined
-      const nombre = disposicion?.match(/filename="?([^"]+)"?/)?.[1] ?? `B11_${fechaCorte}.zip`
+      const nombre = disposicion?.match(/filename="?([^";]+)"?/)?.[1] ?? `B11_${fechaCorte}.zip`
       const url = URL.createObjectURL(resp.data as Blob)
       const a = document.createElement('a')
       a.href = url
