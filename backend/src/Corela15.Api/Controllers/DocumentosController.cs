@@ -1,3 +1,4 @@
+using Corela15.Api.Autorizacion;
 using Corela15.Api.Idempotencia;
 using Corela15.Application.Documentos;
 using Corela15.Domain.Documentos;
@@ -62,6 +63,7 @@ public class DocumentosController(IDocumentoService service) : ControllerBase
 
     [HttpPost]
     [RequireIdempotencyKey]
+    [RequireOpcion("biblioteca-documentos.crear")]
     public async Task<ActionResult<object>> Crear([FromForm] CrearDocumentoBody body, CancellationToken cancellationToken)
     {
         await using var stream = body.Archivo.OpenReadStream();
@@ -75,6 +77,7 @@ public class DocumentosController(IDocumentoService service) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [RequireOpcion("biblioteca-documentos.editar")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarDocumentoBody body, CancellationToken cancellationToken)
     {
         await service.ActualizarAsync(
@@ -89,6 +92,7 @@ public class DocumentosController(IDocumentoService service) : ControllerBase
 
     [HttpPost("{id:guid}/nueva-version")]
     [RequireIdempotencyKey]
+    [RequireOpcion("biblioteca-documentos.nueva-version")]
     public async Task<IActionResult> SubirNuevaVersion(Guid id, [FromForm] NuevaVersionDocumentoBody body, CancellationToken cancellationToken)
     {
         await using var stream = body.Archivo.OpenReadStream();
@@ -99,6 +103,7 @@ public class DocumentosController(IDocumentoService service) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [RequireOpcion("biblioteca-documentos.desactivar")]
     public async Task<IActionResult> Desactivar(Guid id, CancellationToken cancellationToken)
     {
         await service.DesactivarAsync(id, User.Identity!.Name!, cancellationToken);
@@ -113,6 +118,7 @@ public class DocumentosController(IDocumentoService service) : ControllerBase
     }
 
     [HttpGet("matriz")]
+    [RequireOpcion("biblioteca-documentos.matriz")]
     public async Task<ActionResult<MatrizDocumentalResult>> Matriz(CancellationToken cancellationToken)
     {
         var resultado = await service.ObtenerMatrizAsync(cancellationToken);

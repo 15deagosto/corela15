@@ -7,6 +7,7 @@ import { Badge } from '../components/Badge'
 import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/AuthContext'
 import type { ColumnaExportable } from '../lib/exportar'
 
 interface CatalogoItem {
@@ -251,12 +252,18 @@ function GestionarDocumentoModal({
   areas,
   tipos,
   estados,
+  puedeEditar,
+  puedeSubirVersion,
+  puedeDesactivar,
   onClose,
 }: {
   documento: DocumentoItem
   areas: CatalogoItem[]
   tipos: CatalogoItem[]
   estados: CatalogoItem[]
+  puedeEditar: boolean
+  puedeSubirVersion: boolean
+  puedeDesactivar: boolean
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -355,101 +362,112 @@ function GestionarDocumentoModal({
               >
                 Metadatos
               </button>
-              <button
-                type="button"
-                onClick={() => setTab('version')}
-                className={`rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
-                  tab === 'version' ? 'bg-gold-500/10 text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
-                }`}
-              >
-                Nueva versión
-              </button>
+              {puedeSubirVersion && (
+                <button
+                  type="button"
+                  onClick={() => setTab('version')}
+                  className={`rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
+                    tab === 'version' ? 'bg-gold-500/10 text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
+                  }`}
+                >
+                  Nueva versión
+                </button>
+              )}
               <div className="mt-2 border-t border-black/[0.06] pt-2">
                 <button type="button" onClick={descargar} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-petrol-700 hover:bg-black/[0.02]">
                   <Download size={13} /> Descargar
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`¿Desactivar "${documento.titulo}"? Deja de aparecer en el listado (nunca se borra el archivo real).`)) desactivar.mutate()
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-700 hover:bg-black/[0.02]"
-                >
-                  <Ban size={13} /> Desactivar
-                </button>
+                {puedeDesactivar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`¿Desactivar "${documento.titulo}"? Deja de aparecer en el listado (nunca se borra el archivo real).`)) desactivar.mutate()
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-700 hover:bg-black/[0.02]"
+                  >
+                    <Ban size={13} /> Desactivar
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
               {tab === 'metadatos' && (
-                <form
-                  className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    guardarMetadatos.mutate()
-                  }}
-                >
-                  <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-                    <span className="text-graphite-600">Título</span>
-                    <input required type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)} className={inputClase} />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Área</span>
-                    <select value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
-                      {areas.map((a) => (
-                        <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Tipo</span>
-                    <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputClase}>
-                      {tipos.map((t) => (
-                        <option key={t.codigo} value={t.codigo}>{t.nombre}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Estado</span>
-                    <select value={estado} onChange={(e) => setEstado(e.target.value)} className={inputClase}>
-                      {estados.map((e_) => (
-                        <option key={e_.codigo} value={e_.codigo}>{e_.nombre}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div />
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Instancia de aprobación</span>
-                    <input type="text" value={instanciaAprobacion} onChange={(e) => setInstanciaAprobacion(e.target.value)} className={inputClase} />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Instancia de revisión</span>
-                    <input type="text" value={instanciaRevision} onChange={(e) => setInstanciaRevision(e.target.value)} className={inputClase} />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Fecha de aprobación</span>
-                    <input type="date" value={fechaAprobacion} onChange={(e) => setFechaAprobacion(e.target.value)} className={inputClase} />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-graphite-600">Próxima revisión</span>
-                    <input type="date" value={proximaRevision} onChange={(e) => setProximaRevision(e.target.value)} className={inputClase} />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-                    <span className="text-graphite-600">Notas</span>
-                    <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} className={inputClase} />
-                  </label>
-                  <div className="sm:col-span-2">
-                    <button type="submit" disabled={guardarMetadatos.isPending} className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-                      {guardarMetadatos.isPending ? 'Guardando…' : 'Guardar cambios'}
-                    </button>
-                  </div>
-                  {guardarMetadatos.isError && (
-                    <p className="sm:col-span-2 text-sm text-red-700">{mensajeError(guardarMetadatos.error, 'No se pudo guardar.')}</p>
+                <fieldset disabled={!puedeEditar}>
+                  {!puedeEditar && (
+                    <p className="mb-3 text-xs text-graphite-500">No tenés permiso para editar metadatos — solo lectura.</p>
                   )}
-                </form>
+                  <form
+                    className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      guardarMetadatos.mutate()
+                    }}
+                  >
+                    <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                      <span className="text-graphite-600">Título</span>
+                      <input required type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)} className={inputClase} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Área</span>
+                      <select value={area} onChange={(e) => setArea(e.target.value)} className={inputClase}>
+                        {areas.map((a) => (
+                          <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Tipo</span>
+                      <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputClase}>
+                        {tipos.map((t) => (
+                          <option key={t.codigo} value={t.codigo}>{t.nombre}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Estado</span>
+                      <select value={estado} onChange={(e) => setEstado(e.target.value)} className={inputClase}>
+                        {estados.map((e_) => (
+                          <option key={e_.codigo} value={e_.codigo}>{e_.nombre}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div />
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Instancia de aprobación</span>
+                      <input type="text" value={instanciaAprobacion} onChange={(e) => setInstanciaAprobacion(e.target.value)} className={inputClase} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Instancia de revisión</span>
+                      <input type="text" value={instanciaRevision} onChange={(e) => setInstanciaRevision(e.target.value)} className={inputClase} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Fecha de aprobación</span>
+                      <input type="date" value={fechaAprobacion} onChange={(e) => setFechaAprobacion(e.target.value)} className={inputClase} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span className="text-graphite-600">Próxima revisión</span>
+                      <input type="date" value={proximaRevision} onChange={(e) => setProximaRevision(e.target.value)} className={inputClase} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                      <span className="text-graphite-600">Notas</span>
+                      <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} className={inputClase} />
+                    </label>
+                    {puedeEditar && (
+                      <div className="sm:col-span-2">
+                        <button type="submit" disabled={guardarMetadatos.isPending} className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+                          {guardarMetadatos.isPending ? 'Guardando…' : 'Guardar cambios'}
+                        </button>
+                      </div>
+                    )}
+                    {guardarMetadatos.isError && (
+                      <p className="sm:col-span-2 text-sm text-red-700">{mensajeError(guardarMetadatos.error, 'No se pudo guardar.')}</p>
+                    )}
+                  </form>
+                </fieldset>
               )}
 
-              {tab === 'version' && (
+              {tab === 'version' && puedeSubirVersion && (
                 <form
                   className="flex flex-col gap-4"
                   onSubmit={(e) => {
@@ -546,6 +564,13 @@ function MatrizCobertura({ areas, tipos }: { areas: CatalogoItem[]; tipos: Catal
 }
 
 export function BibliotecaDocumentos() {
+  const { tieneOpcion } = useAuth()
+  const puedeCrear = tieneOpcion('biblioteca-documentos.crear')
+  const puedeEditar = tieneOpcion('biblioteca-documentos.editar')
+  const puedeSubirVersion = tieneOpcion('biblioteca-documentos.nueva-version')
+  const puedeDesactivar = tieneOpcion('biblioteca-documentos.desactivar')
+  const puedeVerMatriz = tieneOpcion('biblioteca-documentos.matriz')
+
   const { areas, tipos, estados } = useCatalogos()
   const [tab, setTab] = useState<'documentos' | 'matriz'>('documentos')
   const [mostrarNuevo, setMostrarNuevo] = useState(false)
@@ -583,7 +608,8 @@ export function BibliotecaDocumentos() {
         title="Biblioteca de Documentos"
         subtitle="Políticas, reglamentos, manuales, procedimientos y formatos institucionales — archivo real en el NAS de la cooperativa"
         actions={
-          tab === 'documentos' && (
+          tab === 'documentos' &&
+          puedeCrear && (
             <button
               type="button"
               onClick={() => setMostrarNuevo(true)}
@@ -603,21 +629,32 @@ export function BibliotecaDocumentos() {
         >
           Documentos
         </button>
-        <button
-          type="button"
-          onClick={() => setTab('matriz')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
-        >
-          <Grid3x3 size={14} /> Matriz de cobertura
-        </button>
+        {puedeVerMatriz && (
+          <button
+            type="button"
+            onClick={() => setTab('matriz')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${tab === 'matriz' ? 'border-b-2 border-gold-500 text-graphite-100' : 'text-graphite-600'}`}
+          >
+            <Grid3x3 size={14} /> Matriz de cobertura
+          </button>
+        )}
       </div>
 
-      {mostrarNuevo && areas && tipos && (
+      {mostrarNuevo && puedeCrear && areas && tipos && (
         <NuevoDocumentoModal areas={areas} tipos={tipos} onClose={() => setMostrarNuevo(false)} />
       )}
 
       {seleccionado && areas && tipos && estados && (
-        <GestionarDocumentoModal documento={seleccionado} areas={areas} tipos={tipos} estados={estados} onClose={() => setSeleccionado(null)} />
+        <GestionarDocumentoModal
+          documento={seleccionado}
+          areas={areas}
+          tipos={tipos}
+          estados={estados}
+          puedeEditar={puedeEditar}
+          puedeSubirVersion={puedeSubirVersion}
+          puedeDesactivar={puedeDesactivar}
+          onClose={() => setSeleccionado(null)}
+        />
       )}
 
       {tab === 'documentos' && (
@@ -701,7 +738,7 @@ export function BibliotecaDocumentos() {
         </>
       )}
 
-      {tab === 'matriz' && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
+      {tab === 'matriz' && puedeVerMatriz && areas && tipos && <MatrizCobertura areas={areas} tipos={tipos} />}
     </div>
   )
 }
