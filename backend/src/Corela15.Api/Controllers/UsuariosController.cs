@@ -62,6 +62,8 @@ public record ActualizarDatasetsUsuarioRequest(IReadOnlyList<string> CodigosData
 
 public record OpcionUsuarioDto(string Codigo, string Nombre, string CodigoMenu, string NombreMenu, bool OtorgadoPorRol, bool OtorgadoDirecto, bool Excluido);
 public record ActualizarOpcionesUsuarioRequest(IReadOnlyList<string> CodigosOpcion, IReadOnlyList<string>? CodigosOpcionExcluidas = null);
+public record TipoEstructuraUsuarioDto(string Codigo, string Nombre, bool OtorgadoPorRol, bool OtorgadoDirecto, bool Excluido);
+public record ActualizarTiposEstructuraUsuarioRequest(IReadOnlyList<string> CodigosTipoEstructura, IReadOnlyList<string>? CodigosTipoEstructuraExcluidos = null);
 
 [ApiController]
 [Route("api/usuarios")]
@@ -500,6 +502,57 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
                 CodigoOpcion = codigo,
                 Activo = !esExcluida && request.CodigosOpcion.Contains(codigo),
                 Excluido = esExcluida,
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/tipos-estructura")]
+    public async Task<ActionResult<IReadOnlyList<TipoEstructuraUsuarioDto>>> TiposEstructuraDelUsuario(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null) return NotFound();
+
+        var idsRol = await db.UsuarioRoles.Where(ur => ur.IdUsuario == id && ur.Activo).Select(ur => ur.IdRol).ToListAsync(cancellationToken);
+        var estructurasPorRol = await db.RolesTipoEstructura.Where(re => re.Activo && idsRol.Contains(re.IdRol)).Select(re => re.CodigoTipoEstructura).ToListAsync(cancellationToken);
+        var estructurasDirectas = await db.UsuariosTipoEstructura.Where(ue => ue.IdUsuario == id && ue.Activo && !ue.Excluido).Select(ue => ue.CodigoTipoEstructura).ToListAsync(cancellationToken);
+        var estructurasExcluidas = await db.UsuariosTipoEstructura.Where(ue => ue.IdUsuario == id && ue.Excluido).Select(ue => ue.CodigoTipoEstructura).ToListAsync(cancellationToken);
+
+        var resultado = await db.TiposEstructura
+            .Where(e => e.Activo)
+            .OrderBy(e => e.Nombre)
+            .Select(e => new TipoEstructuraUsuarioDto(e.Codigo, e.Nombre, estructurasPorRol.Contains(e.Codigo), estructurasDirectas.Contains(e.Codigo), estructurasExcluidas.Contains(e.Codigo)))
+            .ToListAsync(cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("{id:guid}/tipos-estructura")]
+    public async Task<IActionResult> ActualizarTiposEstructuraDelUsuario(
+        Guid id, [FromBody] ActualizarTiposEstructuraUsuarioRequest request, CancellationToken cancellationToken)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == id, cancellationToken)) return NotFound();
+
+        var excluidos = request.CodigosTipoEstructuraExcluidos ?? [];
+        var existentes = await db.UsuariosTipoEstructura.Where(ue => ue.IdUsuario == id).ToListAsync(cancellationToken);
+        foreach (var existente in existentes)
+        {
+            existente.Excluido = excluidos.Contains(existente.CodigoTipoEstructura);
+            existente.Activo = !existente.Excluido && request.CodigosTipoEstructura.Contains(existente.CodigoTipoEstructura);
+        }
+
+        var codigosExistentes = existentes.Select(e => e.CodigoTipoEstructura).ToHashSet();
+        foreach (var codigo in request.CodigosTipoEstructura.Concat(excluidos).Distinct().Where(c => !codigosExistentes.Contains(c)))
+        {
+            var esExcluido = excluidos.Contains(codigo);
+            db.UsuariosTipoEstructura.Add(new Corela15.Domain.Seguridad.UsuarioTipoEstructura
+            {
+                IdUsuario = id,
+                CodigoTipoEstructura = codigo,
+                Activo = !esExcluido && request.CodigosTipoEstructura.Contains(codigo),
+                Excluido = esExcluido,
             });
         }
 

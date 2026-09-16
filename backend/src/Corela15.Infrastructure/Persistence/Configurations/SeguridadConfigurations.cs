@@ -180,6 +180,18 @@ public class UsuarioDatasetReporteriaConfiguration : IEntityTypeConfiguration<Us
     }
 }
 
+public class UsuarioTipoEstructuraConfiguration : IEntityTypeConfiguration<UsuarioTipoEstructura>
+{
+    public void Configure(EntityTypeBuilder<UsuarioTipoEstructura> b)
+    {
+        b.ToTable("usuario_tipo_estructura", "seguridad");
+        b.HasKey(x => new { x.IdUsuario, x.CodigoTipoEstructura });
+
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.TipoEstructura).WithMany().HasForeignKey(x => x.CodigoTipoEstructura).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class AccionIngresoUsuarioConfiguration : IEntityTypeConfiguration<AccionIngresoUsuario>
 {
     public void Configure(EntityTypeBuilder<AccionIngresoUsuario> b)

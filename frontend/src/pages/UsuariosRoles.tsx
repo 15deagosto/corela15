@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2, Lock, BarChart3, ListChecks, Ban } from 'lucide-react'
+import { ShieldCheck, KeyRound, UserCog, Plus, X, Clock, Building2, Settings2, Lock, BarChart3, ListChecks, Ban, FileBadge } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBar } from '../components/SearchBar'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -129,6 +129,14 @@ interface OpcionUsuario {
   excluido: boolean
 }
 
+interface TipoEstructuraUsuario {
+  codigo: string
+  nombre: string
+  otorgadoPorRol: boolean
+  otorgadoDirecto: boolean
+  excluido: boolean
+}
+
 function formatoFecha(iso: string) {
   return new Date(iso).toLocaleString('es-EC')
 }
@@ -250,9 +258,12 @@ function NuevoUsuarioModal({ onClose, onCreado }: { onClose: () => void; onCread
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-graphite-600">Nombre de usuario</span>
             <input
+              autoCapitalize="characters"
+              spellCheck={false}
               value={nombreUsuario}
-              onChange={(e) => setNombreUsuario(e.target.value)}
-              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+              onChange={(e) => setNombreUsuario(e.target.value.toUpperCase())}
+              title="Los nombres de usuario reales son siempre en mayúsculas"
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm uppercase text-graphite-100 outline-none focus:border-gold-500/50"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -694,6 +705,12 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
   })
   const [seleccionOpciones, setSeleccionOpciones] = useState<Set<string> | null>(null)
   const [seleccionOpcionesExcluidas, setSeleccionOpcionesExcluidas] = useState<Set<string> | null>(null)
+  const { data: tiposEstructura, isLoading: cargandoTiposEstructura } = useQuery<TipoEstructuraUsuario[]>({
+    queryKey: ['usuario-tipos-estructura', usuario.id],
+    queryFn: async () => (await api.get(`/api/usuarios/${usuario.id}/tipos-estructura`)).data,
+  })
+  const [seleccionTiposEstructura, setSeleccionTiposEstructura] = useState<Set<string> | null>(null)
+  const [seleccionTiposEstructuraExcluidos, setSeleccionTiposEstructuraExcluidos] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     if (menus && seleccionMenus === null) {
@@ -713,6 +730,12 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
       setSeleccionOpcionesExcluidas(new Set(opciones.filter((o) => o.excluido).map((o) => o.codigo)))
     }
   }, [opciones, seleccionOpciones])
+  useEffect(() => {
+    if (tiposEstructura && seleccionTiposEstructura === null) {
+      setSeleccionTiposEstructura(new Set(tiposEstructura.filter((e) => e.otorgadoDirecto).map((e) => e.codigo)))
+      setSeleccionTiposEstructuraExcluidos(new Set(tiposEstructura.filter((e) => e.excluido).map((e) => e.codigo)))
+    }
+  }, [tiposEstructura, seleccionTiposEstructura])
 
   const opcionesPorModulo = useMemo(() => {
     const mapa = new Map<string, OpcionUsuario[]>()
@@ -745,6 +768,14 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
         codigosOpcionExcluidas: Array.from(seleccionOpcionesExcluidas ?? []),
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-opciones', usuario.id] }),
+  })
+  const guardarTiposEstructura = useMutation({
+    mutationFn: async () =>
+      api.put(`/api/usuarios/${usuario.id}/tipos-estructura`, {
+        codigosTipoEstructura: Array.from(seleccionTiposEstructura ?? []),
+        codigosTipoEstructuraExcluidos: Array.from(seleccionTiposEstructuraExcluidos ?? []),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuario-tipos-estructura', usuario.id] }),
   })
 
   const alternarMenu = (id: number) => {
@@ -784,6 +815,20 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
   }
   const alternarOpcionExcluida = (codigo: string) => {
     setSeleccionOpcionesExcluidas((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+  const alternarTipoEstructura = (codigo: string) => {
+    setSeleccionTiposEstructura((prev) => {
+      const s = new Set(prev ?? [])
+      s.has(codigo) ? s.delete(codigo) : s.add(codigo)
+      return s
+    })
+  }
+  const alternarTipoEstructuraExcluido = (codigo: string) => {
+    setSeleccionTiposEstructuraExcluidos((prev) => {
       const s = new Set(prev ?? [])
       s.has(codigo) ? s.delete(codigo) : s.add(codigo)
       return s
@@ -843,6 +888,62 @@ function TabPermisosDirectos({ usuario }: { usuario: UsuarioRol }) {
               className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {guardarMenus.isPending ? 'Guardando…' : 'Guardar módulos directos'}
+            </button>
+          </>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+          <FileBadge size={14} /> Estructuras y Procesos Financieros
+        </p>
+        <p className="mb-2 text-xs text-graphite-600">
+          Segundo nivel de permiso del módulo de estructuras regulatorias (ej. OF01) — dale acceso a una estructura
+          puntual sin depender de que el rol de esta persona la tenga.
+        </p>
+        {cargandoTiposEstructura || !tiposEstructura || !seleccionTiposEstructura || !seleccionTiposEstructuraExcluidos ? (
+          <p className="text-sm text-graphite-600">Cargando…</p>
+        ) : tiposEstructura.length === 0 ? (
+          <p className="text-sm text-graphite-600">Todavía no hay estructuras registradas.</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {tiposEstructura.map((e) => {
+                const excluido = e.otorgadoPorRol && seleccionTiposEstructuraExcluidos.has(e.codigo)
+                const marcado = (e.otorgadoPorRol || seleccionTiposEstructura.has(e.codigo)) && !excluido
+                return (
+                  <button
+                    key={e.codigo}
+                    type="button"
+                    onClick={() => (e.otorgadoPorRol ? alternarTipoEstructuraExcluido(e.codigo) : alternarTipoEstructura(e.codigo))}
+                    title={
+                      excluido
+                        ? 'Excluido explícitamente para esta persona — clic para restaurar'
+                        : e.otorgadoPorRol
+                          ? 'Otorgado por un rol de esta persona — clic para excluirlo solo acá'
+                          : 'Otorgamiento directo'
+                    }
+                    className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      excluido
+                        ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                        : marcado
+                          ? 'border-gold-500/50 bg-gold-500/10 text-gold-300'
+                          : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                    }`}
+                  >
+                    {excluido ? <Ban size={11} /> : e.otorgadoPorRol && <Lock size={11} />}
+                    {e.codigo} — {e.nombre}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => guardarTiposEstructura.mutate()}
+              disabled={guardarTiposEstructura.isPending}
+              className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {guardarTiposEstructura.isPending ? 'Guardando…' : 'Guardar estructuras directas'}
             </button>
           </>
         )}

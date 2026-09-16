@@ -95,6 +95,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Opcion> Opciones => Set<Opcion>();
     public DbSet<RolOpcion> RolesOpcion => Set<RolOpcion>();
     public DbSet<UsuarioOpcion> UsuariosOpcion => Set<UsuarioOpcion>();
+    public DbSet<UsuarioTipoEstructura> UsuariosTipoEstructura => Set<UsuarioTipoEstructura>();
     public DbSet<Corela15.Domain.Reporteria.Tablero> TablerosReporteria => Set<Corela15.Domain.Reporteria.Tablero>();
     public DbSet<Corela15.Domain.Reporteria.FavoritoTablero> FavoritosTablero => Set<Corela15.Domain.Reporteria.FavoritoTablero>();
     public DbSet<Corela15.Domain.Reporteria.AuditoriaConsultaReporteria> AuditoriaConsultaReporteria => Set<Corela15.Domain.Reporteria.AuditoriaConsultaReporteria>();

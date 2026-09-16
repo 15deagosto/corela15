@@ -155,11 +155,26 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         // que a cada usuario se le otorgue el menú uno por uno.
         if (!menus.Contains("comunicacion-interna")) menus.Add("comunicacion-interna");
 
-        var estructuras = await db.RolesTipoEstructura
+        var estructurasPorRol = await db.RolesTipoEstructura
             .Where(re => re.Activo && re.TipoEstructura.Activo && idsRolEfectivos.Contains(re.IdRol))
             .Select(re => re.CodigoTipoEstructura)
-            .Distinct()
             .ToListAsync(cancellationToken);
+
+        // Otorgamiento directo por usuario, cierra el pendiente ya
+        // documentado desde "Estructuras Financieras" — mismo patrón
+        // exacto que menús/datasets/opciones (suma, nunca resta, con
+        // exclusión de prioridad absoluta).
+        var estructurasPorUsuario = await db.UsuariosTipoEstructura
+            .Where(ue => ue.Activo && !ue.Excluido && ue.TipoEstructura.Activo && ue.IdUsuario == usuario.Id)
+            .Select(ue => ue.CodigoTipoEstructura)
+            .ToListAsync(cancellationToken);
+
+        var estructurasExcluidas = await db.UsuariosTipoEstructura
+            .Where(ue => ue.Excluido && ue.IdUsuario == usuario.Id)
+            .Select(ue => ue.CodigoTipoEstructura)
+            .ToListAsync(cancellationToken);
+
+        var estructuras = estructurasPorRol.Union(estructurasPorUsuario).Except(estructurasExcluidas).ToList();
 
         // Datasets del módulo "Reportería Gerencial" (motor semántico
         // portado de SIGA) — mismo patrón exacto que `estructuras`, ver

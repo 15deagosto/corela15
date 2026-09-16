@@ -130,9 +130,12 @@ export function Login() {
                   required
                   autoFocus
                   autoComplete="username"
+                  autoCapitalize="characters"
+                  spellCheck={false}
                   value={nombreUsuario}
-                  onChange={(e) => setNombreUsuario(e.target.value)}
-                  className="rounded-lg border border-black/[0.08] bg-white py-2.5 pl-9 pr-3 text-graphite-100 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/15"
+                  onChange={(e) => setNombreUsuario(e.target.value.toUpperCase())}
+                  title="Los nombres de usuario reales son siempre en mayúsculas"
+                  className="rounded-lg border border-black/[0.08] bg-white py-2.5 pl-9 pr-3 uppercase text-graphite-100 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/15"
                 />
               </div>
             </label>
