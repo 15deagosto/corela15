@@ -121,6 +121,28 @@ function formatoHora(fecha: string) {
   return new Date(fecha).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })
 }
 
+const COLORES_AVATAR = [
+  'bg-gold-500', 'bg-petrol-600', 'bg-graphite-500', 'bg-emerald-600',
+  'bg-sky-600', 'bg-rose-500', 'bg-amber-600', 'bg-indigo-500',
+]
+
+function colorAvatar(nombre: string) {
+  let hash = 0
+  for (const c of nombre) hash = (hash * 31 + c.charCodeAt(0)) >>> 0
+  return COLORES_AVATAR[hash % COLORES_AVATAR.length]
+}
+
+/** Avatar real con iniciales — mismo color estable para el mismo nombre, sin depender de una foto de perfil que este core no tiene. */
+function Avatar({ nombre, esCanal, tamano = 'md' }: { nombre: string; esCanal?: boolean; tamano?: 'sm' | 'md' }) {
+  const inicial = esCanal ? '#' : (nombre.trim()[0]?.toUpperCase() ?? '?')
+  const clases = tamano === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-9 w-9 text-xs'
+  return (
+    <span className={`flex ${clases} flex-shrink-0 items-center justify-center rounded-full font-semibold text-white ${colorAvatar(nombre)}`}>
+      {inicial}
+    </span>
+  )
+}
+
 function NuevoCanalForm({ onCreado, onClose }: { onCreado: (idCanal: string) => void; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [nombre, setNombre] = useState('')
@@ -329,6 +351,8 @@ export function ComunicacionInterna() {
   const [mostrarNuevoCanal, setMostrarNuevoCanal] = useState(false)
   const [mostrarBuscarDirecto, setMostrarBuscarDirecto] = useState(false)
   const [mostrarDescubrir, setMostrarDescubrir] = useState(false)
+  const [mostrarMenuNuevo, setMostrarMenuNuevo] = useState(false)
+  const [busquedaCanal, setBusquedaCanal] = useState('')
   const canalSeleccionadoRef = useRef<string | null>(null)
   const mensajesFinRef = useRef<HTMLDivElement>(null)
 
@@ -394,7 +418,7 @@ export function ComunicacionInterna() {
       if (texto.trim()) form.append('Texto', texto.trim())
       if (archivo) form.append('Archivo', archivo)
       return api.post(`/api/comunicacion/canales/${canalSeleccionado}/mensajes`, form, {
-        headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
       })
     },
     onSuccess: () => {
@@ -416,6 +440,14 @@ export function ComunicacionInterna() {
   })
 
   const canalActivo = canales?.find((c) => c.id === canalSeleccionado)
+  const canalesFiltrados = (canales ?? []).filter((c) => c.nombre.toLowerCase().includes(busquedaCanal.trim().toLowerCase()))
+
+  const abrirPanel = (panel: 'canal' | 'directo' | 'descubrir') => {
+    setMostrarMenuNuevo(false)
+    setMostrarNuevoCanal(panel === 'canal')
+    setMostrarBuscarDirecto(panel === 'directo')
+    setMostrarDescubrir(panel === 'descubrir')
+  }
 
   return (
     <div className="animate-fade-in">
@@ -426,79 +458,87 @@ export function ComunicacionInterna() {
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-        <div className="glass-card flex max-h-[70vh] flex-col rounded-xl p-3">
-          <div className="mb-2 flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setMostrarNuevoCanal((v) => !v)
-                setMostrarBuscarDirecto(false)
-                setMostrarDescubrir(false)
-              }}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-graphite-600 hover:bg-black/[0.03]"
-              title="Nuevo canal"
-            >
-              <Plus size={14} /> Canal
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMostrarBuscarDirecto((v) => !v)
-                setMostrarNuevoCanal(false)
-                setMostrarDescubrir(false)
-              }}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-graphite-600 hover:bg-black/[0.03]"
-              title="Nuevo mensaje directo"
-            >
-              <Users size={14} /> Directo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMostrarDescubrir((v) => !v)
-                setMostrarNuevoCanal(false)
-                setMostrarBuscarDirecto(false)
-              }}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-graphite-600 hover:bg-black/[0.03]"
-              title="Descubrir canales"
-            >
-              <Compass size={14} /> Descubrir
-            </button>
+        <div className="glass-card flex h-[78vh] flex-col rounded-xl p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                value={busquedaCanal}
+                onChange={(e) => setBusquedaCanal(e.target.value)}
+                placeholder="Buscar conversación…"
+                className="w-full rounded-full border border-black/[0.08] bg-white px-3.5 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMostrarMenuNuevo((v) => !v)}
+                title="Nueva conversación"
+                className="btn-hover flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gold-500 text-white"
+              >
+                <Plus size={16} />
+              </button>
+              {mostrarMenuNuevo && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMostrarMenuNuevo(false)} />
+                  <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-xl border border-black/[0.08] bg-white py-1 shadow-lg">
+                    <button type="button" onClick={() => abrirPanel('directo')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-graphite-100 hover:bg-black/[0.03]">
+                      <Users size={14} /> Mensaje directo
+                    </button>
+                    <button type="button" onClick={() => abrirPanel('canal')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-graphite-100 hover:bg-black/[0.03]">
+                      <Plus size={14} /> Crear canal
+                    </button>
+                    <button type="button" onClick={() => abrirPanel('descubrir')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-graphite-100 hover:bg-black/[0.03]">
+                      <Compass size={14} /> Descubrir canales
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {canales?.length === 0 && <p className="px-2 py-4 text-xs text-graphite-600">Todavía no tenés canales.</p>}
-            {canales?.map((c) => (
+            {canales?.length === 0 && (
+              <div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
+                <MessagesSquare size={28} className="text-graphite-300" />
+                <p className="text-xs text-graphite-600">Todavía no tenés conversaciones — tocá "+" para empezar una.</p>
+              </div>
+            )}
+            {canales && canales.length > 0 && canalesFiltrados.length === 0 && (
+              <p className="px-2 py-4 text-xs text-graphite-600">Ninguna conversación coincide con "{busquedaCanal}".</p>
+            )}
+            {canalesFiltrados.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => seleccionarCanal(c.id)}
-                className={`mb-1 flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition ${
+                className={`mb-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
                   c.id === canalSeleccionado ? 'bg-gold-500/15' : 'hover:bg-black/[0.03]'
                 }`}
               >
-                <div className="flex w-full items-center justify-between">
-                  <span className="text-sm font-medium text-graphite-100">
-                    {c.esDirecto ? '' : '# '}
-                    {c.nombre}
-                  </span>
-                  {c.noLeidos > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-500 px-1.5 text-[11px] font-semibold text-white">
-                      {c.noLeidos}
+                <Avatar nombre={c.nombre} esCanal={!c.esDirecto} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex w-full items-center justify-between">
+                    <span className={`truncate text-sm ${c.noLeidos > 0 ? 'font-semibold text-graphite-100' : 'font-medium text-graphite-100'}`}>
+                      {c.nombre}
+                    </span>
+                    {c.noLeidos > 0 && (
+                      <span className="ml-1.5 flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-gold-500 px-1.5 text-[11px] font-semibold text-white">
+                        {c.noLeidos}
+                      </span>
+                    )}
+                  </div>
+                  {c.ultimoMensajeTexto && (
+                    <span className={`block w-full truncate text-xs ${c.noLeidos > 0 ? 'text-graphite-700' : 'text-graphite-500'}`}>
+                      {!c.esDirecto && `${c.ultimoMensajeAutor}: `}{c.ultimoMensajeTexto}
                     </span>
                   )}
                 </div>
-                {c.ultimoMensajeTexto && (
-                  <span className="w-full truncate text-xs text-graphite-600">
-                    {c.ultimoMensajeAutor}: {c.ultimoMensajeTexto}
-                  </span>
-                )}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="glass-card flex max-h-[70vh] flex-col rounded-xl p-4">
+        <div className="glass-card flex h-[78vh] flex-col rounded-xl p-4">
           {mostrarNuevoCanal && (
             <NuevoCanalForm
               onCreado={async (idCanal) => {
@@ -532,35 +572,40 @@ export function ComunicacionInterna() {
             </div>
           )}
 
-          {canalSeleccionado && (
+          {canalSeleccionado && canalActivo && (
             <>
-              <h3 className="mb-3 border-b border-black/[0.06] pb-2 font-medium text-graphite-100">
-                {canalActivo?.esDirecto ? '' : '# '}
-                {canalActivo?.nombre}
-              </h3>
+              <div className="mb-3 flex items-center gap-2.5 border-b border-black/[0.06] pb-3">
+                <Avatar nombre={canalActivo.nombre} esCanal={!canalActivo.esDirecto} />
+                <h3 className="font-medium text-graphite-100">{canalActivo.nombre}</h3>
+              </div>
 
               <div className="flex-1 space-y-3 overflow-y-auto pr-1">
                 {mensajes?.map((m) => {
                   const esPropio = m.idUsuarioRemitente === sesion?.idUsuario
                   return (
-                    <div key={m.id} className={`flex flex-col ${esPropio ? 'items-end' : 'items-start'}`}>
-                      {!esPropio && <span className="mb-0.5 text-xs font-medium text-graphite-600">{m.nombreRemitente}</span>}
-                      <div
-                        className={`flex max-w-[75%] flex-col gap-1.5 rounded-xl px-3 py-2 text-sm ${
-                          esPropio ? 'bg-gold-500 text-white' : 'bg-black/[0.04] text-graphite-100'
-                        }`}
-                      >
-                        {m.nombreArchivoAdjunto && (
-                          <AdjuntoMensaje
-                            idMensaje={m.id}
-                            nombre={m.nombreArchivoAdjunto}
-                            contentType={m.contentTypeAdjunto}
-                            tamanoBytes={m.tamanoBytesAdjunto}
-                          />
+                    <div key={m.id} className={`flex items-end gap-2 ${esPropio ? 'flex-row-reverse' : 'flex-row'}`}>
+                      {!esPropio && <Avatar nombre={m.nombreRemitente} tamano="sm" />}
+                      <div className={`flex max-w-[70%] flex-col ${esPropio ? 'items-end' : 'items-start'}`}>
+                        {!esPropio && !canalActivo.esDirecto && (
+                          <span className="mb-0.5 px-1 text-xs font-medium text-graphite-600">{m.nombreRemitente}</span>
                         )}
-                        {m.texto && <span>{m.texto}</span>}
+                        <div
+                          className={`flex flex-col gap-1.5 rounded-2xl px-3.5 py-2 text-sm ${
+                            esPropio ? 'rounded-br-sm bg-gold-500 text-white' : 'rounded-bl-sm bg-black/[0.045] text-graphite-100'
+                          }`}
+                        >
+                          {m.nombreArchivoAdjunto && (
+                            <AdjuntoMensaje
+                              idMensaje={m.id}
+                              nombre={m.nombreArchivoAdjunto}
+                              contentType={m.contentTypeAdjunto}
+                              tamanoBytes={m.tamanoBytesAdjunto}
+                            />
+                          )}
+                          {m.texto && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
+                        </div>
+                        <span className="mt-0.5 px-1 text-[11px] text-graphite-500">{formatoHora(m.creadoEn)}</span>
                       </div>
-                      <span className="mt-0.5 text-[11px] text-graphite-500">{formatoHora(m.creadoEn)}</span>
                     </div>
                   )
                 })}
@@ -596,23 +641,24 @@ export function ComunicacionInterna() {
                 <label
                   htmlFor="comunicacion-archivo-input"
                   title="Adjuntar imagen o archivo"
-                  className="flex cursor-pointer items-center justify-center rounded-lg border border-black/[0.08] p-2 text-graphite-600 hover:bg-black/[0.03]"
+                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full text-graphite-600 hover:bg-black/[0.05]"
                 >
-                  <Paperclip size={16} />
+                  <Paperclip size={17} />
                 </label>
                 <input
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
                   maxLength={2000}
                   placeholder="Escribí un mensaje…"
-                  className="flex-1 rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+                  className="flex-1 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
                 />
                 <button
                   type="submit"
                   disabled={enviar.isPending || (!texto.trim() && !archivo)}
-                  className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  title="Enviar"
+                  className="btn-hover flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gold-500 text-white disabled:opacity-50"
                 >
-                  <Send size={16} />
+                  <Send size={15} />
                 </button>
               </form>
               {enviar.isError && <p className="mt-1 text-xs text-red-700">{detalleError(enviar.error, 'No se pudo enviar el mensaje.')}</p>}

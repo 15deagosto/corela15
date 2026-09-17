@@ -456,7 +456,7 @@ function NuevoDocumentoModal({
       if (notas) form.append('Notas', notas)
       form.append('Archivo', archivo as File)
       return api.post('/api/biblioteca-documentos', form, {
-        headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
       })
     },
     onSuccess: () => {
@@ -648,7 +648,7 @@ function GestionarDocumentoModal({
       form.append('Version', nuevaVersion)
       form.append('Archivo', archivoNuevo as File)
       return api.post(`/api/biblioteca-documentos/${documento.id}/nueva-version`, form, {
-        headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
       })
     },
     onSuccess: () => {

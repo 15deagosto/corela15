@@ -206,9 +206,15 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             throw new NoEsMiembroDelCanalException();
         }
 
+        // Fallback real hasta NombreUsuario (siempre poblado) en vez de un
+        // placeholder genérico "Usuario" -- bug real encontrado: cuentas
+        // sin Persona/NombreCompleto vinculado (ej. usuarios reales
+        // importados de Softbank) mostraban el mismo texto "Usuario" para
+        // cualquiera, haciendo que el chat pareciera mostrar el nombre
+        // equivocado.
         var nombreRemitente = await db.Usuarios
             .Where(u => u.Id == idUsuarioRemitente)
-            .Select(u => u.Persona != null ? u.Persona.Nombre : u.NombreCompleto)
+            .Select(u => u.Persona != null ? u.Persona.Nombre : (u.NombreCompleto ?? u.NombreUsuario))
             .FirstOrDefaultAsync(cancellationToken) ?? "Usuario";
 
         var mensaje = new Mensaje
@@ -297,7 +303,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             {
                 nombreMostrado = await db.CanalesMiembros
                     .Where(x => x.IdCanal == m.IdCanal && x.IdUsuario != idUsuario)
-                    .Select(x => x.Usuario.Persona != null ? x.Usuario.Persona.Nombre : x.Usuario.NombreCompleto)
+                    .Select(x => x.Usuario.Persona != null ? x.Usuario.Persona.Nombre : (x.Usuario.NombreCompleto ?? x.Usuario.NombreUsuario))
                     .FirstOrDefaultAsync(cancellationToken) ?? "(usuario)";
             }
 
@@ -306,7 +312,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
                 .OrderByDescending(msg => msg.CreadoEn)
                 .Select(msg => new {
                     msg.Texto, msg.NombreArchivoAdjunto,
-                    Autor = (msg.UsuarioRemitente.Persona != null ? msg.UsuarioRemitente.Persona.Nombre : msg.UsuarioRemitente.NombreCompleto) ?? "Usuario",
+                    Autor = (msg.UsuarioRemitente.Persona != null ? msg.UsuarioRemitente.Persona.Nombre : (msg.UsuarioRemitente.NombreCompleto ?? msg.UsuarioRemitente.NombreUsuario)) ?? "Usuario",
                     msg.CreadoEn,
                 })
                 .FirstOrDefaultAsync(cancellationToken);
@@ -350,7 +356,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             .Take(50)
             .Select(m => new MensajeDto(
                 m.Id, m.IdCanal, m.IdUsuarioRemitente,
-                (m.UsuarioRemitente.Persona != null ? m.UsuarioRemitente.Persona.Nombre : m.UsuarioRemitente.NombreCompleto) ?? "Usuario",
+                (m.UsuarioRemitente.Persona != null ? m.UsuarioRemitente.Persona.Nombre : (m.UsuarioRemitente.NombreCompleto ?? m.UsuarioRemitente.NombreUsuario)) ?? "Usuario",
                 m.Texto, m.CreadoEn, m.NombreArchivoAdjunto, m.ContentTypeAdjunto, m.TamanoBytesAdjunto))
             .ToListAsync(cancellationToken);
 
