@@ -19,7 +19,14 @@ public interface IComunicacionService
     /// <summary>Busca la conversación directa real entre dos usuarios (única por par, ver Canal.ClaveDirecta) o la crea si es la primera vez que se escriben.</summary>
     Task<CanalDto> ObtenerOCrearDirectoAsync(Guid idUsuarioA, Guid idUsuarioB, CancellationToken cancellationToken = default);
 
-    Task AgregarMiembroAsync(Guid idCanal, Guid idUsuarioNuevo, string ejecutadoPor, CancellationToken cancellationToken = default);
+    /// <summary>Solo el dueño real del canal puede agregar miembros (ver Canal.IdPropietario) — nunca cualquier miembro.</summary>
+    Task AgregarMiembroAsync(Guid idCanal, Guid idUsuarioNuevo, Guid ejecutadoPor, CancellationToken cancellationToken = default);
+
+    /// <summary>Solo el dueño real del canal puede sacar a otro miembro — distinto de "salir", que cualquier miembro (incluido el dueño) puede hacer sobre sí mismo.</summary>
+    Task QuitarMiembroAsync(Guid idCanal, Guid idUsuarioAQuitar, Guid ejecutadoPor, CancellationToken cancellationToken = default);
+
+    /// <summary>Lista de miembros reales de un canal, visible para cualquier miembro activo — marca cuál es el dueño.</summary>
+    Task<IReadOnlyList<MiembroCanalDto>> ListarMiembrosAsync(Guid idCanal, Guid idUsuarioSolicitante, CancellationToken cancellationToken = default);
 
     Task SalirDelCanalAsync(Guid idCanal, Guid idUsuario, CancellationToken cancellationToken = default);
 
@@ -78,14 +85,16 @@ public interface IComunicacionNotificador
     Task NotificarAgregadoACanalAsync(Guid idUsuario, CanalDto canal, CancellationToken cancellationToken = default);
 }
 
-public record CrearCanalRequest(string Nombre, string? Descripcion, IReadOnlyList<Guid> IdsMiembrosIniciales, Guid CreadoPor);
+public record CrearCanalRequest(string Nombre, string? Descripcion, IReadOnlyList<Guid> IdsMiembrosIniciales, Guid CreadoPor, bool EsPublico);
 
-public record CanalDto(Guid Id, string? Nombre, string? Descripcion, bool EsDirecto, DateTimeOffset CreadoEn);
+public record CanalDto(Guid Id, string? Nombre, string? Descripcion, bool EsDirecto, DateTimeOffset CreadoEn, Guid? IdPropietario, bool EsPublico);
 
 public record CanalListItemDto(
     Guid Id, string Nombre, bool EsDirecto,
     string? UltimoMensajeTexto, string? UltimoMensajeAutor, DateTimeOffset? UltimoMensajeFecha,
-    int NoLeidos);
+    int NoLeidos, Guid? IdPropietario, bool EsPublico);
+
+public record MiembroCanalDto(Guid IdUsuario, string Nombre, bool EsPropietario);
 
 public record MensajeDto(
     Guid Id, Guid IdCanal, Guid IdUsuarioRemitente, string NombreRemitente, string? Texto, DateTimeOffset CreadoEn,
@@ -127,3 +136,7 @@ public class AdjuntoInvalidoException() : ReglaDeNegocioException("El archivo ad
 public class DemasiadosAdjuntosException(int max) : SolicitudInvalidaException($"Un mensaje admite máximo {max} archivos adjuntos");
 
 public class MensajeOrigenInvalidoException() : ReglaDeNegocioException("El mensaje que querés reenviar no existe");
+
+public class NoEsPropietarioDelCanalException() : ReglaDeNegocioException("Solo el dueño del canal puede agregar o quitar miembros");
+
+public class CanalSinPropietarioException() : ReglaDeNegocioException("Este canal no tiene un dueño real asignado todavía — pedile a un administrador que lo resuelva");

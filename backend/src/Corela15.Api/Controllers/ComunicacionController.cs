@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Corela15.Api.Controllers;
 
-public record CrearCanalBody(string Nombre, string? Descripcion, IReadOnlyList<Guid> IdsMiembrosIniciales);
+public record CrearCanalBody(string Nombre, string? Descripcion, IReadOnlyList<Guid> IdsMiembrosIniciales, bool EsPublico);
 
 public record AgregarMiembroBody(Guid IdUsuario);
 
@@ -47,7 +47,7 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     public async Task<ActionResult<CanalDto>> CrearCanal([FromBody] CrearCanalBody body, CancellationToken cancellationToken)
     {
         var resultado = await service.CrearCanalAsync(
-            new CrearCanalRequest(body.Nombre, body.Descripcion, body.IdsMiembrosIniciales, IdUsuarioActual()),
+            new CrearCanalRequest(body.Nombre, body.Descripcion, body.IdsMiembrosIniciales, IdUsuarioActual(), body.EsPublico),
             cancellationToken);
         return Ok(resultado);
     }
@@ -60,9 +60,20 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     public async Task<IActionResult> AgregarMiembro(
         Guid idCanal, [FromBody] AgregarMiembroBody body, CancellationToken cancellationToken)
     {
-        await service.AgregarMiembroAsync(idCanal, body.IdUsuario, User.Identity!.Name!, cancellationToken);
+        await service.AgregarMiembroAsync(idCanal, body.IdUsuario, IdUsuarioActual(), cancellationToken);
         return NoContent();
     }
+
+    [HttpDelete("canales/{idCanal:guid}/miembros/{idUsuario:guid}")]
+    public async Task<IActionResult> QuitarMiembro(Guid idCanal, Guid idUsuario, CancellationToken cancellationToken)
+    {
+        await service.QuitarMiembroAsync(idCanal, idUsuario, IdUsuarioActual(), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("canales/{idCanal:guid}/miembros")]
+    public async Task<ActionResult<IReadOnlyList<MiembroCanalDto>>> ListarMiembros(Guid idCanal, CancellationToken cancellationToken) =>
+        Ok(await service.ListarMiembrosAsync(idCanal, IdUsuarioActual(), cancellationToken));
 
     [HttpPost("canales/{idCanal:guid}/salir")]
     public async Task<IActionResult> Salir(Guid idCanal, CancellationToken cancellationToken)

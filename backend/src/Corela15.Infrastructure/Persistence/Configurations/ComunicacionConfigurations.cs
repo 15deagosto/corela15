@@ -14,6 +14,10 @@ public class CanalConfiguration : IEntityTypeConfiguration<Canal>
         b.Property(x => x.Descripcion).HasMaxLength(300);
         b.Property(x => x.ClaveDirecta).HasMaxLength(80);
         b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+        b.Property(x => x.EsPublico).HasDefaultValue(true);
+
+        b.HasOne<Corela15.Domain.Seguridad.Usuario>().WithMany()
+            .HasForeignKey(x => x.IdPropietario).OnDelete(DeleteBehavior.SetNull);
 
         b.HasIndex(x => x.ClaveDirecta).IsUnique();
     }

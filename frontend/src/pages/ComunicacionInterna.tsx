@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessagesSquare, Send, Plus, Users, Compass, X, Paperclip, Download, FileText, Copy, Check, Forward } from 'lucide-react'
+import { MessagesSquare, Send, Plus, Users, Compass, X, Paperclip, Download, FileText, Copy, Check, Forward, UserPlus, UserMinus, Crown, Globe, Lock } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/Badge'
 import { ModalPortal } from '../components/ModalPortal'
@@ -17,6 +17,14 @@ interface CanalListItem {
   ultimoMensajeAutor: string | null
   ultimoMensajeFecha: string | null
   noLeidos: number
+  idPropietario: string | null
+  esPublico: boolean
+}
+
+interface MiembroCanal {
+  idUsuario: string
+  nombre: string
+  esPropietario: boolean
 }
 
 interface Adjunto {
@@ -239,6 +247,7 @@ function NuevoCanalForm({ onCreado, onClose }: { onCreado: (idCanal: string) => 
   const [nombre, setNombre] = useState('')
   const [q, setQ] = useState('')
   const [seleccionados, setSeleccionados] = useState<UsuarioParaChat[]>([])
+  const [esPublico, setEsPublico] = useState(false)
 
   const { data: usuarios } = useQuery<UsuarioParaChat[]>({
     queryKey: ['comunicacion-buscar-usuarios', q],
@@ -253,6 +262,7 @@ function NuevoCanalForm({ onCreado, onClose }: { onCreado: (idCanal: string) => 
           nombre,
           descripcion: null,
           idsMiembrosIniciales: seleccionados.map((u) => u.id),
+          esPublico,
         })
       ).data as { id: string },
     onSuccess: (canal) => {
@@ -321,6 +331,15 @@ function NuevoCanalForm({ onCreado, onClose }: { onCreado: (idCanal: string) => 
               ))}
           </div>
         )}
+
+        <label className="flex items-start gap-2 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-graphite-700">
+          <input type="checkbox" checked={esPublico} onChange={(e) => setEsPublico(e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="font-medium text-graphite-100">Público</span> — cualquiera con acceso al chat lo puede
+            encontrar en "Descubrir canales" y sumarse solo. Si lo dejás sin marcar, solo vos (el dueño) podés agregar
+            o sacar miembros, y solo ellos lo van a ver.
+          </span>
+        </label>
 
         <button
           type="submit"
@@ -429,6 +448,134 @@ function DescubrirCanales({ onUnido, onClose }: { onUnido: (idCanal: string) => 
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * Miembros reales de un canal de grupo — cualquier miembro puede ver la
+ * lista (transparencia real de quién está adentro), pero solo el dueño
+ * real (quien lo creó) puede agregar o quitar gente — cierra el bug real
+ * de seguridad que existía antes (cualquiera con acceso al chat podía
+ * sumarse o sumar a otros a cualquier canal, sin ningún control de quién
+ * lo administra).
+ */
+function MiembrosModal({ canal, esPropietario, onClose }: { canal: CanalListItem; esPropietario: boolean; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [q, setQ] = useState('')
+
+  const { data: miembros, isLoading } = useQuery<MiembroCanal[]>({
+    queryKey: ['comunicacion-miembros', canal.id],
+    queryFn: async () => (await api.get(`/api/comunicacion/canales/${canal.id}/miembros`)).data,
+  })
+
+  const { data: usuarios } = useQuery<UsuarioParaChat[]>({
+    queryKey: ['comunicacion-buscar-usuarios', q],
+    queryFn: async () => (await api.get('/api/comunicacion/usuarios/buscar', { params: { q } })).data,
+    enabled: esPropietario && q.length >= 2,
+  })
+
+  const invalidar = () => {
+    queryClient.invalidateQueries({ queryKey: ['comunicacion-miembros', canal.id] })
+    queryClient.invalidateQueries({ queryKey: ['comunicacion-canales'] })
+  }
+
+  const agregar = useMutation({
+    mutationFn: async (idUsuario: string) => api.post(`/api/comunicacion/canales/${canal.id}/miembros`, { idUsuario }),
+    onSuccess: () => {
+      setQ('')
+      invalidar()
+    },
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (idUsuario: string) => api.delete(`/api/comunicacion/canales/${canal.id}/miembros/${idUsuario}`),
+    onSuccess: invalidar,
+  })
+
+  const idsMiembros = new Set((miembros ?? []).map((m) => m.idUsuario))
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="glass-card flex max-h-[80vh] w-full max-w-sm flex-col overflow-hidden rounded-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between border-b border-black/[0.06] p-4 pb-3">
+            <h3 className="flex items-center gap-2 font-medium text-graphite-100">
+              <Users size={16} /> Miembros — {canal.nombre}
+            </h3>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={18} />
+            </button>
+          </div>
+
+          {!esPropietario && (
+            <p className="border-b border-black/[0.06] px-4 py-2 text-xs text-graphite-600">
+              Solo el dueño del canal puede agregar o quitar miembros.
+            </p>
+          )}
+
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            {isLoading && <p className="px-2 py-3 text-xs text-graphite-600">Cargando…</p>}
+            {miembros?.map((m) => (
+              <div key={m.idUsuario} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
+                <Avatar nombre={m.nombre} tamano="sm" />
+                <span className="flex-1 truncate text-sm text-graphite-100">{m.nombre}</span>
+                {m.esPropietario ? (
+                  <span title="Dueño del canal" className="flex items-center gap-1 text-xs font-medium text-gold-500">
+                    <Crown size={13} /> Dueño
+                  </span>
+                ) : (
+                  esPropietario && (
+                    <button
+                      type="button"
+                      disabled={quitar.isPending}
+                      onClick={() => quitar.mutate(m.idUsuario)}
+                      title="Quitar del canal"
+                      className="text-graphite-400 hover:text-red-700 disabled:opacity-50"
+                    >
+                      <UserMinus size={15} />
+                    </button>
+                  )
+                )}
+              </div>
+            ))}
+          </div>
+
+          {esPropietario && (
+            <div className="border-t border-black/[0.06] p-3">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Agregar miembro — buscar por nombre o usuario…"
+                className="w-full rounded-full border border-black/[0.08] bg-white px-3.5 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
+              />
+              {q.length >= 2 && (
+                <div className="mt-1.5 max-h-32 overflow-y-auto rounded-lg border border-black/[0.08] bg-white">
+                  {usuarios?.filter((u) => !idsMiembros.has(u.id)).map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      disabled={agregar.isPending}
+                      onClick={() => agregar.mutate(u.id)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-black/[0.02] disabled:opacity-60"
+                    >
+                      <UserPlus size={14} className="text-gold-500" /> {u.nombre}
+                    </button>
+                  ))}
+                  {usuarios?.filter((u) => !idsMiembros.has(u.id)).length === 0 && (
+                    <p className="px-3 py-1.5 text-xs text-graphite-600">Sin resultados, o ya es miembro.</p>
+                  )}
+                </div>
+              )}
+              {(agregar.isError || quitar.isError) && (
+                <p className="mt-1.5 text-xs text-red-700">
+                  {detalleError(agregar.error ?? quitar.error, 'No se pudo completar la acción.')}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </ModalPortal>
   )
 }
 
@@ -568,6 +715,7 @@ export function ComunicacionInterna() {
   const [mostrarDescubrir, setMostrarDescubrir] = useState(false)
   const [mostrarMenuNuevo, setMostrarMenuNuevo] = useState(false)
   const [mensajeAReenviar, setMensajeAReenviar] = useState<Mensaje | null>(null)
+  const [mostrarMiembros, setMostrarMiembros] = useState(false)
   const [busquedaCanal, setBusquedaCanal] = useState('')
   const canalSeleccionadoRef = useRef<string | null>(null)
   const mensajesFinRef = useRef<HTMLDivElement>(null)
@@ -842,7 +990,20 @@ export function ComunicacionInterna() {
             <>
               <div className="mb-3 flex items-center gap-2.5 border-b border-black/[0.06] pb-3">
                 <Avatar nombre={canalActivo.nombre} esCanal={!canalActivo.esDirecto} />
-                <h3 className="font-medium text-graphite-100">{canalActivo.nombre}</h3>
+                <div className="flex-1">
+                  <h3 className="font-medium text-graphite-100">{canalActivo.nombre}</h3>
+                </div>
+                {!canalActivo.esDirecto && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarMiembros(true)}
+                    title={canalActivo.esPublico ? 'Canal público — ver miembros' : 'Canal privado — ver miembros'}
+                    className="flex items-center gap-1 rounded-full border border-black/[0.08] px-2.5 py-1 text-xs text-graphite-600 hover:bg-black/[0.03]"
+                  >
+                    {canalActivo.esPublico ? <Globe size={13} /> : <Lock size={13} />}
+                    <Users size={13} />
+                  </button>
+                )}
               </div>
 
               <div className="flex-1 space-y-3 overflow-y-auto pr-1">
@@ -950,6 +1111,13 @@ export function ComunicacionInterna() {
 
       {mensajeAReenviar && (
         <ReenviarModal mensaje={mensajeAReenviar} canales={canales ?? []} onClose={() => setMensajeAReenviar(null)} />
+      )}
+      {mostrarMiembros && canalActivo && (
+        <MiembrosModal
+          canal={canalActivo}
+          esPropietario={canalActivo.idPropietario === sesion?.idUsuario}
+          onClose={() => setMostrarMiembros(false)}
+        />
       )}
     </div>
   )

@@ -34,6 +34,8 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             Nombre = nombre,
             Descripcion = request.Descripcion?.Trim(),
             EsDirecto = false,
+            IdPropietario = request.CreadoPor,
+            EsPublico = request.EsPublico,
             CreadoPor = request.CreadoPor.ToString(),
             CreadoEn = ahora,
         };
@@ -53,7 +55,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
 
         await db.SaveChangesAsync(cancellationToken);
 
-        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn);
+        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn, canal.IdPropietario, canal.EsPublico);
 
         foreach (var idUsuario in idsValidos.Where(id => id != request.CreadoPor))
         {
@@ -71,7 +73,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
         var existente = await db.Canales.FirstOrDefaultAsync(c => c.ClaveDirecta == clave, cancellationToken);
         if (existente is not null)
         {
-            return new CanalDto(existente.Id, existente.Nombre, existente.Descripcion, existente.EsDirecto, existente.CreadoEn);
+            return new CanalDto(existente.Id, existente.Nombre, existente.Descripcion, existente.EsDirecto, existente.CreadoEn, existente.IdPropietario, existente.EsPublico);
         }
 
         var otroActivo = await db.Usuarios.AnyAsync(u => u.Id == idUsuarioB && u.Activo, cancellationToken);
@@ -86,6 +88,8 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             Id = Guid.NewGuid(),
             EsDirecto = true,
             ClaveDirecta = clave,
+            IdPropietario = idUsuarioA,
+            EsPublico = false,
             CreadoPor = idUsuarioA.ToString(),
             CreadoEn = ahora,
         };
@@ -106,16 +110,16 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             // criterio ya usado en el resto del core: reintentar como
             // lectura en vez de propagar un 500.
             var creadaPorElOtro = await db.Canales.FirstAsync(c => c.ClaveDirecta == clave, cancellationToken);
-            return new CanalDto(creadaPorElOtro.Id, creadaPorElOtro.Nombre, creadaPorElOtro.Descripcion, creadaPorElOtro.EsDirecto, creadaPorElOtro.CreadoEn);
+            return new CanalDto(creadaPorElOtro.Id, creadaPorElOtro.Nombre, creadaPorElOtro.Descripcion, creadaPorElOtro.EsDirecto, creadaPorElOtro.CreadoEn, creadaPorElOtro.IdPropietario, creadaPorElOtro.EsPublico);
         }
 
-        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn);
+        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn, canal.IdPropietario, canal.EsPublico);
         await notificador.NotificarAgregadoACanalAsync(idUsuarioB, dto, cancellationToken);
         return dto;
     }
 
     public async Task AgregarMiembroAsync(
-        Guid idCanal, Guid idUsuarioNuevo, string ejecutadoPor, CancellationToken cancellationToken = default)
+        Guid idCanal, Guid idUsuarioNuevo, Guid ejecutadoPor, CancellationToken cancellationToken = default)
     {
         var canal = await db.Canales.FirstOrDefaultAsync(c => c.Id == idCanal && c.Activo, cancellationToken)
             ?? throw new CanalNoExisteException(idCanal);
@@ -124,6 +128,8 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
         {
             throw new NoSePuedeSalirDeConversacionDirectaException();
         }
+
+        ExigirPropietario(canal, ejecutadoPor);
 
         var usuarioActivo = await db.Usuarios.AnyAsync(u => u.Id == idUsuarioNuevo && u.Activo, cancellationToken);
         if (!usuarioActivo)
@@ -156,8 +162,65 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
 
         await db.SaveChangesAsync(cancellationToken);
 
-        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn);
+        var dto = new CanalDto(canal.Id, canal.Nombre, canal.Descripcion, canal.EsDirecto, canal.CreadoEn, canal.IdPropietario, canal.EsPublico);
         await notificador.NotificarAgregadoACanalAsync(idUsuarioNuevo, dto, cancellationToken);
+    }
+
+    public async Task QuitarMiembroAsync(Guid idCanal, Guid idUsuarioAQuitar, Guid ejecutadoPor, CancellationToken cancellationToken = default)
+    {
+        var canal = await db.Canales.FirstOrDefaultAsync(c => c.Id == idCanal && c.Activo, cancellationToken)
+            ?? throw new CanalNoExisteException(idCanal);
+
+        if (canal.EsDirecto)
+        {
+            throw new NoSePuedeSalirDeConversacionDirectaException();
+        }
+
+        ExigirPropietario(canal, ejecutadoPor);
+
+        var membresia = await db.CanalesMiembros
+            .FirstOrDefaultAsync(m => m.IdCanal == idCanal && m.IdUsuario == idUsuarioAQuitar && m.Activo, cancellationToken);
+        if (membresia is null)
+        {
+            return; // idempotente
+        }
+
+        membresia.Activo = false;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<MiembroCanalDto>> ListarMiembrosAsync(Guid idCanal, Guid idUsuarioSolicitante, CancellationToken cancellationToken = default)
+    {
+        var canal = await db.Canales.FirstOrDefaultAsync(c => c.Id == idCanal, cancellationToken)
+            ?? throw new CanalNoExisteException(idCanal);
+
+        var esMiembro = await db.CanalesMiembros
+            .AnyAsync(m => m.IdCanal == idCanal && m.IdUsuario == idUsuarioSolicitante && m.Activo, cancellationToken);
+        if (!esMiembro)
+        {
+            throw new NoEsMiembroDelCanalException();
+        }
+
+        return await db.CanalesMiembros
+            .Where(m => m.IdCanal == idCanal && m.Activo)
+            .OrderBy(m => m.CreadoEn)
+            .Select(m => new MiembroCanalDto(
+                m.IdUsuario,
+                m.Usuario.Persona != null ? m.Usuario.Persona.Nombre : (m.Usuario.NombreCompleto ?? m.Usuario.NombreUsuario),
+                m.IdUsuario == canal.IdPropietario))
+            .ToListAsync(cancellationToken);
+    }
+
+    private static void ExigirPropietario(Canal canal, Guid ejecutadoPor)
+    {
+        if (canal.IdPropietario is null)
+        {
+            throw new CanalSinPropietarioException();
+        }
+        if (canal.IdPropietario != ejecutadoPor)
+        {
+            throw new NoEsPropietarioDelCanalException();
+        }
     }
 
     public async Task SalirDelCanalAsync(Guid idCanal, Guid idUsuario, CancellationToken cancellationToken = default)
@@ -383,7 +446,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
     {
         var membresias = await db.CanalesMiembros
             .Where(m => m.IdUsuario == idUsuario && m.Activo)
-            .Select(m => new { m.IdCanal, m.FechaUltimaLectura, m.Canal.Nombre, m.Canal.EsDirecto })
+            .Select(m => new { m.IdCanal, m.FechaUltimaLectura, m.Canal.Nombre, m.Canal.EsDirecto, m.Canal.IdPropietario, m.Canal.EsPublico })
             .ToListAsync(cancellationToken);
 
         var resultado = new List<CanalListItemDto>(membresias.Count);
@@ -421,7 +484,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
 
             resultado.Add(new CanalListItemDto(
                 m.IdCanal, nombreMostrado ?? "(sin nombre)", m.EsDirecto,
-                previoUltimoMensaje, ultimoMensaje?.Autor, ultimoMensaje?.CreadoEn, noLeidos));
+                previoUltimoMensaje, ultimoMensaje?.Autor, ultimoMensaje?.CreadoEn, noLeidos, m.IdPropietario, m.EsPublico));
         }
 
         return resultado
@@ -507,8 +570,11 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             .Select(m => m.IdCanal)
             .ToListAsync(cancellationToken);
 
+        // Solo canales reales marcados como públicos -- uno privado (el
+        // caso por defecto al crear uno nuevo) solo lo ve/encuentra quien
+        // ya es miembro real, nunca aparece acá para el resto.
         return await db.Canales
-            .Where(c => c.Activo && !c.EsDirecto)
+            .Where(c => c.Activo && !c.EsDirecto && c.EsPublico)
             .OrderBy(c => c.Nombre)
             .Select(c => new CanalDescubribleDto(c.Id, c.Nombre!, c.Descripcion, idsMiembro.Contains(c.Id)))
             .ToListAsync(cancellationToken);
