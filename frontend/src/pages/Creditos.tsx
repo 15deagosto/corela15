@@ -8,6 +8,7 @@ import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 import { useAuth } from '../lib/AuthContext'
 
 interface Producto {
@@ -407,7 +408,7 @@ function AbrirDpfForm({ onClose }: { onClose: () => void }) {
         await api.post(
           '/api/plazofijo/depositos',
           { idCliente, idAgencia: 1, monto: Number(monto) || 0, plazoDias: Number(plazoDias) || 0, esPersonaJuridica: false },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -507,7 +508,7 @@ function RenovarDpfModal({ deposito, onClose }: { deposito: Deposito; onClose: (
         await api.post(
           `/api/plazofijo/depositos/${deposito.id}/renovar`,
           { plazoDias: Number(plazoDias) || 0, incrementoCapital: Number(incrementoCapital) || 0, esPersonaJuridica },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data as DepositoRenovado,
     onSuccess: () => {
@@ -1009,7 +1010,7 @@ function SeccionSolicitudes({ productos }: { productos: Producto[] | undefined }
     mutationFn: async (idSolicitud: string) =>
       (
         await api.post(`/api/creditos/solicitudes/${idSolicitud}/desembolsar`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
+          headers: { 'Idempotency-Key': idempotencyKey() },
         })
       ).data,
     onSuccess: () => {
@@ -1139,7 +1140,7 @@ function RubrosManualesPanel({ prestamo }: { prestamo: Prestamo }) {
         await api.post(
           `/api/creditos/prestamos/${prestamo.id}/rubros-manuales`,
           { idRubro: Number(idRubro), monto: Number(monto), detalle },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data as RubroManualCargado,
     onSuccess: () => {
@@ -1486,7 +1487,7 @@ function TabCastigo({ prestamo, onCastigado }: { prestamo: Prestamo; onCastigado
         await api.post(
           `/api/creditos/prestamos/${prestamo.id}/castigar`,
           { comentario },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -1625,7 +1626,7 @@ function SeccionCartera() {
     mutationFn: async (idPrestamo: string) =>
       (
         await api.post(`/api/creditos/prestamos/${idPrestamo}/pagos`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
+          headers: { 'Idempotency-Key': idempotencyKey() },
         })
       ).data as PagoCuotaResultado,
     onSuccess: () => {
@@ -1780,7 +1781,7 @@ function SeccionPlazoFijo() {
     mutationFn: async (idDeposito: string) =>
       (
         await api.post(`/api/plazofijo/depositos/${idDeposito}/cancelar`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
+          headers: { 'Idempotency-Key': idempotencyKey() },
         })
       ).data as DepositoCancelado,
     onSuccess: () => {

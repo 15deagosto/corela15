@@ -7,6 +7,7 @@ import { Badge } from '../components/Badge'
 import { BotonesExportar } from '../components/BotonesExportar'
 import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface VentanillaListItem {
   id: string
@@ -950,7 +951,7 @@ function SeccionPagoExterno() {
             valor: Number(valor),
             comision: comision ? Number(comision) : 0,
           },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -966,7 +967,7 @@ function SeccionPagoExterno() {
       api.post(
         `/api/cajas/pago-externo/transacciones/${id}/reversar`,
         undefined,
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cajas-pago-externo-transacciones'] })

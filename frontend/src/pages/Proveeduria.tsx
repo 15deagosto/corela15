@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Articulo {
   codigo: string
@@ -275,7 +276,7 @@ function IngresarStockForm({ bodega, onClose }: { bodega: Bodega; onClose: () =>
       api.post(
         `/api/proveeduria/bodegas/${bodega.id}/ingresar-stock`,
         { codigoArticulo, cantidad: Number(cantidad), precioUnitario: Number(precioUnitario) },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveeduria-stock', bodega.id] })
@@ -585,7 +586,7 @@ function SeccionSolicitudes() {
   const procesar = useMutation({
     mutationFn: async (id: string) =>
       api.post(`/api/proveeduria/solicitudes/${id}/procesar`, undefined, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveeduria-solicitudes'] })

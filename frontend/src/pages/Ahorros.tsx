@@ -9,6 +9,7 @@ import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Producto {
   id: number
@@ -174,7 +175,7 @@ function MovimientoModal({ cuenta, onClose }: { cuenta: CuentaAhorro; onClose: (
         await api.post(
           `/api/ahorros/cuentas/${cuenta.id}/movimientos`,
           { codigoTipoTransaccion, monto: Number(monto) || 0 },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data as { idAutorizacionPendiente: string | null },
     onSuccess: (data) => {

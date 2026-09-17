@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface PersonaConTelefonos {
   id: string
@@ -90,7 +91,7 @@ function EnviarWhatsappForm() {
       api.post(
         '/api/mensajeria/whatsapp/enviar',
         { numeroDestino: numero, idPersonaDestino: persona?.id ?? null, texto },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mensajeria-whatsapp-historial'] })

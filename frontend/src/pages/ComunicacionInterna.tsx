@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/Badge'
 import { ModalPortal } from '../components/ModalPortal'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 import { useAuth } from '../lib/AuthContext'
 import { iniciarConexionComunicacion } from '../lib/comunicacionHub'
 
@@ -451,7 +452,7 @@ function ReenviarModal({ mensaje, canales, onClose }: { mensaje: Mensaje; canale
   const reenviarACanal = useMutation({
     mutationFn: async (idCanal: string) =>
       api.post(`/api/comunicacion/mensajes/${mensaje.id}/reenviar`, { idCanalDestino: idCanal }, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: (_r, idCanal) => setEnviadosA((prev) => new Set(prev).add(idCanal)),
   })
@@ -460,7 +461,7 @@ function ReenviarModal({ mensaje, canales, onClose }: { mensaje: Mensaje; canale
     mutationFn: async (idUsuario: string) => {
       const canal = (await api.post(`/api/comunicacion/directo/${idUsuario}`)).data as { id: string }
       await api.post(`/api/comunicacion/mensajes/${mensaje.id}/reenviar`, { idCanalDestino: canal.id }, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       })
       return canal.id
     },
@@ -633,7 +634,7 @@ export function ComunicacionInterna() {
       if (texto.trim()) form.append('Texto', texto.trim())
       for (const archivo of archivos) form.append('Archivos', archivo)
       return api.post(`/api/comunicacion/canales/${canalSeleccionado}/mensajes`, form, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       })
     },
     onSuccess: () => {
@@ -669,11 +670,22 @@ export function ComunicacionInterna() {
       await hub.invoke('UnirseACanal', canal.id)
       setCanalSeleccionado(canal.id)
       setMostrarBuscarDirecto(false)
+      setBusquedaCanal('')
     },
   })
 
   const canalActivo = canales?.find((c) => c.id === canalSeleccionado)
-  const canalesFiltrados = (canales ?? []).filter((c) => c.nombre.toLowerCase().includes(busquedaCanal.trim().toLowerCase()))
+  const busquedaCanalLimpia = busquedaCanal.trim()
+  const canalesFiltrados = (canales ?? []).filter((c) => c.nombre.toLowerCase().includes(busquedaCanalLimpia.toLowerCase()))
+
+  // La misma barra de búsqueda también busca personas reales -- clic
+  // directo arma (o reusa) la conversación directa con esa persona, sin
+  // tener que ir a "Nuevo mensaje directo" aparte.
+  const { data: usuariosBusqueda } = useQuery<UsuarioParaChat[]>({
+    queryKey: ['comunicacion-buscar-usuarios', busquedaCanalLimpia],
+    queryFn: async () => (await api.get('/api/comunicacion/usuarios/buscar', { params: { q: busquedaCanalLimpia } })).data,
+    enabled: busquedaCanalLimpia.length >= 2,
+  })
 
   const abrirPanel = (panel: 'canal' | 'directo' | 'descubrir') => {
     setMostrarMenuNuevo(false)
@@ -697,7 +709,7 @@ export function ComunicacionInterna() {
               <input
                 value={busquedaCanal}
                 onChange={(e) => setBusquedaCanal(e.target.value)}
-                placeholder="Buscar conversación…"
+                placeholder="Buscar conversación o persona…"
                 className="w-full rounded-full border border-black/[0.08] bg-white px-3.5 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
               />
             </div>
@@ -736,7 +748,7 @@ export function ComunicacionInterna() {
                 <p className="text-xs text-graphite-600">Todavía no tenés conversaciones — tocá "+" para empezar una.</p>
               </div>
             )}
-            {canales && canales.length > 0 && canalesFiltrados.length === 0 && (
+            {canales && canales.length > 0 && canalesFiltrados.length === 0 && busquedaCanalLimpia.length < 2 && (
               <p className="px-2 py-4 text-xs text-graphite-600">Ninguna conversación coincide con "{busquedaCanal}".</p>
             )}
             {canalesFiltrados.map((c) => (
@@ -768,6 +780,27 @@ export function ComunicacionInterna() {
                 </div>
               </button>
             ))}
+
+            {busquedaCanalLimpia.length >= 2 && usuariosBusqueda && usuariosBusqueda.length > 0 && (
+              <div className="mt-2 border-t border-black/[0.06] pt-2">
+                <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-graphite-500">Personas</p>
+                {usuariosBusqueda
+                  .filter((u) => !canalesFiltrados.some((c) => c.esDirecto && c.nombre === u.nombre))
+                  .map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      disabled={iniciarDirecto.isPending}
+                      onClick={() => iniciarDirecto.mutate(u.id)}
+                      className="mb-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-black/[0.03] disabled:opacity-60"
+                    >
+                      <Avatar nombre={u.nombre} tamano="sm" />
+                      <span className="flex-1 truncate text-sm text-graphite-100">{u.nombre}</span>
+                      <span className="text-[11px] text-graphite-500">Nuevo chat</span>
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
 

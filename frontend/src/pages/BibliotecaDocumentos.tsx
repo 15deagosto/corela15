@@ -10,6 +10,7 @@ import { Badge } from '../components/Badge'
 import { BotonesExportar } from '../components/BotonesExportar'
 import { ModalPortal } from '../components/ModalPortal'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 import type { ColumnaExportable } from '../lib/exportar'
 
 interface CatalogoItem {
@@ -456,7 +457,7 @@ function NuevoDocumentoModal({
       if (notas) form.append('Notas', notas)
       form.append('Archivo', archivo as File)
       return api.post('/api/biblioteca-documentos', form, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       })
     },
     onSuccess: () => {
@@ -648,7 +649,7 @@ function GestionarDocumentoModal({
       form.append('Version', nuevaVersion)
       form.append('Archivo', archivoNuevo as File)
       return api.post(`/api/biblioteca-documentos/${documento.id}/nueva-version`, form, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       })
     },
     onSuccess: () => {

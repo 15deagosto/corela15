@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Banco {
   id: number
@@ -187,7 +188,7 @@ function ProtestarForm({ cheque, onClose }: { cheque: ChequeItem; onClose: () =>
       api.post(
         `/api/financiero/cheques/${cheque.id}/protestar`,
         { documento: documento || null },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['financiero-cheques'] })
@@ -262,7 +263,7 @@ export function Financiero() {
   const depositar = useMutation({
     mutationFn: async (id: string) =>
       api.post(`/api/financiero/cheques/${id}/depositar`, undefined, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['financiero-cheques'] }),
   })
@@ -270,7 +271,7 @@ export function Financiero() {
   const efectivizar = useMutation({
     mutationFn: async (id: string) =>
       api.post(`/api/financiero/cheques/${id}/efectivizar`, undefined, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['financiero-cheques'] }),
   })

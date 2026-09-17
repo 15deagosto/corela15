@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Estructura {
   id: number
@@ -588,7 +589,7 @@ function CrearTrasladoForm({
           idResponsableDestino: idResponsableDestino || null,
           idAgenciaDestino: 1,
         },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activofijo-traslados'] })
@@ -724,7 +725,7 @@ function SeccionTraslados() {
   const procesar = useMutation({
     mutationFn: async (id: string) =>
       api.post(`/api/activofijo/traslados/${id}/procesar`, undefined, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activofijo-traslados'] })
@@ -937,7 +938,7 @@ function SeccionBajas() {
   const procesar = useMutation({
     mutationFn: async (id: string) =>
       api.post(`/api/activofijo/bajas/${id}/procesar`, undefined, {
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': idempotencyKey() },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activofijo-bajas'] })

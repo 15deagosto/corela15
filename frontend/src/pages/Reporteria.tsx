@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { BotonesExportar } from '../components/BotonesExportar'
 import { useAuth } from '../lib/AuthContext'
+import { idempotencyKey } from '../lib/idempotencyKey'
 import {
   listarDatasets, ejecutarConsulta, catalogoFiltro, listarTableros, obtenerTablero, crearTablero,
   borrarTablero, marcarFavorito, quitarFavorito, formatearValor,
@@ -183,7 +184,7 @@ function ExploradorDataset({ dataset }: { dataset: DatasetInfo }) {
 
       const definicion: DefinicionTablero = {
         widgets: [{
-          id: crypto.randomUUID(), title: nombreTablero, kind: dims.length > 0 && measures.length > 0 ? 'bar' : 'tabla',
+          id: idempotencyKey(), title: nombreTablero, kind: dims.length > 0 && measures.length > 0 ? 'bar' : 'tabla',
           dataset: dataset.id, dimensions: dims, measures, filters, limit: 5000, layout: { x: 0, y: 0, w: 12, h: 8 },
         }],
       }

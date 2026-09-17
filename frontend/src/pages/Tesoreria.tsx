@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Persona {
   id: string
@@ -254,7 +255,7 @@ function AbonarForm({ cuenta, onClose }: { cuenta: CuentaPorCobrar; onClose: () 
         await api.post(
           `/api/tesoreria/cuentas-por-cobrar/${cuenta.id}/abonos`,
           { monto: Number(monto) },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -335,7 +336,7 @@ function RegistrarCxPForm({ personas, onClose }: { personas: Persona[]; onClose:
             montoInicial: Number(montoInicial),
             fechaVencimiento,
           },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -464,7 +465,7 @@ function PagarCxPForm({
         await api.post(
           `/api/tesoreria/cuentas-por-pagar/${cuenta.id}/pagos`,
           { monto: Number(monto), codigoFormaCancelacion },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -551,7 +552,7 @@ function AnularCxPForm({ cuenta, onClose }: { cuenta: CuentaPorPagar; onClose: (
         await api.post(
           `/api/tesoreria/cuentas-por-pagar/${cuenta.id}/anular`,
           { motivo },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -1079,7 +1080,7 @@ function RegistrarCompraForm({ proveedores, onClose }: { proveedores: Proveedor[
               porcentajeIva: Number(l.porcentajeIva),
             })),
           },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -1330,7 +1331,7 @@ function PagarCompraForm({ compra, formasCancelacion, onClose }: { compra: Compr
         await api.post(
           `/api/tesoreria/compras/${compra.id}/pagos`,
           { monto: Number(monto), codigoFormaCancelacion },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -1404,7 +1405,7 @@ function AnularCompraForm({ compra, onClose }: { compra: Compra; onClose: () => 
       api.post(
         `/api/tesoreria/compras/${compra.id}/anular`,
         { motivo },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tesoreria-compras'] })

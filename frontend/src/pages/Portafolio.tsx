@@ -8,6 +8,7 @@ import { ModalPortal } from '../components/ModalPortal'
 import { BotonesExportar } from '../components/BotonesExportar'
 import type { ColumnaExportable } from '../lib/exportar'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 
 interface Institucion {
   codigo: string
@@ -91,7 +92,7 @@ function AbrirInversionForm({ instituciones, onClose }: { instituciones: Institu
           fechaCompra,
           fechaVencimiento,
         },
-        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+        { headers: { 'Idempotency-Key': idempotencyKey() } },
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portafolio-inversiones'] })
@@ -226,7 +227,7 @@ function RenovarInversionModal({ inversion, onClose }: { inversion: Inversion; o
         await api.post(
           `/api/portafolio/inversiones/${inversion.id}/renovar`,
           { documentoNuevo, fechaVencimientoNueva },
-          { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+          { headers: { 'Idempotency-Key': idempotencyKey() } },
         )
       ).data,
     onSuccess: () => {
@@ -552,7 +553,7 @@ export function Portafolio() {
     mutationFn: async (id: string) =>
       (
         await api.post(`/api/portafolio/inversiones/${id}/cancelar`, undefined, {
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
+          headers: { 'Idempotency-Key': idempotencyKey() },
         })
       ).data,
     onSuccess: () => {
