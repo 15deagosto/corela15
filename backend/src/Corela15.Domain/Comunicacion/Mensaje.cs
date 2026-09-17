@@ -8,11 +8,9 @@ namespace Corela15.Domain.Comunicacion;
 /// `accion_ingreso_usuario`/`sesion_usuario`). El texto se guarda tal
 /// cual (React escapa al renderizar, así que no hace falta sanitizar en
 /// el servidor para evitar XSS) — nunca se interpreta como HTML/Markdown.
-/// Puede llevar un adjunto real (imagen o archivo) — reusa la misma
-/// abstracción de almacenamiento que la Biblioteca de Documentos
-/// (<see cref="Corela15.Application.Documentos.IDocumentoStorageService"/>,
-/// mismo punto de montaje NAS), un mensaje siempre tiene texto o adjunto
-/// (nunca ninguno de los dos), nunca ambos vacíos.
+/// Puede llevar hasta 3 adjuntos reales (imágenes y/o archivos, ver
+/// <see cref="MensajeAdjunto"/>) — un mensaje siempre tiene texto o al
+/// menos un adjunto (nunca ambos vacíos).
 /// </summary>
 public class Mensaje
 {
@@ -26,11 +24,33 @@ public class Mensaje
 
     public string? Texto { get; set; }
 
-    /// <summary>Ruta relativa dentro de la raíz configurada del storage real — nunca expuesta directo al frontend, se resuelve siempre vía el endpoint de descarga.</summary>
-    public string? RutaAdjunto { get; set; }
-    public string? NombreArchivoAdjunto { get; set; }
-    public string? ContentTypeAdjunto { get; set; }
-    public long? TamanoBytesAdjunto { get; set; }
+    public ICollection<MensajeAdjunto> Adjuntos { get; set; } = new List<MensajeAdjunto>();
 
     public DateTimeOffset CreadoEn { get; set; }
+}
+
+/// <summary>
+/// Un adjunto real de un mensaje — hasta 3 por mensaje (imágenes reales
+/// pegadas con Ctrl+V o archivos elegidos, mismo límite que el chequeo
+/// real ya usado en otras apps de mensajería para no saturar un solo
+/// mensaje). Reusa la misma abstracción de almacenamiento que la
+/// Biblioteca de Documentos
+/// (<see cref="Corela15.Application.Documentos.IDocumentoStorageService"/>,
+/// mismo punto de montaje NAS) — nunca duplica el archivo real al
+/// reenviar un mensaje (ver <see cref="Corela15.Application.Comunicacion.IComunicacionService.ReenviarMensajeAsync"/>).
+/// </summary>
+public class MensajeAdjunto
+{
+    public Guid Id { get; set; }
+
+    public Guid IdMensaje { get; set; }
+    public Mensaje Mensaje { get; set; } = null!;
+
+    /// <summary>Ruta relativa dentro de la raíz configurada del storage real — nunca expuesta directo al frontend, se resuelve siempre vía el endpoint de descarga.</summary>
+    public string RutaAdjunto { get; set; } = null!;
+    public string NombreArchivo { get; set; } = null!;
+    public string ContentType { get; set; } = null!;
+    public long TamanoBytes { get; set; }
+
+    public int Orden { get; set; }
 }

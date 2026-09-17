@@ -9,6 +9,7 @@ namespace Corela15.Infrastructure.Services;
 public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador notificador, IDocumentoStorageService storage) : IComunicacionService
 {
     private const int MaxMbAdjunto = 20;
+    private const int MaxAdjuntosPorMensaje = 3;
     private static readonly HashSet<string> ExtensionesPermitidas =
         new(StringComparer.OrdinalIgnoreCase) { "jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx", "txt", "ppt", "pptx", "csv" };
 
@@ -181,16 +182,20 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
     }
 
     public async Task<MensajeDto> EnviarMensajeAsync(
-        Guid idCanal, Guid idUsuarioRemitente, string? texto, ArchivoAdjuntoEntrada? archivo, CancellationToken cancellationToken = default)
+        Guid idCanal, Guid idUsuarioRemitente, string? texto, IReadOnlyList<ArchivoAdjuntoEntrada> archivos, CancellationToken cancellationToken = default)
     {
         var textoLimpio = texto?.Trim();
         if (textoLimpio is { Length: > 2000 })
         {
             throw new TextoMensajeInvalidoException();
         }
-        if (string.IsNullOrEmpty(textoLimpio) && archivo is null)
+        if (string.IsNullOrEmpty(textoLimpio) && archivos.Count == 0)
         {
             throw new MensajeVacioException();
+        }
+        if (archivos.Count > MaxAdjuntosPorMensaje)
+        {
+            throw new DemasiadosAdjuntosException(MaxAdjuntosPorMensaje);
         }
 
         var canalActivo = await db.Canales.AnyAsync(c => c.Id == idCanal && c.Activo, cancellationToken);
@@ -204,6 +209,11 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
         if (!esMiembro)
         {
             throw new NoEsMiembroDelCanalException();
+        }
+
+        foreach (var archivo in archivos)
+        {
+            ValidarAdjunto(archivo.NombreOriginal, archivo.TamanoBytes);
         }
 
         // Fallback real hasta NombreUsuario (siempre poblado) en vez de un
@@ -225,17 +235,27 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             Texto = string.IsNullOrEmpty(textoLimpio) ? null : textoLimpio,
             CreadoEn = DateTimeOffset.UtcNow,
         };
+        db.Mensajes.Add(mensaje);
 
-        if (archivo is not null)
+        var adjuntosDto = new List<AdjuntoDto>();
+        var orden = 0;
+        foreach (var archivo in archivos)
         {
-            ValidarAdjunto(archivo.NombreOriginal, archivo.TamanoBytes);
-            mensaje.RutaAdjunto = await storage.GuardarAsync(archivo.Contenido, archivo.NombreOriginal, cancellationToken);
-            mensaje.NombreArchivoAdjunto = archivo.NombreOriginal;
-            mensaje.ContentTypeAdjunto = archivo.ContentType;
-            mensaje.TamanoBytesAdjunto = archivo.TamanoBytes;
+            var ruta = await storage.GuardarAsync(archivo.Contenido, archivo.NombreOriginal, cancellationToken);
+            var adjunto = new MensajeAdjunto
+            {
+                Id = Guid.NewGuid(),
+                IdMensaje = mensaje.Id,
+                RutaAdjunto = ruta,
+                NombreArchivo = archivo.NombreOriginal,
+                ContentType = archivo.ContentType,
+                TamanoBytes = archivo.TamanoBytes,
+                Orden = orden++,
+            };
+            db.MensajeAdjuntos.Add(adjunto);
+            adjuntosDto.Add(new AdjuntoDto(adjunto.Id, adjunto.NombreArchivo, adjunto.ContentType, adjunto.TamanoBytes));
         }
 
-        db.Mensajes.Add(mensaje);
         await db.SaveChangesAsync(cancellationToken);
 
         // El propio remitente marca el canal como leído hasta su mensaje —
@@ -248,36 +268,31 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var dto = new MensajeDto(
-            mensaje.Id, mensaje.IdCanal, mensaje.IdUsuarioRemitente, nombreRemitente, mensaje.Texto, mensaje.CreadoEn,
-            mensaje.NombreArchivoAdjunto, mensaje.ContentTypeAdjunto, mensaje.TamanoBytesAdjunto);
+        var dto = new MensajeDto(mensaje.Id, mensaje.IdCanal, mensaje.IdUsuarioRemitente, nombreRemitente, mensaje.Texto, mensaje.CreadoEn, adjuntosDto);
         await notificador.NotificarMensajeNuevoAsync(idCanal, dto, cancellationToken);
         return dto;
     }
 
-    public async Task<DescargaAdjuntoResult> DescargarAdjuntoAsync(Guid idMensaje, Guid idUsuario, CancellationToken cancellationToken = default)
+    public async Task<DescargaAdjuntoResult> DescargarAdjuntoAsync(Guid idAdjunto, Guid idUsuario, CancellationToken cancellationToken = default)
     {
-        var mensaje = await db.Mensajes.FirstOrDefaultAsync(m => m.Id == idMensaje, cancellationToken)
-            ?? throw new CanalNoExisteException(idMensaje);
+        var adjunto = await db.MensajeAdjuntos.FirstOrDefaultAsync(a => a.Id == idAdjunto, cancellationToken)
+            ?? throw new AdjuntoInvalidoException();
 
+        var idCanal = await db.Mensajes.Where(m => m.Id == adjunto.IdMensaje).Select(m => m.IdCanal).FirstOrDefaultAsync(cancellationToken);
         var esMiembro = await db.CanalesMiembros
-            .AnyAsync(m => m.IdCanal == mensaje.IdCanal && m.IdUsuario == idUsuario, cancellationToken);
+            .AnyAsync(m => m.IdCanal == idCanal && m.IdUsuario == idUsuario, cancellationToken);
         if (!esMiembro)
         {
             throw new NoEsMiembroDelCanalException();
         }
-        if (mensaje.RutaAdjunto is null)
-        {
-            throw new MensajeSinAdjuntoException();
-        }
 
-        var contenido = await storage.AbrirAsync(mensaje.RutaAdjunto, cancellationToken);
-        return new DescargaAdjuntoResult(contenido, mensaje.NombreArchivoAdjunto ?? "archivo", mensaje.ContentTypeAdjunto ?? "application/octet-stream");
+        var contenido = await storage.AbrirAsync(adjunto.RutaAdjunto, cancellationToken);
+        return new DescargaAdjuntoResult(contenido, adjunto.NombreArchivo, adjunto.ContentType);
     }
 
     public async Task<MensajeDto> ReenviarMensajeAsync(Guid idMensajeOrigen, Guid idCanalDestino, Guid idUsuario, CancellationToken cancellationToken = default)
     {
-        var mensajeOrigen = await db.Mensajes.FirstOrDefaultAsync(m => m.Id == idMensajeOrigen, cancellationToken)
+        var mensajeOrigen = await db.Mensajes.Include(m => m.Adjuntos).FirstOrDefaultAsync(m => m.Id == idMensajeOrigen, cancellationToken)
             ?? throw new MensajeOrigenInvalidoException();
 
         var esMiembroOrigen = await db.CanalesMiembros
@@ -306,22 +321,36 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             .FirstOrDefaultAsync(cancellationToken) ?? "Usuario";
 
         // Nunca vuelve a subir el archivo real al NAS -- el mensaje
-        // reenviado apunta a la misma RutaAdjunto ya guardada, mismo
-        // criterio que WhatsApp/Telegram (reenviar comparte el archivo,
-        // no lo duplica).
+        // reenviado apunta a la misma RutaAdjunto ya guardada de cada
+        // adjunto, mismo criterio que WhatsApp/Telegram (reenviar
+        // comparte el archivo, no lo duplica).
         var mensaje = new Mensaje
         {
             Id = Guid.NewGuid(),
             IdCanal = idCanalDestino,
             IdUsuarioRemitente = idUsuario,
             Texto = mensajeOrigen.Texto,
-            RutaAdjunto = mensajeOrigen.RutaAdjunto,
-            NombreArchivoAdjunto = mensajeOrigen.NombreArchivoAdjunto,
-            ContentTypeAdjunto = mensajeOrigen.ContentTypeAdjunto,
-            TamanoBytesAdjunto = mensajeOrigen.TamanoBytesAdjunto,
             CreadoEn = DateTimeOffset.UtcNow,
         };
         db.Mensajes.Add(mensaje);
+
+        var adjuntosDto = new List<AdjuntoDto>();
+        foreach (var adjuntoOrigen in mensajeOrigen.Adjuntos.OrderBy(a => a.Orden))
+        {
+            var adjunto = new MensajeAdjunto
+            {
+                Id = Guid.NewGuid(),
+                IdMensaje = mensaje.Id,
+                RutaAdjunto = adjuntoOrigen.RutaAdjunto,
+                NombreArchivo = adjuntoOrigen.NombreArchivo,
+                ContentType = adjuntoOrigen.ContentType,
+                TamanoBytes = adjuntoOrigen.TamanoBytes,
+                Orden = adjuntoOrigen.Orden,
+            };
+            db.MensajeAdjuntos.Add(adjunto);
+            adjuntosDto.Add(new AdjuntoDto(adjunto.Id, adjunto.NombreArchivo, adjunto.ContentType, adjunto.TamanoBytes));
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         var membresiaPropia = await db.CanalesMiembros
@@ -332,9 +361,7 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var dto = new MensajeDto(
-            mensaje.Id, mensaje.IdCanal, mensaje.IdUsuarioRemitente, nombreRemitente, mensaje.Texto, mensaje.CreadoEn,
-            mensaje.NombreArchivoAdjunto, mensaje.ContentTypeAdjunto, mensaje.TamanoBytesAdjunto);
+        var dto = new MensajeDto(mensaje.Id, mensaje.IdCanal, mensaje.IdUsuarioRemitente, nombreRemitente, mensaje.Texto, mensaje.CreadoEn, adjuntosDto);
         await notificador.NotificarMensajeNuevoAsync(idCanalDestino, dto, cancellationToken);
         return dto;
     }
@@ -375,7 +402,9 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
                 .Where(msg => msg.IdCanal == m.IdCanal)
                 .OrderByDescending(msg => msg.CreadoEn)
                 .Select(msg => new {
-                    msg.Texto, msg.NombreArchivoAdjunto,
+                    msg.Texto,
+                    PrimerAdjunto = msg.Adjuntos.OrderBy(a => a.Orden).Select(a => a.NombreArchivo).FirstOrDefault(),
+                    CantidadAdjuntos = msg.Adjuntos.Count,
                     Autor = (msg.UsuarioRemitente.Persona != null ? msg.UsuarioRemitente.Persona.Nombre : (msg.UsuarioRemitente.NombreCompleto ?? msg.UsuarioRemitente.NombreUsuario)) ?? "Usuario",
                     msg.CreadoEn,
                 })
@@ -386,7 +415,9 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
                 .CountAsync(msg => msg.IdCanal == m.IdCanal && msg.CreadoEn > desde && msg.IdUsuarioRemitente != idUsuario, cancellationToken);
 
             var previoUltimoMensaje = ultimoMensaje?.Texto
-                ?? (ultimoMensaje?.NombreArchivoAdjunto is string nombreAdjunto ? $"📎 {nombreAdjunto}" : null);
+                ?? (ultimoMensaje?.PrimerAdjunto is string nombreAdjunto
+                    ? (ultimoMensaje.CantidadAdjuntos > 1 ? $"📎 {nombreAdjunto} (+{ultimoMensaje.CantidadAdjuntos - 1})" : $"📎 {nombreAdjunto}")
+                    : null);
 
             resultado.Add(new CanalListItemDto(
                 m.IdCanal, nombreMostrado ?? "(sin nombre)", m.EsDirecto,
@@ -421,7 +452,8 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
             .Select(m => new MensajeDto(
                 m.Id, m.IdCanal, m.IdUsuarioRemitente,
                 (m.UsuarioRemitente.Persona != null ? m.UsuarioRemitente.Persona.Nombre : (m.UsuarioRemitente.NombreCompleto ?? m.UsuarioRemitente.NombreUsuario)) ?? "Usuario",
-                m.Texto, m.CreadoEn, m.NombreArchivoAdjunto, m.ContentTypeAdjunto, m.TamanoBytesAdjunto))
+                m.Texto, m.CreadoEn,
+                m.Adjuntos.OrderBy(a => a.Orden).Select(a => new AdjuntoDto(a.Id, a.NombreArchivo, a.ContentType, a.TamanoBytes)).ToList()))
             .ToListAsync(cancellationToken);
 
         mensajes.Reverse();

@@ -18,6 +18,13 @@ interface CanalListItem {
   noLeidos: number
 }
 
+interface Adjunto {
+  id: string
+  nombreArchivo: string
+  contentType: string
+  tamanoBytes: number
+}
+
 interface Mensaje {
   id: string
   idCanal: string
@@ -25,12 +32,11 @@ interface Mensaje {
   nombreRemitente: string
   texto: string | null
   creadoEn: string
-  nombreArchivoAdjunto: string | null
-  contentTypeAdjunto: string | null
-  tamanoBytesAdjunto: number | null
+  adjuntos: Adjunto[]
 }
 
 const EXTENSIONES_ADJUNTO_PERMITIDAS = '.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.csv'
+const MAX_ADJUNTOS_POR_MENSAJE = 3
 
 function formatoTamano(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -38,8 +44,8 @@ function formatoTamano(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-async function descargarAdjunto(idMensaje: string, nombre: string) {
-  const respuesta = await api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' })
+async function descargarAdjunto(idAdjunto: string, nombre: string) {
+  const respuesta = await api.get(`/api/comunicacion/adjuntos/${idAdjunto}`, { responseType: 'blob' })
   const url = window.URL.createObjectURL(new Blob([respuesta.data]))
   const enlace = document.createElement('a')
   enlace.href = url
@@ -50,21 +56,45 @@ async function descargarAdjunto(idMensaje: string, nombre: string) {
   window.URL.revokeObjectURL(url)
 }
 
+/**
+ * Convierte cualquier imagen (blob real, del formato que sea — jpeg/webp/gif)
+ * a PNG real vía un canvas oculto antes de copiarla — la causa real más común
+ * de que "Copiar" falle en silencio: la Clipboard API de imágenes solo
+ * garantiza soporte real y consistente entre navegadores para `image/png`,
+ * no para cualquier tipo MIME de origen (jpeg falla en varios navegadores
+ * reales aunque el contexto sí sea seguro).
+ */
+async function blobComoPng(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob)
+  const canvas = document.createElement('canvas')
+  canvas.width = bitmap.width
+  canvas.height = bitmap.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No se pudo obtener el contexto 2D del canvas')
+  ctx.drawImage(bitmap, 0, 0)
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((png) => (png ? resolve(png) : reject(new Error('canvas.toBlob devolvió null'))), 'image/png')
+  })
+}
+
 /** Vista previa real de la imagen a tamaño completo — clic en la miniatura ya no descarga directo, abre esto (con opción real de Descargar o Copiar). */
-function LightboxImagen({ url, nombre, contentType, onClose }: { url: string; nombre: string; contentType: string; onClose: () => void }) {
+function LightboxImagen({ url, nombre, onClose }: { url: string; nombre: string; onClose: () => void }) {
   const [copiado, setCopiado] = useState<'ok' | 'error' | null>(null)
 
   const copiar = async () => {
     try {
-      const respuesta = await fetch(url)
-      const blob = await respuesta.blob()
       if (!navigator.clipboard?.write) throw new Error('navigator.clipboard.write no disponible -- probablemente contexto no seguro (HTTP en vez de HTTPS)')
-      await navigator.clipboard.write([new ClipboardItem({ [contentType]: blob })])
+      const respuesta = await fetch(url)
+      const blobOriginal = await respuesta.blob()
+      // Siempre se copia como PNG real (ver blobComoPng) -- image/png es el
+      // único formato con soporte real garantizado por la Clipboard API en
+      // todos los navegadores, sin importar el formato real del archivo.
+      const blobPng = await blobComoPng(blobOriginal)
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPng })])
       setCopiado('ok')
     } catch (error) {
-      // Clipboard de imágenes exige contexto seguro (HTTPS) y no todos los
-      // navegadores soportan cualquier tipo de imagen -- se avisa en vez de
-      // fallar en silencio, "Descargar" siempre queda como alternativa real.
+      // Se avisa en vez de fallar en silencio -- "Descargar" siempre queda
+      // como alternativa real.
       console.warn('No se pudo copiar la imagen al portapapeles:', error)
       setCopiado('error')
     }
@@ -104,8 +134,8 @@ function LightboxImagen({ url, nombre, contentType, onClose }: { url: string; no
 }
 
 /** Imagen previsualizada inline (fetch autenticado a blob, como la descarga de Biblioteca de Documentos); cualquier otro tipo de archivo se muestra como chip descargable. */
-function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMensaje: string; nombre: string; contentType: string | null; tamanoBytes: number | null }) {
-  const esImagen = contentType?.startsWith('image/') ?? false
+function AdjuntoMensaje({ adjunto }: { adjunto: Adjunto }) {
+  const esImagen = adjunto.contentType.startsWith('image/')
   const [urlImagen, setUrlImagen] = useState<string | null>(null)
   const [cargandoImagen, setCargandoImagen] = useState(esImagen)
   const [mostrarLightbox, setMostrarLightbox] = useState(false)
@@ -114,7 +144,7 @@ function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMen
     if (!esImagen) return
     let objectUrl: string | null = null
     let cancelado = false
-    api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' }).then((r) => {
+    api.get(`/api/comunicacion/adjuntos/${adjunto.id}`, { responseType: 'blob' }).then((r) => {
       if (cancelado) return
       objectUrl = window.URL.createObjectURL(new Blob([r.data]))
       setUrlImagen(objectUrl)
@@ -125,7 +155,7 @@ function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMen
       if (objectUrl) window.URL.revokeObjectURL(objectUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idMensaje, esImagen])
+  }, [adjunto.id, esImagen])
 
   if (esImagen) {
     return (
@@ -134,11 +164,11 @@ function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMen
           {cargandoImagen ? (
             <div className="flex h-32 w-48 items-center justify-center bg-black/[0.04] text-xs text-graphite-500">Cargando imagen…</div>
           ) : (
-            <img src={urlImagen ?? undefined} alt={nombre} className="max-h-64 w-auto rounded-lg" />
+            <img src={urlImagen ?? undefined} alt={adjunto.nombreArchivo} className="max-h-64 w-auto rounded-lg" />
           )}
         </button>
         {mostrarLightbox && urlImagen && (
-          <LightboxImagen url={urlImagen} nombre={nombre} contentType={contentType ?? 'image/png'} onClose={() => setMostrarLightbox(false)} />
+          <LightboxImagen url={urlImagen} nombre={adjunto.nombreArchivo} onClose={() => setMostrarLightbox(false)} />
         )}
       </>
     )
@@ -147,14 +177,14 @@ function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMen
   return (
     <button
       type="button"
-      onClick={() => descargarAdjunto(idMensaje, nombre)}
+      onClick={() => descargarAdjunto(adjunto.id, adjunto.nombreArchivo)}
       className="flex items-center gap-2 rounded-lg bg-black/[0.06] px-3 py-2 text-left text-xs hover:bg-black/[0.1]"
       title="Descargar"
     >
       <FileText size={16} className="flex-shrink-0" />
       <span className="flex flex-col">
-        <span className="max-w-[180px] truncate font-medium">{nombre}</span>
-        {tamanoBytes !== null && <span className="text-graphite-500">{formatoTamano(tamanoBytes)}</span>}
+        <span className="max-w-[180px] truncate font-medium">{adjunto.nombreArchivo}</span>
+        <span className="text-graphite-500">{formatoTamano(adjunto.tamanoBytes)}</span>
       </span>
       <Download size={13} className="ml-1 flex-shrink-0" />
     </button>
@@ -454,7 +484,9 @@ function ReenviarModal({ mensaje, canales, onClose }: { mensaje: Mensaje; canale
           </div>
 
           <div className="border-b border-black/[0.06] px-4 py-2 text-xs text-graphite-600">
-            {mensaje.nombreArchivoAdjunto ? `📎 ${mensaje.nombreArchivoAdjunto}` : null}
+            {mensaje.adjuntos.length > 0 && (
+              <p>📎 {mensaje.adjuntos.map((a) => a.nombreArchivo).join(', ')}</p>
+            )}
             {mensaje.texto && <p className="truncate">{mensaje.texto}</p>}
           </div>
 
@@ -528,7 +560,7 @@ export function ComunicacionInterna() {
   const { sesion } = useAuth()
   const [canalSeleccionado, setCanalSeleccionado] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
-  const [archivo, setArchivo] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
   const archivoInputRef = useRef<HTMLInputElement>(null)
   const [mostrarNuevoCanal, setMostrarNuevoCanal] = useState(false)
   const [mostrarBuscarDirecto, setMostrarBuscarDirecto] = useState(false)
@@ -599,17 +631,35 @@ export function ComunicacionInterna() {
     mutationFn: async () => {
       const form = new FormData()
       if (texto.trim()) form.append('Texto', texto.trim())
-      if (archivo) form.append('Archivo', archivo)
+      for (const archivo of archivos) form.append('Archivos', archivo)
       return api.post(`/api/comunicacion/canales/${canalSeleccionado}/mensajes`, form, {
         headers: { 'Idempotency-Key': crypto.randomUUID() },
       })
     },
     onSuccess: () => {
       setTexto('')
-      setArchivo(null)
+      setArchivos([])
       if (archivoInputRef.current) archivoInputRef.current.value = ''
     },
   })
+
+  // Agrega uno o varios archivos respetando el máximo real de 3 por
+  // mensaje -- usado tanto por el selector de archivo como por pegar
+  // (Ctrl+V) una captura de pantalla real desde el portapapeles.
+  const agregarArchivos = (nuevos: File[]) => {
+    setArchivos((prev) => [...prev, ...nuevos].slice(0, MAX_ADJUNTOS_POR_MENSAJE))
+  }
+
+  const manejarPegado = (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items).filter((item) => item.kind === 'file')
+    if (items.length === 0) return
+    e.preventDefault()
+    const archivosPegados = items
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null)
+      .map((f, i) => (f.name && f.name !== 'image.png' ? f : new File([f], `captura-${Date.now()}-${i}.png`, { type: f.type })))
+    agregarArchivos(archivosPegados)
+  }
 
   const iniciarDirecto = useMutation({
     mutationFn: async (idUsuario: string) => (await api.post(`/api/comunicacion/directo/${idUsuario}`)).data as { id: string },
@@ -777,14 +827,9 @@ export function ComunicacionInterna() {
                             esPropio ? 'rounded-br-sm bg-gold-500 text-white' : 'rounded-bl-sm bg-black/[0.045] text-graphite-100'
                           }`}
                         >
-                          {m.nombreArchivoAdjunto && (
-                            <AdjuntoMensaje
-                              idMensaje={m.id}
-                              nombre={m.nombreArchivoAdjunto}
-                              contentType={m.contentTypeAdjunto}
-                              tamanoBytes={m.tamanoBytesAdjunto}
-                            />
-                          )}
+                          {m.adjuntos.map((a) => (
+                            <AdjuntoMensaje key={a.id} adjunto={a} />
+                          ))}
                           {m.texto && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
                         </div>
                         <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[11px] text-graphite-500">
@@ -805,49 +850,59 @@ export function ComunicacionInterna() {
                 <div ref={mensajesFinRef} />
               </div>
 
-              {archivo && (
-                <div className="mt-2 flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-xs">
-                  <span className="truncate">
-                    {archivo.name} <span className="text-graphite-500">({formatoTamano(archivo.size)})</span>
-                  </span>
-                  <button type="button" onClick={() => { setArchivo(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }} className="text-graphite-500 hover:text-red-700">
-                    <X size={14} />
-                  </button>
+              {archivos.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {archivos.map((a, i) => (
+                    <div key={`${a.name}-${i}`} className="flex items-center gap-1.5 rounded-lg border border-black/[0.08] bg-white px-2.5 py-1 text-xs">
+                      <span className="max-w-[160px] truncate">{a.name}</span>
+                      <span className="text-graphite-500">({formatoTamano(a.size)})</span>
+                      <button type="button" onClick={() => setArchivos((prev) => prev.filter((_, idx) => idx !== i))} className="text-graphite-500 hover:text-red-700">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               <form
                 className="mt-3 flex items-center gap-2 border-t border-black/[0.06] pt-3"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  if (!texto.trim() && !archivo) return
+                  if (!texto.trim() && archivos.length === 0) return
                   enviar.mutate()
                 }}
               >
                 <input
                   ref={archivoInputRef}
                   type="file"
+                  multiple
                   accept={EXTENSIONES_ADJUNTO_PERMITIDAS}
-                  onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    agregarArchivos(Array.from(e.target.files ?? []))
+                    if (archivoInputRef.current) archivoInputRef.current.value = ''
+                  }}
                   className="hidden"
                   id="comunicacion-archivo-input"
                 />
                 <label
                   htmlFor="comunicacion-archivo-input"
-                  title="Adjuntar imagen o archivo"
-                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full text-graphite-600 hover:bg-black/[0.05]"
+                  title={`Adjuntar imagen o archivo (máx. ${MAX_ADJUNTOS_POR_MENSAJE})`}
+                  className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-graphite-600 hover:bg-black/[0.05] ${
+                    archivos.length >= MAX_ADJUNTOS_POR_MENSAJE ? 'pointer-events-none opacity-40' : 'cursor-pointer'
+                  }`}
                 >
                   <Paperclip size={17} />
                 </label>
                 <input
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
+                  onPaste={manejarPegado}
                   maxLength={2000}
-                  placeholder="Escribí un mensaje…"
+                  placeholder="Escribí un mensaje o pegá una captura (Ctrl+V)…"
                   className="flex-1 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
                 />
                 <button
                   type="submit"
-                  disabled={enviar.isPending || (!texto.trim() && !archivo)}
+                  disabled={enviar.isPending || (!texto.trim() && archivos.length === 0)}
                   title="Enviar"
                   className="btn-hover flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gold-500 text-white disabled:opacity-50"
                 >

@@ -23,11 +23,11 @@ public interface IComunicacionService
 
     Task SalirDelCanalAsync(Guid idCanal, Guid idUsuario, CancellationToken cancellationToken = default);
 
-    /// <summary>Un mensaje siempre lleva texto o adjunto (nunca ninguno de los dos) — `archivo` null si es un mensaje de solo texto.</summary>
-    Task<MensajeDto> EnviarMensajeAsync(Guid idCanal, Guid idUsuarioRemitente, string? texto, ArchivoAdjuntoEntrada? archivo, CancellationToken cancellationToken = default);
+    /// <summary>Un mensaje siempre lleva texto o al menos un adjunto (nunca ninguno de los dos) — hasta 3 adjuntos por mensaje, `archivos` vacío si es un mensaje de solo texto.</summary>
+    Task<MensajeDto> EnviarMensajeAsync(Guid idCanal, Guid idUsuarioRemitente, string? texto, IReadOnlyList<ArchivoAdjuntoEntrada> archivos, CancellationToken cancellationToken = default);
 
-    /// <summary>Valida que el usuario sea miembro real del canal del mensaje antes de abrir el adjunto — mismo criterio "deny-by-default" que el resto del core, nunca se confía en el Id del mensaje solo.</summary>
-    Task<DescargaAdjuntoResult> DescargarAdjuntoAsync(Guid idMensaje, Guid idUsuario, CancellationToken cancellationToken = default);
+    /// <summary>Valida que el usuario sea miembro real del canal del mensaje dueño de este adjunto antes de abrirlo — mismo criterio "deny-by-default" que el resto del core, nunca se confía en el Id del adjunto solo.</summary>
+    Task<DescargaAdjuntoResult> DescargarAdjuntoAsync(Guid idAdjunto, Guid idUsuario, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reenvía un mensaje real (texto y/o adjunto) a otro canal — nunca
@@ -89,7 +89,9 @@ public record CanalListItemDto(
 
 public record MensajeDto(
     Guid Id, Guid IdCanal, Guid IdUsuarioRemitente, string NombreRemitente, string? Texto, DateTimeOffset CreadoEn,
-    string? NombreArchivoAdjunto, string? ContentTypeAdjunto, long? TamanoBytesAdjunto);
+    IReadOnlyList<AdjuntoDto> Adjuntos);
+
+public record AdjuntoDto(Guid Id, string NombreArchivo, string ContentType, long TamanoBytes);
 
 public record ArchivoAdjuntoEntrada(Stream Contenido, string NombreOriginal, string ContentType, long TamanoBytes);
 
@@ -119,5 +121,9 @@ public class ExtensionAdjuntoNoPermitidaException(string extension)
 public class ArchivoAdjuntoDemasiadoGrandeException(int maxMb) : SolicitudInvalidaException($"El adjunto no puede pesar más de {maxMb}MB");
 
 public class MensajeSinAdjuntoException() : ReglaDeNegocioException("Este mensaje no tiene ningún archivo adjunto");
+
+public class AdjuntoInvalidoException() : ReglaDeNegocioException("El archivo adjunto no existe");
+
+public class DemasiadosAdjuntosException(int max) : SolicitudInvalidaException($"Un mensaje admite máximo {max} archivos adjuntos");
 
 public class MensajeOrigenInvalidoException() : ReglaDeNegocioException("El mensaje que querés reenviar no existe");

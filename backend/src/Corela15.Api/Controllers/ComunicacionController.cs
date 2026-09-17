@@ -12,11 +12,11 @@ public record AgregarMiembroBody(Guid IdUsuario);
 
 public record ReenviarMensajeBody(Guid IdCanalDestino);
 
-/// <summary>Cuerpo del envío — multipart/form-data, el archivo (opcional) viaja junto con el texto (opcional) en el mismo request; un mensaje real siempre trae al menos uno de los dos.</summary>
+/// <summary>Cuerpo del envío — multipart/form-data, hasta 3 archivos viajan junto con el texto (opcional) en el mismo request; un mensaje real siempre trae texto o al menos un archivo.</summary>
 public class EnviarMensajeBody
 {
     public string? Texto { get; set; }
-    public IFormFile? Archivo { get; set; }
+    public List<IFormFile>? Archivos { get; set; }
 }
 
 /// <summary>
@@ -81,21 +81,16 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     public async Task<ActionResult<MensajeDto>> EnviarMensaje(
         Guid idCanal, [FromForm] EnviarMensajeBody body, CancellationToken cancellationToken)
     {
-        Stream? stream = null;
+        var archivos = body.Archivos ?? [];
+        var streams = archivos.Select(a => a.OpenReadStream()).ToList();
         try
         {
-            ArchivoAdjuntoEntrada? archivo = null;
-            if (body.Archivo is not null)
-            {
-                stream = body.Archivo.OpenReadStream();
-                archivo = new ArchivoAdjuntoEntrada(stream, body.Archivo.FileName, body.Archivo.ContentType, body.Archivo.Length);
-            }
-
-            return Ok(await service.EnviarMensajeAsync(idCanal, IdUsuarioActual(), body.Texto, archivo, cancellationToken));
+            var entradas = archivos.Zip(streams, (a, s) => new ArchivoAdjuntoEntrada(s, a.FileName, a.ContentType, a.Length)).ToList();
+            return Ok(await service.EnviarMensajeAsync(idCanal, IdUsuarioActual(), body.Texto, entradas, cancellationToken));
         }
         finally
         {
-            if (stream is not null) await stream.DisposeAsync();
+            foreach (var s in streams) await s.DisposeAsync();
         }
     }
 
@@ -105,10 +100,10 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
         Guid idMensaje, [FromBody] ReenviarMensajeBody body, CancellationToken cancellationToken) =>
         Ok(await service.ReenviarMensajeAsync(idMensaje, body.IdCanalDestino, IdUsuarioActual(), cancellationToken));
 
-    [HttpGet("mensajes/{idMensaje:guid}/adjunto")]
-    public async Task<IActionResult> DescargarAdjunto(Guid idMensaje, CancellationToken cancellationToken)
+    [HttpGet("adjuntos/{idAdjunto:guid}")]
+    public async Task<IActionResult> DescargarAdjunto(Guid idAdjunto, CancellationToken cancellationToken)
     {
-        var resultado = await service.DescargarAdjuntoAsync(idMensaje, IdUsuarioActual(), cancellationToken);
+        var resultado = await service.DescargarAdjuntoAsync(idAdjunto, IdUsuarioActual(), cancellationToken);
         return File(resultado.Contenido, string.IsNullOrWhiteSpace(resultado.ContentType) ? "application/octet-stream" : resultado.ContentType, resultado.NombreArchivo);
     }
 

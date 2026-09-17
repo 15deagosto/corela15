@@ -41,13 +41,26 @@ public class MensajeConfiguration : IEntityTypeConfiguration<Mensaje>
         b.ToTable("mensaje", "comunicacion");
         b.HasKey(x => x.Id);
         b.Property(x => x.Texto).HasMaxLength(2000);
-        b.Property(x => x.RutaAdjunto).HasMaxLength(500);
-        b.Property(x => x.NombreArchivoAdjunto).HasMaxLength(255);
-        b.Property(x => x.ContentTypeAdjunto).HasMaxLength(150);
 
         b.HasOne(x => x.Canal).WithMany().HasForeignKey(x => x.IdCanal).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.UsuarioRemitente).WithMany().HasForeignKey(x => x.IdUsuarioRemitente).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => new { x.IdCanal, x.CreadoEn });
+    }
+}
+
+public class MensajeAdjuntoConfiguration : IEntityTypeConfiguration<MensajeAdjunto>
+{
+    public void Configure(EntityTypeBuilder<MensajeAdjunto> b)
+    {
+        b.ToTable("mensaje_adjunto", "comunicacion");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.RutaAdjunto).HasMaxLength(500).IsRequired();
+        b.Property(x => x.NombreArchivo).HasMaxLength(255).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(150).IsRequired();
+
+        b.HasOne(x => x.Mensaje).WithMany(x => x.Adjuntos).HasForeignKey(x => x.IdMensaje).OnDelete(DeleteBehavior.Cascade);
+
+        b.HasIndex(x => x.IdMensaje);
     }
 }

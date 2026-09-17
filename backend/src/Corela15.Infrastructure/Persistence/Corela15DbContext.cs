@@ -316,6 +316,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Canal> Canales => Set<Canal>();
     public DbSet<CanalMiembro> CanalesMiembros => Set<CanalMiembro>();
     public DbSet<Mensaje> Mensajes => Set<Mensaje>();
+    public DbSet<MensajeAdjunto> MensajeAdjuntos => Set<MensajeAdjunto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
