@@ -58,12 +58,14 @@ function LightboxImagen({ url, nombre, contentType, onClose }: { url: string; no
     try {
       const respuesta = await fetch(url)
       const blob = await respuesta.blob()
+      if (!navigator.clipboard?.write) throw new Error('navigator.clipboard.write no disponible -- probablemente contexto no seguro (HTTP en vez de HTTPS)')
       await navigator.clipboard.write([new ClipboardItem({ [contentType]: blob })])
       setCopiado('ok')
-    } catch {
+    } catch (error) {
       // Clipboard de imágenes exige contexto seguro (HTTPS) y no todos los
       // navegadores soportan cualquier tipo de imagen -- se avisa en vez de
       // fallar en silencio, "Descargar" siempre queda como alternativa real.
+      console.warn('No se pudo copiar la imagen al portapapeles:', error)
       setCopiado('error')
     }
     setTimeout(() => setCopiado(null), 2500)
