@@ -275,6 +275,70 @@ public class ComunicacionService(Corela15DbContext db, IComunicacionNotificador 
         return new DescargaAdjuntoResult(contenido, mensaje.NombreArchivoAdjunto ?? "archivo", mensaje.ContentTypeAdjunto ?? "application/octet-stream");
     }
 
+    public async Task<MensajeDto> ReenviarMensajeAsync(Guid idMensajeOrigen, Guid idCanalDestino, Guid idUsuario, CancellationToken cancellationToken = default)
+    {
+        var mensajeOrigen = await db.Mensajes.FirstOrDefaultAsync(m => m.Id == idMensajeOrigen, cancellationToken)
+            ?? throw new MensajeOrigenInvalidoException();
+
+        var esMiembroOrigen = await db.CanalesMiembros
+            .AnyAsync(m => m.IdCanal == mensajeOrigen.IdCanal && m.IdUsuario == idUsuario, cancellationToken);
+        if (!esMiembroOrigen)
+        {
+            throw new NoEsMiembroDelCanalException();
+        }
+
+        var canalDestinoActivo = await db.Canales.AnyAsync(c => c.Id == idCanalDestino && c.Activo, cancellationToken);
+        if (!canalDestinoActivo)
+        {
+            throw new CanalNoExisteException(idCanalDestino);
+        }
+
+        var esMiembroDestino = await db.CanalesMiembros
+            .AnyAsync(m => m.IdCanal == idCanalDestino && m.IdUsuario == idUsuario && m.Activo, cancellationToken);
+        if (!esMiembroDestino)
+        {
+            throw new NoEsMiembroDelCanalException();
+        }
+
+        var nombreRemitente = await db.Usuarios
+            .Where(u => u.Id == idUsuario)
+            .Select(u => u.Persona != null ? u.Persona.Nombre : (u.NombreCompleto ?? u.NombreUsuario))
+            .FirstOrDefaultAsync(cancellationToken) ?? "Usuario";
+
+        // Nunca vuelve a subir el archivo real al NAS -- el mensaje
+        // reenviado apunta a la misma RutaAdjunto ya guardada, mismo
+        // criterio que WhatsApp/Telegram (reenviar comparte el archivo,
+        // no lo duplica).
+        var mensaje = new Mensaje
+        {
+            Id = Guid.NewGuid(),
+            IdCanal = idCanalDestino,
+            IdUsuarioRemitente = idUsuario,
+            Texto = mensajeOrigen.Texto,
+            RutaAdjunto = mensajeOrigen.RutaAdjunto,
+            NombreArchivoAdjunto = mensajeOrigen.NombreArchivoAdjunto,
+            ContentTypeAdjunto = mensajeOrigen.ContentTypeAdjunto,
+            TamanoBytesAdjunto = mensajeOrigen.TamanoBytesAdjunto,
+            CreadoEn = DateTimeOffset.UtcNow,
+        };
+        db.Mensajes.Add(mensaje);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var membresiaPropia = await db.CanalesMiembros
+            .FirstOrDefaultAsync(m => m.IdCanal == idCanalDestino && m.IdUsuario == idUsuario, cancellationToken);
+        if (membresiaPropia is not null)
+        {
+            membresiaPropia.FechaUltimaLectura = mensaje.CreadoEn;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var dto = new MensajeDto(
+            mensaje.Id, mensaje.IdCanal, mensaje.IdUsuarioRemitente, nombreRemitente, mensaje.Texto, mensaje.CreadoEn,
+            mensaje.NombreArchivoAdjunto, mensaje.ContentTypeAdjunto, mensaje.TamanoBytesAdjunto);
+        await notificador.NotificarMensajeNuevoAsync(idCanalDestino, dto, cancellationToken);
+        return dto;
+    }
+
     private static void ValidarAdjunto(string nombreOriginal, long tamanoBytes)
     {
         var extension = Path.GetExtension(nombreOriginal).TrimStart('.').ToLowerInvariant();

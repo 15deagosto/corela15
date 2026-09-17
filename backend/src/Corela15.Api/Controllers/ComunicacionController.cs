@@ -10,6 +10,8 @@ public record CrearCanalBody(string Nombre, string? Descripcion, IReadOnlyList<G
 
 public record AgregarMiembroBody(Guid IdUsuario);
 
+public record ReenviarMensajeBody(Guid IdCanalDestino);
+
 /// <summary>Cuerpo del envío — multipart/form-data, el archivo (opcional) viaja junto con el texto (opcional) en el mismo request; un mensaje real siempre trae al menos uno de los dos.</summary>
 public class EnviarMensajeBody
 {
@@ -96,6 +98,12 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
             if (stream is not null) await stream.DisposeAsync();
         }
     }
+
+    [HttpPost("mensajes/{idMensaje:guid}/reenviar")]
+    [RequireIdempotencyKey]
+    public async Task<ActionResult<MensajeDto>> ReenviarMensaje(
+        Guid idMensaje, [FromBody] ReenviarMensajeBody body, CancellationToken cancellationToken) =>
+        Ok(await service.ReenviarMensajeAsync(idMensaje, body.IdCanalDestino, IdUsuarioActual(), cancellationToken));
 
     [HttpGet("mensajes/{idMensaje:guid}/adjunto")]
     public async Task<IActionResult> DescargarAdjunto(Guid idMensaje, CancellationToken cancellationToken)

@@ -29,6 +29,18 @@ public interface IComunicacionService
     /// <summary>Valida que el usuario sea miembro real del canal del mensaje antes de abrir el adjunto — mismo criterio "deny-by-default" que el resto del core, nunca se confía en el Id del mensaje solo.</summary>
     Task<DescargaAdjuntoResult> DescargarAdjuntoAsync(Guid idMensaje, Guid idUsuario, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reenvía un mensaje real (texto y/o adjunto) a otro canal — nunca
+    /// vuelve a subir el archivo al NAS, el mensaje nuevo apunta a la
+    /// misma ruta real ya guardada (mismo criterio que WhatsApp/Telegram:
+    /// reenviar comparte el archivo, no lo duplica). Exige ser miembro
+    /// real del canal de origen (para poder ver lo que se reenvía) y del
+    /// canal de destino con Escritura real de chat (cualquier miembro
+    /// activo puede escribir, no hay ACL de lectura/escritura acá como en
+    /// Biblioteca de Documentos).
+    /// </summary>
+    Task<MensajeDto> ReenviarMensajeAsync(Guid idMensajeOrigen, Guid idCanalDestino, Guid idUsuario, CancellationToken cancellationToken = default);
+
     /// <summary>Canales (grupo y directos) donde el usuario es miembro activo, con el último mensaje y cuántos no leyó — ordenados por actividad reciente.</summary>
     Task<IReadOnlyList<CanalListItemDto>> ListarCanalesAsync(Guid idUsuario, CancellationToken cancellationToken = default);
 
@@ -107,3 +119,5 @@ public class ExtensionAdjuntoNoPermitidaException(string extension)
 public class ArchivoAdjuntoDemasiadoGrandeException(int maxMb) : SolicitudInvalidaException($"El adjunto no puede pesar más de {maxMb}MB");
 
 public class MensajeSinAdjuntoException() : ReglaDeNegocioException("Este mensaje no tiene ningún archivo adjunto");
+
+public class MensajeOrigenInvalidoException() : ReglaDeNegocioException("El mensaje que querés reenviar no existe");

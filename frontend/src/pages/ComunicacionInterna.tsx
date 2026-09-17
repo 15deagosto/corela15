@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessagesSquare, Send, Plus, Users, Compass, X, Paperclip, Download, FileText } from 'lucide-react'
+import { MessagesSquare, Send, Plus, Users, Compass, X, Paperclip, Download, FileText, Copy, Check, Forward } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/Badge'
+import { ModalPortal } from '../components/ModalPortal'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { iniciarConexionComunicacion } from '../lib/comunicacionHub'
@@ -37,11 +38,75 @@ function formatoTamano(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+async function descargarAdjunto(idMensaje: string, nombre: string) {
+  const respuesta = await api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' })
+  const url = window.URL.createObjectURL(new Blob([respuesta.data]))
+  const enlace = document.createElement('a')
+  enlace.href = url
+  enlace.download = nombre
+  document.body.appendChild(enlace)
+  enlace.click()
+  enlace.remove()
+  window.URL.revokeObjectURL(url)
+}
+
+/** Vista previa real de la imagen a tamaño completo — clic en la miniatura ya no descarga directo, abre esto (con opción real de Descargar o Copiar). */
+function LightboxImagen({ url, nombre, contentType, onClose }: { url: string; nombre: string; contentType: string; onClose: () => void }) {
+  const [copiado, setCopiado] = useState<'ok' | 'error' | null>(null)
+
+  const copiar = async () => {
+    try {
+      const respuesta = await fetch(url)
+      const blob = await respuesta.blob()
+      await navigator.clipboard.write([new ClipboardItem({ [contentType]: blob })])
+      setCopiado('ok')
+    } catch {
+      // Clipboard de imágenes exige contexto seguro (HTTPS) y no todos los
+      // navegadores soportan cualquier tipo de imagen -- se avisa en vez de
+      // fallar en silencio, "Descargar" siempre queda como alternativa real.
+      setCopiado('error')
+    }
+    setTimeout(() => setCopiado(null), 2500)
+  }
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 p-4" onClick={onClose}>
+        <div className="mb-3 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <span className="max-w-[50vw] truncate text-sm text-white/90">{nombre}</span>
+        </div>
+        <img src={url} alt={nombre} className="max-h-[75vh] max-w-[90vw] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+        <div className="mt-4 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <a
+            href={url}
+            download={nombre}
+            className="btn-hover flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-medium text-graphite-100"
+          >
+            <Download size={15} /> Descargar
+          </a>
+          <button
+            type="button"
+            onClick={copiar}
+            className="flex items-center gap-1.5 rounded-full border border-white/30 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+          >
+            {copiado === 'ok' ? <Check size={15} /> : <Copy size={15} />}
+            {copiado === 'ok' ? 'Copiada' : copiado === 'error' ? 'No se pudo copiar' : 'Copiar'}
+          </button>
+          <button type="button" onClick={onClose} className="flex items-center gap-1.5 rounded-full border border-white/30 px-4 py-2 text-sm font-medium text-white hover:bg-white/10">
+            <X size={15} /> Cerrar
+          </button>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
 /** Imagen previsualizada inline (fetch autenticado a blob, como la descarga de Biblioteca de Documentos); cualquier otro tipo de archivo se muestra como chip descargable. */
 function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMensaje: string; nombre: string; contentType: string | null; tamanoBytes: number | null }) {
   const esImagen = contentType?.startsWith('image/') ?? false
   const [urlImagen, setUrlImagen] = useState<string | null>(null)
   const [cargandoImagen, setCargandoImagen] = useState(esImagen)
+  const [mostrarLightbox, setMostrarLightbox] = useState(false)
 
   useEffect(() => {
     if (!esImagen) return
@@ -60,34 +125,27 @@ function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idMensaje, esImagen])
 
-  const descargar = async () => {
-    const respuesta = await api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' })
-    const url = window.URL.createObjectURL(new Blob([respuesta.data]))
-    const enlace = document.createElement('a')
-    enlace.href = url
-    enlace.download = nombre
-    document.body.appendChild(enlace)
-    enlace.click()
-    enlace.remove()
-    window.URL.revokeObjectURL(url)
-  }
-
   if (esImagen) {
     return (
-      <button type="button" onClick={descargar} title="Clic para descargar" className="block max-w-[240px] overflow-hidden rounded-lg">
-        {cargandoImagen ? (
-          <div className="flex h-32 w-48 items-center justify-center bg-black/[0.04] text-xs text-graphite-500">Cargando imagen…</div>
-        ) : (
-          <img src={urlImagen ?? undefined} alt={nombre} className="max-h-64 w-auto rounded-lg" />
+      <>
+        <button type="button" onClick={() => urlImagen && setMostrarLightbox(true)} title="Clic para ver en grande" className="block max-w-[240px] overflow-hidden rounded-lg">
+          {cargandoImagen ? (
+            <div className="flex h-32 w-48 items-center justify-center bg-black/[0.04] text-xs text-graphite-500">Cargando imagen…</div>
+          ) : (
+            <img src={urlImagen ?? undefined} alt={nombre} className="max-h-64 w-auto rounded-lg" />
+          )}
+        </button>
+        {mostrarLightbox && urlImagen && (
+          <LightboxImagen url={urlImagen} nombre={nombre} contentType={contentType ?? 'image/png'} onClose={() => setMostrarLightbox(false)} />
         )}
-      </button>
+      </>
     )
   }
 
   return (
     <button
       type="button"
-      onClick={descargar}
+      onClick={() => descargarAdjunto(idMensaje, nombre)}
       className="flex items-center gap-2 rounded-lg bg-black/[0.06] px-3 py-2 text-left text-xs hover:bg-black/[0.1]"
       title="Descargar"
     >
@@ -341,6 +399,128 @@ function DescubrirCanales({ onUnido, onClose }: { onUnido: (idCanal: string) => 
   )
 }
 
+/**
+ * Reenviar un mensaje real (texto y/o adjunto) a otra conversación — el
+ * backend nunca vuelve a subir el archivo, solo crea un mensaje nuevo que
+ * apunta al mismo adjunto ya guardado. Permite reenviar a cualquiera de
+ * mis conversaciones existentes, o buscar una persona para iniciar (o
+ * reusar) un directo nuevo — se puede reenviar a varias sin cerrar el
+ * panel, cada destino queda marcado "Enviado" apenas se confirma.
+ */
+function ReenviarModal({ mensaje, canales, onClose }: { mensaje: Mensaje; canales: CanalListItem[]; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const [enviadosA, setEnviadosA] = useState<Set<string>>(new Set())
+  const { data: usuarios } = useQuery<UsuarioParaChat[]>({
+    queryKey: ['comunicacion-buscar-usuarios', q],
+    queryFn: async () => (await api.get('/api/comunicacion/usuarios/buscar', { params: { q } })).data,
+    enabled: q.length >= 2,
+  })
+
+  const reenviarACanal = useMutation({
+    mutationFn: async (idCanal: string) =>
+      api.post(`/api/comunicacion/mensajes/${mensaje.id}/reenviar`, { idCanalDestino: idCanal }, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }),
+    onSuccess: (_r, idCanal) => setEnviadosA((prev) => new Set(prev).add(idCanal)),
+  })
+
+  const reenviarAPersona = useMutation({
+    mutationFn: async (idUsuario: string) => {
+      const canal = (await api.post(`/api/comunicacion/directo/${idUsuario}`)).data as { id: string }
+      await api.post(`/api/comunicacion/mensajes/${mensaje.id}/reenviar`, { idCanalDestino: canal.id }, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      })
+      return canal.id
+    },
+    onSuccess: (idCanal) => {
+      setEnviadosA((prev) => new Set(prev).add(idCanal))
+      setQ('')
+    },
+  })
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="glass-card flex max-h-[80vh] w-full max-w-sm flex-col overflow-hidden rounded-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between border-b border-black/[0.06] p-4 pb-3">
+            <h3 className="flex items-center gap-2 font-medium text-graphite-100">
+              <Forward size={16} /> Reenviar
+            </h3>
+            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="border-b border-black/[0.06] px-4 py-2 text-xs text-graphite-600">
+            {mensaje.nombreArchivoAdjunto ? `📎 ${mensaje.nombreArchivoAdjunto}` : null}
+            {mensaje.texto && <p className="truncate">{mensaje.texto}</p>}
+          </div>
+
+          <div className="p-3">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar persona para un directo nuevo…"
+              className="w-full rounded-full border border-black/[0.08] bg-white px-3.5 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-2 pb-3">
+            {q.length >= 2 ? (
+              usuarios?.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  disabled={reenviarAPersona.isPending}
+                  onClick={() => reenviarAPersona.mutate(u.id)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-black/[0.03] disabled:opacity-60"
+                >
+                  <Avatar nombre={u.nombre} tamano="sm" />
+                  <span className="flex-1 truncate text-sm text-graphite-100">{u.nombre}</span>
+                  <Check size={14} className="text-emerald-600 opacity-0" />
+                </button>
+              ))
+            ) : (
+              canales.map((c) => {
+                const enviado = enviadosA.has(c.id)
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={reenviarACanal.isPending || enviado}
+                    onClick={() => reenviarACanal.mutate(c.id)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-black/[0.03] disabled:opacity-60"
+                  >
+                    <Avatar nombre={c.nombre} esCanal={!c.esDirecto} tamano="sm" />
+                    <span className="flex-1 truncate text-sm text-graphite-100">{c.nombre}</span>
+                    {enviado && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                        <Check size={13} /> Enviado
+                      </span>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+
+          {(reenviarACanal.isError || reenviarAPersona.isError) && (
+            <p className="border-t border-black/[0.06] px-4 py-2 text-xs text-red-700">
+              {detalleError(reenviarACanal.error ?? reenviarAPersona.error, 'No se pudo reenviar.')}
+            </p>
+          )}
+
+          <div className="border-t border-black/[0.06] p-3">
+            <button type="button" onClick={onClose} className="btn-hover w-full rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white">
+              Listo
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
 export function ComunicacionInterna() {
   const queryClient = useQueryClient()
   const { sesion } = useAuth()
@@ -352,6 +532,7 @@ export function ComunicacionInterna() {
   const [mostrarBuscarDirecto, setMostrarBuscarDirecto] = useState(false)
   const [mostrarDescubrir, setMostrarDescubrir] = useState(false)
   const [mostrarMenuNuevo, setMostrarMenuNuevo] = useState(false)
+  const [mensajeAReenviar, setMensajeAReenviar] = useState<Mensaje | null>(null)
   const [busquedaCanal, setBusquedaCanal] = useState('')
   const canalSeleccionadoRef = useRef<string | null>(null)
   const mensajesFinRef = useRef<HTMLDivElement>(null)
@@ -604,7 +785,17 @@ export function ComunicacionInterna() {
                           )}
                           {m.texto && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
                         </div>
-                        <span className="mt-0.5 px-1 text-[11px] text-graphite-500">{formatoHora(m.creadoEn)}</span>
+                        <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[11px] text-graphite-500">
+                          {formatoHora(m.creadoEn)}
+                          <button
+                            type="button"
+                            onClick={() => setMensajeAReenviar(m)}
+                            title="Reenviar"
+                            className="text-graphite-400 hover:text-gold-500"
+                          >
+                            <Forward size={12} />
+                          </button>
+                        </span>
                       </div>
                     </div>
                   )
@@ -666,6 +857,10 @@ export function ComunicacionInterna() {
           )}
         </div>
       </div>
+
+      {mensajeAReenviar && (
+        <ReenviarModal mensaje={mensajeAReenviar} canales={canales ?? []} onClose={() => setMensajeAReenviar(null)} />
+      )}
     </div>
   )
 }
