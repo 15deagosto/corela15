@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Comunicacion;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,12 @@ public record CrearCanalBody(string Nombre, string? Descripcion, IReadOnlyList<G
 
 public record AgregarMiembroBody(Guid IdUsuario);
 
-public record EnviarMensajeBody(string Texto);
+/// <summary>Cuerpo del envío — multipart/form-data, el archivo (opcional) viaja junto con el texto (opcional) en el mismo request; un mensaje real siempre trae al menos uno de los dos.</summary>
+public class EnviarMensajeBody
+{
+    public string? Texto { get; set; }
+    public IFormFile? Archivo { get; set; }
+}
 
 /// <summary>
 /// Comunicación interna real — canales de grupo y mensajes directos 1:1
@@ -69,9 +75,34 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
         Ok(await service.ListarMensajesAsync(idCanal, IdUsuarioActual(), antesDe, cancellationToken));
 
     [HttpPost("canales/{idCanal:guid}/mensajes")]
+    [RequireIdempotencyKey]
     public async Task<ActionResult<MensajeDto>> EnviarMensaje(
-        Guid idCanal, [FromBody] EnviarMensajeBody body, CancellationToken cancellationToken) =>
-        Ok(await service.EnviarMensajeAsync(idCanal, IdUsuarioActual(), body.Texto, cancellationToken));
+        Guid idCanal, [FromForm] EnviarMensajeBody body, CancellationToken cancellationToken)
+    {
+        Stream? stream = null;
+        try
+        {
+            ArchivoAdjuntoEntrada? archivo = null;
+            if (body.Archivo is not null)
+            {
+                stream = body.Archivo.OpenReadStream();
+                archivo = new ArchivoAdjuntoEntrada(stream, body.Archivo.FileName, body.Archivo.ContentType, body.Archivo.Length);
+            }
+
+            return Ok(await service.EnviarMensajeAsync(idCanal, IdUsuarioActual(), body.Texto, archivo, cancellationToken));
+        }
+        finally
+        {
+            if (stream is not null) await stream.DisposeAsync();
+        }
+    }
+
+    [HttpGet("mensajes/{idMensaje:guid}/adjunto")]
+    public async Task<IActionResult> DescargarAdjunto(Guid idMensaje, CancellationToken cancellationToken)
+    {
+        var resultado = await service.DescargarAdjuntoAsync(idMensaje, IdUsuarioActual(), cancellationToken);
+        return File(resultado.Contenido, string.IsNullOrWhiteSpace(resultado.ContentType) ? "application/octet-stream" : resultado.ContentType, resultado.NombreArchivo);
+    }
 
     [HttpPost("canales/{idCanal:guid}/marcar-leido")]
     public async Task<IActionResult> MarcarLeido(Guid idCanal, CancellationToken cancellationToken)

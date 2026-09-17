@@ -40,7 +40,10 @@ public class MensajeConfiguration : IEntityTypeConfiguration<Mensaje>
     {
         b.ToTable("mensaje", "comunicacion");
         b.HasKey(x => x.Id);
-        b.Property(x => x.Texto).HasMaxLength(2000).IsRequired();
+        b.Property(x => x.Texto).HasMaxLength(2000);
+        b.Property(x => x.RutaAdjunto).HasMaxLength(500);
+        b.Property(x => x.NombreArchivoAdjunto).HasMaxLength(255);
+        b.Property(x => x.ContentTypeAdjunto).HasMaxLength(150);
 
         b.HasOne(x => x.Canal).WithMany().HasForeignKey(x => x.IdCanal).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.UsuarioRemitente).WithMany().HasForeignKey(x => x.IdUsuarioRemitente).OnDelete(DeleteBehavior.Restrict);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessagesSquare, Send, Plus, Users, Compass, X } from 'lucide-react'
+import { MessagesSquare, Send, Plus, Users, Compass, X, Paperclip, Download, FileText } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/Badge'
 import { api } from '../lib/api'
@@ -22,8 +22,83 @@ interface Mensaje {
   idCanal: string
   idUsuarioRemitente: string
   nombreRemitente: string
-  texto: string
+  texto: string | null
   creadoEn: string
+  nombreArchivoAdjunto: string | null
+  contentTypeAdjunto: string | null
+  tamanoBytesAdjunto: number | null
+}
+
+const EXTENSIONES_ADJUNTO_PERMITIDAS = '.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.csv'
+
+function formatoTamano(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** Imagen previsualizada inline (fetch autenticado a blob, como la descarga de Biblioteca de Documentos); cualquier otro tipo de archivo se muestra como chip descargable. */
+function AdjuntoMensaje({ idMensaje, nombre, contentType, tamanoBytes }: { idMensaje: string; nombre: string; contentType: string | null; tamanoBytes: number | null }) {
+  const esImagen = contentType?.startsWith('image/') ?? false
+  const [urlImagen, setUrlImagen] = useState<string | null>(null)
+  const [cargandoImagen, setCargandoImagen] = useState(esImagen)
+
+  useEffect(() => {
+    if (!esImagen) return
+    let objectUrl: string | null = null
+    let cancelado = false
+    api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' }).then((r) => {
+      if (cancelado) return
+      objectUrl = window.URL.createObjectURL(new Blob([r.data]))
+      setUrlImagen(objectUrl)
+      setCargandoImagen(false)
+    })
+    return () => {
+      cancelado = true
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idMensaje, esImagen])
+
+  const descargar = async () => {
+    const respuesta = await api.get(`/api/comunicacion/mensajes/${idMensaje}/adjunto`, { responseType: 'blob' })
+    const url = window.URL.createObjectURL(new Blob([respuesta.data]))
+    const enlace = document.createElement('a')
+    enlace.href = url
+    enlace.download = nombre
+    document.body.appendChild(enlace)
+    enlace.click()
+    enlace.remove()
+    window.URL.revokeObjectURL(url)
+  }
+
+  if (esImagen) {
+    return (
+      <button type="button" onClick={descargar} title="Clic para descargar" className="block max-w-[240px] overflow-hidden rounded-lg">
+        {cargandoImagen ? (
+          <div className="flex h-32 w-48 items-center justify-center bg-black/[0.04] text-xs text-graphite-500">Cargando imagen…</div>
+        ) : (
+          <img src={urlImagen ?? undefined} alt={nombre} className="max-h-64 w-auto rounded-lg" />
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={descargar}
+      className="flex items-center gap-2 rounded-lg bg-black/[0.06] px-3 py-2 text-left text-xs hover:bg-black/[0.1]"
+      title="Descargar"
+    >
+      <FileText size={16} className="flex-shrink-0" />
+      <span className="flex flex-col">
+        <span className="max-w-[180px] truncate font-medium">{nombre}</span>
+        {tamanoBytes !== null && <span className="text-graphite-500">{formatoTamano(tamanoBytes)}</span>}
+      </span>
+      <Download size={13} className="ml-1 flex-shrink-0" />
+    </button>
+  )
 }
 
 interface CanalDescubrible {
@@ -249,6 +324,8 @@ export function ComunicacionInterna() {
   const { sesion } = useAuth()
   const [canalSeleccionado, setCanalSeleccionado] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const archivoInputRef = useRef<HTMLInputElement>(null)
   const [mostrarNuevoCanal, setMostrarNuevoCanal] = useState(false)
   const [mostrarBuscarDirecto, setMostrarBuscarDirecto] = useState(false)
   const [mostrarDescubrir, setMostrarDescubrir] = useState(false)
@@ -312,8 +389,19 @@ export function ComunicacionInterna() {
   }
 
   const enviar = useMutation({
-    mutationFn: async () => api.post(`/api/comunicacion/canales/${canalSeleccionado}/mensajes`, { texto }),
-    onSuccess: () => setTexto(''),
+    mutationFn: async () => {
+      const form = new FormData()
+      if (texto.trim()) form.append('Texto', texto.trim())
+      if (archivo) form.append('Archivo', archivo)
+      return api.post(`/api/comunicacion/canales/${canalSeleccionado}/mensajes`, form, {
+        headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': crypto.randomUUID() },
+      })
+    },
+    onSuccess: () => {
+      setTexto('')
+      setArchivo(null)
+      if (archivoInputRef.current) archivoInputRef.current.value = ''
+    },
   })
 
   const iniciarDirecto = useMutation({
@@ -458,11 +546,19 @@ export function ComunicacionInterna() {
                     <div key={m.id} className={`flex flex-col ${esPropio ? 'items-end' : 'items-start'}`}>
                       {!esPropio && <span className="mb-0.5 text-xs font-medium text-graphite-600">{m.nombreRemitente}</span>}
                       <div
-                        className={`max-w-[75%] rounded-xl px-3 py-2 text-sm ${
+                        className={`flex max-w-[75%] flex-col gap-1.5 rounded-xl px-3 py-2 text-sm ${
                           esPropio ? 'bg-gold-500 text-white' : 'bg-black/[0.04] text-graphite-100'
                         }`}
                       >
-                        {m.texto}
+                        {m.nombreArchivoAdjunto && (
+                          <AdjuntoMensaje
+                            idMensaje={m.id}
+                            nombre={m.nombreArchivoAdjunto}
+                            contentType={m.contentTypeAdjunto}
+                            tamanoBytes={m.tamanoBytesAdjunto}
+                          />
+                        )}
+                        {m.texto && <span>{m.texto}</span>}
                       </div>
                       <span className="mt-0.5 text-[11px] text-graphite-500">{formatoHora(m.creadoEn)}</span>
                     </div>
@@ -471,14 +567,39 @@ export function ComunicacionInterna() {
                 <div ref={mensajesFinRef} />
               </div>
 
+              {archivo && (
+                <div className="mt-2 flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-xs">
+                  <span className="truncate">
+                    {archivo.name} <span className="text-graphite-500">({formatoTamano(archivo.size)})</span>
+                  </span>
+                  <button type="button" onClick={() => { setArchivo(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }} className="text-graphite-500 hover:text-red-700">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
               <form
                 className="mt-3 flex items-center gap-2 border-t border-black/[0.06] pt-3"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  if (!texto.trim()) return
+                  if (!texto.trim() && !archivo) return
                   enviar.mutate()
                 }}
               >
+                <input
+                  ref={archivoInputRef}
+                  type="file"
+                  accept={EXTENSIONES_ADJUNTO_PERMITIDAS}
+                  onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+                  className="hidden"
+                  id="comunicacion-archivo-input"
+                />
+                <label
+                  htmlFor="comunicacion-archivo-input"
+                  title="Adjuntar imagen o archivo"
+                  className="flex cursor-pointer items-center justify-center rounded-lg border border-black/[0.08] p-2 text-graphite-600 hover:bg-black/[0.03]"
+                >
+                  <Paperclip size={16} />
+                </label>
                 <input
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
@@ -488,7 +609,7 @@ export function ComunicacionInterna() {
                 />
                 <button
                   type="submit"
-                  disabled={enviar.isPending || !texto.trim()}
+                  disabled={enviar.isPending || (!texto.trim() && !archivo)}
                   className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
                 >
                   <Send size={16} />
