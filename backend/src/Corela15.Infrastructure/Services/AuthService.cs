@@ -149,12 +149,15 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
 
         var menus = menusPorRol.Union(menusPorUsuario).Except(menusExcluidos).ToList();
         if (!menus.Contains("mesa-servicio")) menus.Add("mesa-servicio");
-        // Comunicación interna (chat propio) ya NO es universal —
-        // corregido a pedido explícito del usuario: solo "mesa-servicio"
-        // es transversal por requisito SEPS, el resto (incluido este chat)
-        // debe manejarse con permisos reales (rol_menu/otorgamiento
-        // directo), igual que cualquier otro módulo. Sembrado por rol en
-        // la migración `Seguridad_ComunicacionInternaPorPermiso`.
+        // Comunicación interna (chat propio) pasó a ser universal también
+        // -- pedido explícito del usuario: "habilitar a todos los usuarios
+        // activos el módulo de comunicación interna". Revierte la decisión
+        // anterior (que lo manejaba por rol_menu/otorgamiento directo, ver
+        // migración `Seguridad_ComunicacionInternaPorPermiso`) -- ahora es
+        // transversal igual que "mesa-servicio", sin excepción por rol
+        // (incluye a GENERADOR OF01 y a los usuarios reales importados de
+        // Softbank sin ningún rol asignado).
+        if (!menus.Contains("comunicacion-interna")) menus.Add("comunicacion-interna");
 
         var estructurasPorRol = await db.RolesTipoEstructura
             .Where(re => re.Activo && re.TipoEstructura.Activo && idsRolEfectivos.Contains(re.IdRol))
