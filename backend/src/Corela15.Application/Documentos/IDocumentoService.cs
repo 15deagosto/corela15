@@ -35,6 +35,17 @@ public interface ICarpetaService
     Task RenombrarAsync(Guid id, RenombrarCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
     Task DesactivarAsync(Guid id, string modificadoPor, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Provisión real, idempotente: crea (si no existe) la carpeta
+    /// personal del usuario como su propia raíz (Escritura para él) --
+    /// sin ningún catálogo fijo compartido por defecto, cada usuario
+    /// arranca viendo solo la suya y decide él mismo con quién la
+    /// comparte. Se llama sin <see cref="ContextoAccesoDocumental"/> a
+    /// propósito -- es una acción de sistema (alta de usuario), no una
+    /// request real de un usuario navegando la biblioteca.
+    /// </summary>
+    Task<Guid> AsegurarCarpetaPersonalAsync(Guid idUsuario, string nombreVisible, string creadoPor, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Administra el ACL real por carpeta — ver CarpetaAcceso.cs. Otorgar/quitar/listar accesos de una carpeta exige Escritura efectiva sobre esa carpeta (o VeTodo) — el dueño de una carpeta puede compartirla, mismo criterio que una carpeta de red.</summary>

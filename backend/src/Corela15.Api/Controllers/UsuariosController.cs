@@ -1,3 +1,4 @@
+using Corela15.Application.Documentos;
 using Corela15.Application.Seguridad;
 using Corela15.Domain.Seguridad;
 using Corela15.Infrastructure.Persistence;
@@ -68,7 +69,7 @@ public record ActualizarTiposEstructuraUsuarioRequest(IReadOnlyList<string> Codi
 [ApiController]
 [Route("api/usuarios")]
 [Authorize(Policy = "Menu:usuarios-roles")]
-public class UsuariosController(Corela15DbContext db, IAuthService authService) : ControllerBase
+public class UsuariosController(Corela15DbContext db, IAuthService authService, ICarpetaService carpetaService) : ControllerBase
 {
     // Alta de usuario nuevo — antes solo existían los 2 usuarios sembrados
     // por Nivel0_PasswordHashReal, sin ninguna forma real de crear uno.
@@ -81,6 +82,17 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService) 
                 body.UsaDispositivoMovil, body.PermiteRiesgoOperativo, body.PermiteConsultaEmpleados,
                 body.ValidaIp, body.CambiaClave, body.DiasCambioClave),
             User.Identity!.Name!, cancellationToken);
+
+        // Carpeta personal real en Biblioteca de Documentos (ver
+        // ICarpetaService.AsegurarCarpetaPersonalAsync) -- cada usuario
+        // nuevo arranca con su propio espacio ("Carpetas personales" >
+        // <su nombre>), listo para que él mismo decida a quién se lo
+        // comparte, sin depender de que un admin se lo arme a mano.
+        var nombreVisible = body.IdPersona is Guid idPersona
+            ? await db.Personas.Where(p => p.Id == idPersona).Select(p => p.Nombre).FirstOrDefaultAsync(cancellationToken) ?? body.NombreUsuario
+            : body.NombreUsuario;
+        await carpetaService.AsegurarCarpetaPersonalAsync(id, nombreVisible, User.Identity!.Name!, cancellationToken);
+
         return Created($"/api/usuarios/{id}", new { id });
     }
 

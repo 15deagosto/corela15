@@ -85,4 +85,50 @@ public class CarpetaService(Corela15DbContext db) : ICarpetaService
         if (!contexto.TieneEscritura(carpeta.Id)) throw new AccesoDocumentalDenegadoException(carpeta.Nombre);
         return carpeta;
     }
+
+    public async Task<Guid> AsegurarCarpetaPersonalAsync(Guid idUsuario, string nombreVisible, string creadoPor, CancellationToken cancellationToken = default)
+    {
+        // Carpeta personal real como raíz propia (sin agrupador -- se
+        // simplificó a pedido explícito del usuario: nada de un catálogo
+        // fijo compartido por defecto, cada quien ve solo la suya, y la
+        // comparte él mismo si quiere, mismo mecanismo de siempre).
+        var personal = await db.Carpetas.FirstOrDefaultAsync(
+            c => c.Activa && c.IdCarpetaPadre == null && c.Nombre == nombreVisible, cancellationToken);
+        if (personal is null)
+        {
+            personal = new Carpeta
+            {
+                Id = Guid.NewGuid(),
+                Nombre = nombreVisible,
+                IdCarpetaPadre = null,
+                Activa = true,
+                CreadoEn = DateTimeOffset.UtcNow,
+                CreadoPor = creadoPor,
+            };
+            db.Carpetas.Add(personal);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var accesoPersonal = await db.CarpetaAccesos.FirstOrDefaultAsync(
+            a => a.IdCarpeta == personal.Id && a.IdUsuario == idUsuario, cancellationToken);
+        if (accesoPersonal is null)
+        {
+            db.CarpetaAccesos.Add(new CarpetaAcceso
+            {
+                Id = Guid.NewGuid(),
+                IdCarpeta = personal.Id,
+                IdUsuario = idUsuario,
+                NivelAcceso = NivelAccesoDocumental.Escritura,
+                CreadoEn = DateTimeOffset.UtcNow,
+                CreadoPor = creadoPor,
+            });
+        }
+        else if (accesoPersonal.NivelAcceso != NivelAccesoDocumental.Escritura)
+        {
+            accesoPersonal.NivelAcceso = NivelAccesoDocumental.Escritura;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return personal.Id;
+    }
 }

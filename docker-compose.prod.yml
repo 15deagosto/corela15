@@ -58,12 +58,13 @@ services:
       WhatsApp__TemplateName: ${WHATSAPP_TEMPLATE_NAME:-aviso_cooperativa}
       WhatsApp__TemplateLanguage: ${WHATSAPP_TEMPLATE_LANGUAGE:-es}
       # Biblioteca de Documentos — dónde vive el archivo físico real (ver
-      # FileSystemDocumentoStorageService.cs). HOY es un volumen Docker
-      # local (temporal, mientras se crea el recurso compartido en el NAS
-      # de la cooperativa, WD My Cloud Pro 192.168.0.25) — cuando exista,
-      # cambiar el volumen `documentos_data` de abajo a CIFS (mismo punto
-      # de montaje `/app/documentos-nas`, sin tocar esta línea ni el
-      # código de la app).
+      # FileSystemDocumentoStorageService.cs). Montado por CIFS real contra
+      # el NAS de la cooperativa (WD My Cloud Pro 192.168.0.25, share
+      # `corela15-documentos`, cuenta de servicio de dominio dedicada
+      # `15DEAGOSTO\svc-corela15-docs` -- único usuario con Lectura/Escritura
+      # sobre ese share, todo el resto del AD en Denegar acceso, ver volumen
+      # `documentos_data` más abajo). El código de la app nunca cambia,
+      # siempre escribe/lee sobre este mismo punto de montaje.
       Documentos__RutaAlmacenamiento: /app/documentos-nas
     volumes:
       - documentos_data:/app/documentos-nas
@@ -96,4 +97,15 @@ services:
 
 volumes:
   pgdata:
+  # Montaje CIFS real contra el NAS de la cooperativa. La contraseña de la
+  # cuenta de servicio (NAS_DOCUMENTOS_PASSWORD) vive únicamente en
+  # .env.prod del servidor -- nunca en este archivo ni en el repo.
+  # Requiere `cifs-utils` instalado en el host (ya está, ver bitácora del
+  # proyecto). `domain=` es obligatorio porque la cuenta es de dominio
+  # (15DEAGOSTO), no una cuenta local del NAS.
   documentos_data:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "username=svc-corela15-docs,password=${NAS_DOCUMENTOS_PASSWORD:?set NAS_DOCUMENTOS_PASSWORD in .env.prod},domain=15DEAGOSTO,vers=3.0,sec=ntlmssp,uid=0,gid=0,file_mode=0664,dir_mode=0775,iocharset=utf8"
+      device: "//192.168.0.25/corela15-documentos"
