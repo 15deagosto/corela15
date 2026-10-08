@@ -87,6 +87,13 @@ public class IndicadorConfiguration : IEntityTypeConfiguration<Indicador>
         b.ToTable("indicador", "planificacion");
         b.HasKey(x => x.Id);
         b.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Unidad).HasMaxLength(20);
+
+        b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
+        // Nunca dos KPI con el mismo nombre real dentro de la misma área --
+        // mismo criterio que EtiquetaPlanificacion, necesario para que
+        // "obtener o crear" confíe en buscar por (área, nombre).
+        b.HasIndex(x => new { x.CodigoArea, x.Nombre }).IsUnique();
     }
 }
 

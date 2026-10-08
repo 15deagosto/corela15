@@ -73,6 +73,10 @@ public record EtiquetaPlanificacionDto(string Codigo, string CodigoArea, string 
 public record CrearEtiquetaPlanificacionRequest(string Codigo, string CodigoArea, string Nombre, string ColorHex);
 public record ActualizarEtiquetaPlanificacionRequest(string Nombre, string ColorHex, bool Activo);
 
+public record IndicadorPlanificacionDto(int Id, string CodigoArea, string Nombre, string? Unidad, bool Activo);
+public record CrearIndicadorPlanificacionRequest(string CodigoArea, string Nombre, string? Unidad);
+public record ActualizarIndicadorPlanificacionRequest(string Nombre, string? Unidad, bool Activo);
+
 public record CuentaContablePlanDto(
     Guid Id, string Codigo, string Nombre, string Grupo, string Naturaleza,
     bool EsMayor, bool Activa, string? CodigoPadre);
@@ -1533,5 +1537,37 @@ public class ConfiguracionController(
         etiqueta.Activo = request.Activo;
         await db.SaveChangesAsync(ct);
         return Ok(new EtiquetaPlanificacionDto(etiqueta.Codigo, etiqueta.CodigoArea, etiqueta.Nombre, etiqueta.ColorHex, etiqueta.Activo));
+    }
+
+    [HttpGet("planificacion/indicadores")]
+    public async Task<ActionResult<IReadOnlyList<IndicadorPlanificacionDto>>> IndicadoresPlanificacion(CancellationToken ct)
+        => Ok(await db.Indicadores.OrderBy(i => i.CodigoArea).ThenBy(i => i.Nombre)
+            .Select(i => new IndicadorPlanificacionDto(i.Id, i.CodigoArea, i.Nombre, i.Unidad, i.Activo)).ToListAsync(ct));
+
+    [HttpPost("planificacion/indicadores")]
+    public async Task<ActionResult<IndicadorPlanificacionDto>> CrearIndicadorPlanificacion(CrearIndicadorPlanificacionRequest request, CancellationToken ct)
+    {
+        if (!await db.AreasPlanificacion.AnyAsync(a => a.Codigo == request.CodigoArea, ct))
+            throw new AreaPlanificacionInvalidaException(request.CodigoArea);
+        if (await db.Indicadores.AnyAsync(i => i.CodigoArea == request.CodigoArea && EF.Functions.ILike(i.Nombre, request.Nombre), ct))
+            throw new NombreEtiquetaDuplicadoException(request.Nombre);
+
+        var indicador = new Indicador { CodigoArea = request.CodigoArea, Nombre = request.Nombre, Unidad = request.Unidad, Activo = true };
+        db.Indicadores.Add(indicador);
+        await db.SaveChangesAsync(ct);
+        return Created($"/api/configuracion/planificacion/indicadores/{indicador.Id}",
+            new IndicadorPlanificacionDto(indicador.Id, indicador.CodigoArea, indicador.Nombre, indicador.Unidad, indicador.Activo));
+    }
+
+    [HttpPut("planificacion/indicadores/{id:int}")]
+    public async Task<ActionResult<IndicadorPlanificacionDto>> ActualizarIndicadorPlanificacion(int id, ActualizarIndicadorPlanificacionRequest request, CancellationToken ct)
+    {
+        var indicador = await db.Indicadores.FirstOrDefaultAsync(i => i.Id == id, ct);
+        if (indicador is null) return NotFound();
+        indicador.Nombre = request.Nombre;
+        indicador.Unidad = request.Unidad;
+        indicador.Activo = request.Activo;
+        await db.SaveChangesAsync(ct);
+        return Ok(new IndicadorPlanificacionDto(indicador.Id, indicador.CodigoArea, indicador.Nombre, indicador.Unidad, indicador.Activo));
     }
 }

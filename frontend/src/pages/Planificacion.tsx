@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare, Pencil, Check, FileSpreadsheet, FileText, FileDown } from 'lucide-react'
@@ -37,6 +37,32 @@ interface EtiquetaDto {
   colorHex: string
 }
 
+interface IndicadorCatalogo {
+  id: number
+  codigoArea: string
+  nombre: string
+  unidad: string | null
+}
+
+interface IndicadorSemanal {
+  id: string
+  idIndicador: number
+  nombre: string
+  unidad: string | null
+  meta: number | null
+  real: number | null
+  comentario: string | null
+}
+
+/** Estado del formulario -- combo editable igual que la etiqueta, valores numéricos como texto mientras se escriben. */
+interface IndicadorEditor {
+  nombreIndicador: string
+  unidad: string
+  meta: string
+  real: string
+  comentario: string
+}
+
 interface Bloque {
   id?: string
   diaSemana: number
@@ -63,11 +89,15 @@ interface PlanSemanal {
   nombreResponsable: string
   cargoResponsable: string
   bloques: (Bloque & { etiqueta: string; colorHex: string; notaGerencia: string | null })[]
+  indicadores: IndicadorSemanal[]
   enviada: boolean
   fechaEnvio: string | null
   enviadaFueraDeTiempo: boolean
   enviadaPor: string | null
   notaGerencia: string | null
+  estadoAprobacion: 'Pendiente' | 'Aprobado' | 'ConObservaciones'
+  aprobadoPor: string | null
+  fechaAprobacion: string | null
   bloqueada: boolean
   fechaLimiteEnvio: string
   creadoEn: string
@@ -85,6 +115,7 @@ interface PlanListItem {
   enviada: boolean
   enviadaFueraDeTiempo: boolean
   bloqueada: boolean
+  estadoAprobacion: 'Pendiente' | 'Aprobado' | 'ConObservaciones'
   creadoEn: string
   creadoPor: string
 }
@@ -380,6 +411,121 @@ function EtiquetaCombo({
 }
 
 /**
+ * Combo editable real para KPIs -- mismo patrón que EtiquetaCombo (evita
+ * el bug de `<datalist>` nativo filtrando a lo ya escrito), simplificado
+ * sin edición de color inline (un KPI no tiene color, solo nombre+unidad,
+ * ambos editables desde acá al elegir/crear uno nuevo).
+ */
+function IndicadorCombo({
+  value, onChange, opciones, disabled, onSeleccionarUnidad,
+}: {
+  value: string
+  onChange: (v: string) => void
+  opciones: IndicadorCatalogo[]
+  disabled?: boolean
+  /** Al elegir un KPI ya existente, propaga su unidad real al resto del formulario. */
+  onSeleccionarUnidad?: (unidad: string) => void
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const actualizarPos = () => {
+    const r = inputRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 260) })
+  }
+
+  useEffect(() => {
+    if (!abierto) return
+    actualizarPos()
+    window.addEventListener('scroll', actualizarPos, true)
+    window.addEventListener('resize', actualizarPos)
+    return () => {
+      window.removeEventListener('scroll', actualizarPos, true)
+      window.removeEventListener('resize', actualizarPos)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto])
+
+  useEffect(() => {
+    const onClickFuera = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (ref.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      setAbierto(false)
+    }
+    document.addEventListener('mousedown', onClickFuera)
+    return () => document.removeEventListener('mousedown', onClickFuera)
+  }, [])
+
+  const yaExiste = opciones.some((o) => o.nombre.trim().toLowerCase() === value.trim().toLowerCase())
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        ref={inputRef}
+        disabled={disabled}
+        value={value}
+        onFocus={() => { actualizarPos(); setAbierto(true) }}
+        onClick={() => { actualizarPos(); setAbierto(true) }}
+        onChange={(e) => { onChange(e.target.value); actualizarPos(); setAbierto(true) }}
+        className={`${INPUT_CLASS} w-full`}
+        placeholder="KPI — elegí o escribí uno nuevo"
+      />
+      {abierto && !disabled && pos && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="z-[100] max-h-72 overflow-y-auto rounded-lg border border-black/[0.08] bg-white shadow-xl"
+        >
+          {value.trim() && !yaExiste && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setAbierto(false)}
+              className="block w-full border-b border-black/[0.06] px-3 py-2 text-left text-xs font-medium text-gold-600 hover:bg-gold-500/10"
+            >
+              Usar «{value.trim()}» (KPI nuevo)
+            </button>
+          )}
+          {opciones.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-graphite-600">Sin KPIs todavía para esta área — escribí el primero.</p>
+          ) : (
+            opciones.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(o.nombre)
+                  onSeleccionarUnidad?.(o.unidad ?? '')
+                  setAbierto(false)
+                }}
+                className={`block w-full truncate px-3 py-2 text-left text-xs hover:bg-black/[0.03] ${
+                  o.nombre === value ? 'bg-gold-500/10 font-medium text-graphite-100' : 'text-graphite-100'
+                }`}
+              >
+                {o.nombre}
+                {o.unidad && <span className="ml-1 text-graphite-600">({o.unidad})</span>}
+              </button>
+            ))
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+function EstadoAprobacionBadge({ estado }: { estado: PlanSemanal['estadoAprobacion'] }) {
+  if (estado === 'Aprobado') return <Badge variant="exito">Aprobado por gerencia</Badge>
+  if (estado === 'ConObservaciones') return <Badge variant="peligro">Con observaciones</Badge>
+  return <Badge variant="neutral">Revisión pendiente</Badge>
+}
+
+/**
  * Exportación real de una semana de planificación -- distinta de
  * `BotonesExportar` (reportes tabulares genéricos): el PDF acá es el
  * reemplazo directo del PDF manual real que cada jefatura armaba a mano
@@ -643,6 +789,104 @@ function BloqueModal({
   )
 }
 
+/**
+ * KPIs reales de la semana -- meta vs. real, por fila, mismo patrón
+ * "combo editable + lista" ya establecido para los bloques de horario
+ * pero en formato tabular simple (un KPI no necesita grilla visual).
+ */
+function IndicadoresEditor({
+  indicadores, setIndicadores, catalogo, disabled,
+}: {
+  indicadores: IndicadorEditor[]
+  setIndicadores: Dispatch<SetStateAction<IndicadorEditor[]>>
+  catalogo: IndicadorCatalogo[]
+  disabled: boolean
+}) {
+  const actualizar = (idx: number, campo: keyof IndicadorEditor, valor: string) =>
+    setIndicadores((is) => is.map((i, j) => (j === idx ? { ...i, [campo]: valor } : i)))
+
+  return (
+    <div className="glass-card rounded-xl p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-medium text-graphite-100">KPIs de la semana</h3>
+          <p className="text-xs text-graphite-600">Meta propuesta vs. resultado real — opcional, pero gerencia lo ve al revisar.</p>
+        </div>
+        {!disabled && (
+          <button
+            type="button"
+            onClick={() => setIndicadores((is) => [...is, { nombreIndicador: '', unidad: '', meta: '', real: '', comentario: '' }])}
+            className="btn-hover flex items-center gap-1.5 rounded-lg border border-gold-500 px-3 py-1.5 text-sm font-medium text-gold-500"
+          >
+            <Plus size={14} /> Agregar KPI
+          </button>
+        )}
+      </div>
+
+      {indicadores.length === 0 ? (
+        <p className="py-6 text-center text-sm text-graphite-600">Sin KPIs cargados todavía para esta semana.</p>
+      ) : (
+        <div className="space-y-2">
+          {indicadores.map((ind, idx) => (
+            <div key={idx} className="flex flex-wrap items-start gap-2 rounded-lg border border-black/[0.06] p-2.5">
+              <div className="min-w-[200px] flex-1">
+                <IndicadorCombo
+                  value={ind.nombreIndicador}
+                  onChange={(v) => !disabled && actualizar(idx, 'nombreIndicador', v)}
+                  opciones={catalogo}
+                  disabled={disabled}
+                  onSeleccionarUnidad={(u) => !disabled && actualizar(idx, 'unidad', u)}
+                />
+              </div>
+              <input
+                disabled={disabled}
+                value={ind.unidad}
+                onChange={(e) => actualizar(idx, 'unidad', e.target.value)}
+                className={`${INPUT_CLASS} w-20`}
+                placeholder="Unidad"
+                title="Unidad del KPI (%, $, cant...)"
+              />
+              <input
+                disabled={disabled}
+                type="number"
+                value={ind.meta}
+                onChange={(e) => actualizar(idx, 'meta', e.target.value)}
+                className={`${INPUT_CLASS} w-24`}
+                placeholder="Meta"
+              />
+              <input
+                disabled={disabled}
+                type="number"
+                value={ind.real}
+                onChange={(e) => actualizar(idx, 'real', e.target.value)}
+                className={`${INPUT_CLASS} w-24`}
+                placeholder="Real"
+              />
+              <input
+                disabled={disabled}
+                value={ind.comentario}
+                onChange={(e) => actualizar(idx, 'comentario', e.target.value)}
+                className={`${INPUT_CLASS} min-w-[160px] flex-1`}
+                placeholder="Comentario (opcional)"
+              />
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => setIndicadores((is) => is.filter((_, j) => j !== idx))}
+                  className="rounded-lg p-2 text-graphite-600 hover:bg-red-50 hover:text-red-700"
+                  title="Quitar este KPI de la semana"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SeccionEditor({ areas }: { areas: Catalogo[] }) {
   const queryClient = useQueryClient()
   const [codigoArea, setCodigoArea] = useState('')
@@ -650,6 +894,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
   const [nombreResponsable, setNombreResponsable] = useState('')
   const [cargoResponsable, setCargoResponsable] = useState('')
   const [bloques, setBloques] = useState<BloqueEditor[]>([])
+  const [indicadores, setIndicadores] = useState<IndicadorEditor[]>([])
   const [resultado, setResultado] = useState<PlanSemanal | null>(null)
   const [modalBloque, setModalBloque] = useState<{ idxOriginal?: number; datos: BloqueModalDatos } | null>(null)
 
@@ -680,6 +925,12 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         nombreEtiqueta: b.etiqueta, descripcion: b.descripcion,
       })),
     )
+    setIndicadores(
+      planExistente.indicadores.map((i) => ({
+        nombreIndicador: i.nombre, unidad: i.unidad ?? '',
+        meta: i.meta?.toString() ?? '', real: i.real?.toString() ?? '', comentario: i.comentario ?? '',
+      })),
+    )
   }, [planExistente])
 
   // Cambiar de área o de semana limpia el formulario -- evita mezclar
@@ -688,6 +939,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     if (!idPlanExistente) {
       setResultado(null)
       setBloques([])
+      setIndicadores([])
       setNombreResponsable('')
       setCargoResponsable('')
     }
@@ -699,6 +951,14 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
   const { data: etiquetas } = useQuery<Catalogo[]>({
     queryKey: ['planificacion-etiquetas', codigoArea],
     queryFn: async () => (await api.get(`${BASE}/etiquetas`, { params: { codigoArea } })).data,
+    enabled: !!codigoArea,
+  })
+
+  // KPIs reales ya definidos por esta área -- mismo criterio que
+  // etiquetas, un set propio por área, nunca global.
+  const { data: catalogoIndicadores } = useQuery<IndicadorCatalogo[]>({
+    queryKey: ['planificacion-indicadores', codigoArea],
+    queryFn: async () => (await api.get(`${BASE}/indicadores`, { params: { codigoArea } })).data,
     enabled: !!codigoArea,
   })
 
@@ -800,6 +1060,17 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         mapaCodigos.set(nombre.toLowerCase(), data.codigo)
       }
 
+      // Mismo patrón "obtener o crear" para KPIs -- cada nombre escrito se
+      // resuelve contra el área antes de guardar el plan.
+      const indicadoresConNombre = indicadores.filter((i) => i.nombreIndicador.trim())
+      const mapaIndicadores = new Map<string, number>()
+      for (const i of indicadoresConNombre) {
+        const nombre = i.nombreIndicador.trim()
+        if (mapaIndicadores.has(nombre.toLowerCase())) continue
+        const { data } = await api.post(`${BASE}/indicadores/obtener-o-crear`, { codigoArea, nombre, unidad: i.unidad.trim() || null })
+        mapaIndicadores.set(nombre.toLowerCase(), data.id)
+      }
+
       return (
         await api.post(`${BASE}/planes`, {
           codigoArea,
@@ -813,6 +1084,12 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
             codigoEtiqueta: mapaCodigos.get(b.nombreEtiqueta.trim().toLowerCase()) ?? '',
             descripcion: b.descripcion,
           })),
+          indicadores: indicadoresConNombre.map((i) => ({
+            idIndicador: mapaIndicadores.get(i.nombreIndicador.trim().toLowerCase()) ?? 0,
+            meta: i.meta.trim() ? Number(i.meta) : null,
+            real: i.real.trim() ? Number(i.real) : null,
+            comentario: i.comentario.trim() || null,
+          })),
         })
       ).data as PlanSemanal
     },
@@ -821,12 +1098,28 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
       queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
       queryClient.invalidateQueries({ queryKey: ['planificacion-semana'] })
       queryClient.invalidateQueries({ queryKey: ['planificacion-etiquetas', codigoArea] })
+      queryClient.invalidateQueries({ queryKey: ['planificacion-indicadores', codigoArea] })
     },
   })
 
   return (
     <div className="space-y-4">
       {resultado && <EstadoEnvioBanner plan={resultado} />}
+      {resultado?.estadoAprobacion === 'ConObservaciones' && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          <MessageSquare size={16} className="mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium">Gerencia devolvió esta semana con observaciones{resultado.aprobadoPor ? ` (${resultado.aprobadoPor})` : ''}:</p>
+            <p className="whitespace-pre-wrap">{resultado.notaGerencia}</p>
+          </div>
+        </div>
+      )}
+      {resultado?.estadoAprobacion === 'Aprobado' && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-700">
+          <Check size={16} />
+          <span>Aprobada por gerencia{resultado.aprobadoPor ? ` (${resultado.aprobadoPor})` : ''}.</span>
+        </div>
+      )}
 
       <div className="glass-card grid grid-cols-1 gap-3 rounded-xl p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="flex flex-col gap-1 text-sm">
@@ -930,6 +1223,15 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         )}
       </div>
 
+      {codigoArea && (
+        <IndicadoresEditor
+          indicadores={indicadores}
+          setIndicadores={setIndicadores}
+          catalogo={catalogoIndicadores ?? []}
+          disabled={bloqueada}
+        />
+      )}
+
       {modalBloque && (
         <ModalPortal>
           <BloqueModal
@@ -998,6 +1300,7 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
     { header: 'Responsable', accessor: (p) => p.nombreResponsable },
     { header: 'Bloques', accessor: (p) => p.cantidadBloques },
     { header: 'Estado', accessor: (p) => (p.bloqueada ? 'Bloqueada' : p.enviada ? (p.enviadaFueraDeTiempo ? 'Enviada tarde' : 'Enviada') : 'Borrador') },
+    { header: 'Revisión', accessor: (p) => p.estadoAprobacion },
     { header: 'Reportado por', accessor: (p) => p.creadoPor },
   ]
 
@@ -1032,6 +1335,7 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
             <Th>Responsable</Th>
             <Th>Bloques</Th>
             <Th>Estado</Th>
+            <Th>Revisión</Th>
             <Th>Reportado por</Th>
             <Th></Th>
           </tr>
@@ -1056,6 +1360,9 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
                   ) : (
                     <Badge variant="neutral">Borrador</Badge>
                   )}
+                </Td>
+                <Td>
+                  <EstadoAprobacionBadge estado={p.estadoAprobacion} />
                 </Td>
                 <Td>{p.creadoPor}</Td>
                 <Td>
@@ -1108,6 +1415,25 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
   // formulario con selector que había al final de la pantalla.
   const [bloqueNotaEditando, setBloqueNotaEditando] = useState<GrillaBloque | null>(null)
 
+  // Revisión real de gerencia -- aprobar o devolver con observaciones,
+  // solo si el plan ya fue enviado (ver PlanificacionService.AprobarAsync).
+  const [mostrarSolicitarCambios, setMostrarSolicitarCambios] = useState(false)
+  const [comentarioCambios, setComentarioCambios] = useState('')
+
+  const aprobar = useMutation({
+    mutationFn: async () => (await api.post(`${BASE}/planes/${id}/aprobar`)).data as PlanSemanal,
+    onSuccess: invalidar,
+  })
+
+  const solicitarCambios = useMutation({
+    mutationFn: async () => (await api.post(`${BASE}/planes/${id}/solicitar-cambios`, { comentario: comentarioCambios })).data as PlanSemanal,
+    onSuccess: (data) => {
+      invalidar(data)
+      setMostrarSolicitarCambios(false)
+      setComentarioCambios('')
+    },
+  })
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
@@ -1128,10 +1454,13 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
           <div className="space-y-4">
             <EstadoEnvioBanner plan={plan} />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-graphite-600">
-                Responsable: <span className="font-medium text-graphite-100">{plan.nombreResponsable}</span>
-                {plan.cargoResponsable && <> — {plan.cargoResponsable}</>}
-              </p>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-graphite-600">
+                <span>
+                  Responsable: <span className="font-medium text-graphite-100">{plan.nombreResponsable}</span>
+                  {plan.cargoResponsable && <> — {plan.cargoResponsable}</>}
+                </span>
+                <EstadoAprobacionBadge estado={plan.estadoAprobacion} />
+              </div>
               <BotonesExportarPlan
                 area={plan.area}
                 fechaInicioSemana={plan.fechaInicioSemana}
@@ -1140,6 +1469,81 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
                 bloques={plan.bloques}
               />
             </div>
+
+            {esGerencia && plan.enviada && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-black/[0.06] bg-black/[0.015] p-3">
+                <span className="text-sm text-graphite-600">Revisión de gerencia:</span>
+                <button
+                  type="button"
+                  disabled={aprobar.isPending}
+                  onClick={() => aprobar.mutate()}
+                  className="btn-hover flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  <Check size={13} /> Aprobar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSolicitarCambios((v) => !v)}
+                  className="btn-hover flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700"
+                >
+                  <MessageSquare size={13} /> Solicitar cambios
+                </button>
+              </div>
+            )}
+            {mostrarSolicitarCambios && (
+              <div className="rounded-lg border border-red-300 bg-red-50 p-3">
+                <textarea
+                  autoFocus
+                  value={comentarioCambios}
+                  onChange={(e) => setComentarioCambios(e.target.value)}
+                  className={`${INPUT_CLASS} min-h-[70px] w-full`}
+                  placeholder="Qué hay que corregir antes de aprobar…"
+                />
+                {solicitarCambios.isError && <p className="mt-1 text-xs text-red-700">{mensajeError(solicitarCambios.error)}</p>}
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => setMostrarSolicitarCambios(false)} className="rounded-lg px-3 py-1.5 text-xs font-medium text-graphite-600 hover:bg-black/[0.03]">
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!comentarioCambios.trim() || solicitarCambios.isPending}
+                    onClick={() => solicitarCambios.mutate()}
+                    className="btn-hover rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {solicitarCambios.isPending ? 'Enviando…' : 'Devolver con observaciones'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {plan.indicadores.length > 0 && (
+              <div className="rounded-xl border border-black/[0.06] p-4">
+                <p className="mb-2 text-sm font-medium text-graphite-100">KPIs de la semana</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-graphite-600">
+                        <th className="pb-1.5 pr-3">KPI</th>
+                        <th className="pb-1.5 pr-3">Meta</th>
+                        <th className="pb-1.5 pr-3">Real</th>
+                        <th className="pb-1.5">Comentario</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plan.indicadores.map((i) => (
+                        <tr key={i.id} className="border-t border-black/[0.04]">
+                          <td className="py-1.5 pr-3 font-medium text-graphite-100">{i.nombre}</td>
+                          <td className="py-1.5 pr-3">{i.meta ?? '—'} {i.unidad}</td>
+                          <td className="py-1.5 pr-3">{i.real ?? '—'} {i.unidad}</td>
+                          <td className="py-1.5 text-graphite-600">{i.comentario || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <GrillaSemanal
               bloques={plan.bloques}
               onDobleClickBloque={esGerencia ? (b) => setBloqueNotaEditando(b) : undefined}

@@ -22,6 +22,7 @@ public class PlanSemanal
     public string CargoResponsable { get; set; } = string.Empty;
 
     public ICollection<PlanSemanalBloque> Bloques { get; set; } = new List<PlanSemanalBloque>();
+    public ICollection<PlanSemanalIndicador> Indicadores { get; set; } = new List<PlanSemanalIndicador>();
 
     // Envío real con corte los viernes 17:00 -- ver PlanificacionService
     // para la lógica completa de bloqueo (antes del corte, editable
@@ -35,6 +36,14 @@ public class PlanSemanal
 
     /// <summary>Nota general de gerencia sobre toda la semana -- ver también PlanSemanalBloque.NotaGerencia para notas puntuales por hora.</summary>
     public string? NotaGerencia { get; set; }
+
+    // Revisión real de gerencia -- distinta del envío (Enviada), ver
+    // EstadoAprobacionPlan. Vuelve a Pendiente automáticamente si el área
+    // reguarda el plan después de una revisión ya hecha (ver
+    // PlanificacionService.GuardarAsync).
+    public EstadoAprobacionPlan EstadoAprobacion { get; set; } = EstadoAprobacionPlan.Pendiente;
+    public string? AprobadoPor { get; set; }
+    public DateTimeOffset? FechaAprobacion { get; set; }
 
     public DateTimeOffset CreadoEn { get; set; }
     public string CreadoPor { get; set; } = string.Empty;

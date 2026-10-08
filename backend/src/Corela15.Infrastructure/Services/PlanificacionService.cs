@@ -107,8 +107,17 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
                 throw new EtiquetaPlanificacionInvalidaException(b.CodigoEtiqueta);
         }
 
+        foreach (var i in request.Indicadores)
+        {
+            var indicadorValido = await db.Indicadores
+                .AnyAsync(x => x.Id == i.IdIndicador && x.CodigoArea == request.CodigoArea && x.Activo, cancellationToken);
+            if (!indicadorValido)
+                throw new IndicadorPlanificacionInvalidoException(i.IdIndicador);
+        }
+
         var existente = await db.PlanesSemanales
             .Include(p => p.Bloques)
+            .Include(p => p.Indicadores)
             .FirstOrDefaultAsync(p => p.CodigoArea == request.CodigoArea && p.FechaInicioSemana == request.FechaInicioSemana, cancellationToken);
 
         PlanSemanal plan;
@@ -152,6 +161,19 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             plan.ModificadoEn = DateTimeOffset.UtcNow;
             plan.ModificadoPor = request.RegistradoPor;
             db.PlanesSemanalesBloques.RemoveRange(existente.Bloques);
+            db.PlanesSemanalesIndicadores.RemoveRange(existente.Indicadores);
+
+            // El contenido cambió -- cualquier revisión de gerencia ya
+            // hecha (Aprobado/ConObservaciones) queda superada, vuelve a
+            // Pendiente sola. La NotaGerencia general se conserva tal
+            // cual (es el registro histórico de la observación, no se
+            // borra), solo cambia el estado de la revisión.
+            if (plan.EstadoAprobacion != EstadoAprobacionPlan.Pendiente)
+            {
+                plan.EstadoAprobacion = EstadoAprobacionPlan.Pendiente;
+                plan.AprobadoPor = null;
+                plan.FechaAprobacion = null;
+            }
         }
 
         foreach (var b in request.Bloques)
@@ -165,6 +187,19 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
                 HoraFin = b.HoraFin,
                 CodigoEtiqueta = b.CodigoEtiqueta,
                 Descripcion = b.Descripcion,
+            });
+        }
+
+        foreach (var i in request.Indicadores)
+        {
+            db.PlanesSemanalesIndicadores.Add(new PlanSemanalIndicador
+            {
+                Id = Guid.NewGuid(),
+                IdPlanSemanal = plan.Id,
+                IdIndicador = i.IdIndicador,
+                Meta = i.Meta,
+                Real = i.Real,
+                Comentario = string.IsNullOrWhiteSpace(i.Comentario) ? null : i.Comentario.Trim(),
             });
         }
 
@@ -230,7 +265,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             {
                 p.Id, p.CodigoArea, Area = p.Area.Nombre, p.FechaInicioSemana,
                 p.NombreResponsable, CantidadBloques = p.Bloques.Count,
-                p.Enviada, p.EnviadaFueraDeTiempo,
+                p.Enviada, p.EnviadaFueraDeTiempo, p.EstadoAprobacion,
                 p.CreadoEn, p.CreadoPor,
             })
             .ToListAsync(cancellationToken);
@@ -238,6 +273,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return planes.Select(p => new PlanSemanalListItemDto(
             p.Id, p.CodigoArea, p.Area, p.FechaInicioSemana, p.NombreResponsable, p.CantidadBloques,
             p.Enviada, p.EnviadaFueraDeTiempo, EstaBloqueada(p.Enviada, p.FechaInicioSemana),
+            p.EstadoAprobacion.ToString(),
             p.CreadoEn, p.CreadoPor)).ToList();
     }
 
@@ -270,6 +306,65 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return await MapearDtoAsync(bloque.IdPlanSemanal, cancellationToken);
     }
 
+    public async Task<PlanSemanalDto> AprobarAsync(Guid idPlan, string usuarioActual, CancellationToken cancellationToken = default)
+    {
+        var plan = await db.PlanesSemanales.FirstOrDefaultAsync(p => p.Id == idPlan, cancellationToken)
+            ?? throw new PlanSemanalNoExisteException(idPlan);
+        if (!plan.Enviada)
+            throw new PlanSemanalNoEnviadoException();
+
+        plan.EstadoAprobacion = EstadoAprobacionPlan.Aprobado;
+        plan.AprobadoPor = usuarioActual;
+        plan.FechaAprobacion = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        return await MapearDtoAsync(idPlan, cancellationToken);
+    }
+
+    public async Task<PlanSemanalDto> SolicitarCambiosAsync(Guid idPlan, string usuarioActual, string comentario, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(comentario))
+            throw new ComentarioObligatorioException();
+
+        var plan = await db.PlanesSemanales.FirstOrDefaultAsync(p => p.Id == idPlan, cancellationToken)
+            ?? throw new PlanSemanalNoExisteException(idPlan);
+        if (!plan.Enviada)
+            throw new PlanSemanalNoEnviadoException();
+
+        plan.EstadoAprobacion = EstadoAprobacionPlan.ConObservaciones;
+        plan.AprobadoPor = usuarioActual;
+        plan.FechaAprobacion = DateTimeOffset.UtcNow;
+        plan.NotaGerencia = comentario.Trim();
+        await db.SaveChangesAsync(cancellationToken);
+        return await MapearDtoAsync(idPlan, cancellationToken);
+    }
+
+    public async Task<IndicadorDto> ObtenerOCrearIndicadorAsync(string codigoArea, string nombre, string? unidad, CancellationToken cancellationToken = default)
+    {
+        var nombreLimpio = nombre.Trim();
+        if (string.IsNullOrWhiteSpace(nombreLimpio))
+            throw new BloqueHorarioInvalidoException("El nombre del indicador no puede estar vacío.");
+
+        var existente = await db.Indicadores
+            .FirstOrDefaultAsync(i => i.CodigoArea == codigoArea && EF.Functions.ILike(i.Nombre, nombreLimpio), cancellationToken);
+        if (existente is not null)
+            return new IndicadorDto(existente.Id, existente.CodigoArea, existente.Nombre, existente.Unidad);
+
+        if (!await db.AreasPlanificacion.AnyAsync(a => a.Codigo == codigoArea && a.Activo, cancellationToken))
+            throw new AreaPlanificacionInvalidaException(codigoArea);
+
+        var indicador = new Indicador
+        {
+            CodigoArea = codigoArea,
+            Nombre = nombreLimpio,
+            Unidad = string.IsNullOrWhiteSpace(unidad) ? null : unidad.Trim(),
+            Activo = true,
+        };
+        db.Indicadores.Add(indicador);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new IndicadorDto(indicador.Id, indicador.CodigoArea, indicador.Nombre, indicador.Unidad);
+    }
+
     private async Task ValidarPerteneceAlAreaAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken)
     {
         var areaUsuario = await db.Usuarios
@@ -293,6 +388,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         var plan = await db.PlanesSemanales
             .Include(p => p.Area)
             .Include(p => p.Bloques).ThenInclude(b => b.Etiqueta)
+            .Include(p => p.Indicadores).ThenInclude(i => i.Indicador)
             .FirstAsync(p => p.Id == idPlan, cancellationToken);
 
         var bloques = plan.Bloques
@@ -300,12 +396,18 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             .Select(b => new BloqueDto(b.Id, b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Etiqueta.Nombre, b.Etiqueta.ColorHex, b.Descripcion, b.NotaGerencia))
             .ToList();
 
+        var indicadores = plan.Indicadores
+            .OrderBy(i => i.Indicador.Nombre)
+            .Select(i => new IndicadorSemanalDto(i.Id, i.IdIndicador, i.Indicador.Nombre, i.Indicador.Unidad, i.Meta, i.Real, i.Comentario))
+            .ToList();
+
         return new PlanSemanalDto(
             plan.Id, plan.CodigoArea, plan.Area.Nombre, plan.FechaInicioSemana,
             plan.NombreResponsable, plan.CargoResponsable,
-            bloques,
+            bloques, indicadores,
             plan.Enviada, plan.FechaEnvio, plan.EnviadaFueraDeTiempo, plan.EnviadaPor,
-            plan.NotaGerencia, EstaBloqueada(plan), FechaLimiteEnvio(plan.FechaInicioSemana),
+            plan.NotaGerencia, plan.EstadoAprobacion.ToString(), plan.AprobadoPor, plan.FechaAprobacion,
+            EstaBloqueada(plan), FechaLimiteEnvio(plan.FechaInicioSemana),
             plan.CreadoEn, plan.CreadoPor, plan.ModificadoEn);
     }
 }

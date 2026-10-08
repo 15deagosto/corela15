@@ -18,6 +18,12 @@ namespace Corela15.Application.Planificacion;
 /// - Después del corte, si ya estaba enviada: bloqueada por completo.
 /// - Después del corte, si nunca se envió: se permite un único envío
 ///   tardío, marcado explícitamente como fuera de tiempo.
+///
+/// Cada plan lleva, además de los bloques de horario, KPIs reales por
+/// área (meta vs. real de la semana, ver Indicador/PlanSemanalIndicador)
+/// y un estado de revisión de gerencia (EstadoAprobacionPlan) separado
+/// del envío -- gerencia aprueba o devuelve con observaciones un plan
+/// ya enviado; si el área lo reguarda después, vuelve a Pendiente solo.
 /// </summary>
 public interface IPlanificacionService
 {
@@ -47,6 +53,26 @@ public interface IPlanificacionService
     Task<PlanSemanalDto> GuardarNotaBloqueAsync(Guid idBloque, string? nota, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Solo gerencia -- aprueba el plan tal como está hoy. Exige que el
+    /// área ya lo haya enviado (aprobar un borrador no tiene sentido real).
+    /// </summary>
+    Task<PlanSemanalDto> AprobarAsync(Guid idPlan, string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Solo gerencia -- devuelve el plan con observaciones (comentario
+    /// obligatorio, se guarda también como NotaGerencia general). Mismo
+    /// requisito de envío previo que AprobarAsync.
+    /// </summary>
+    Task<PlanSemanalDto> SolicitarCambiosAsync(Guid idPlan, string usuarioActual, string comentario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Combo editable real para KPIs, mismo patrón que
+    /// ObtenerOCrearEtiquetaAsync: si ya existe un indicador con ese
+    /// nombre en el área, lo devuelve; si no, lo crea en el momento.
+    /// </summary>
+    Task<IndicadorDto> ObtenerOCrearIndicadorAsync(string codigoArea, string nombre, string? unidad, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Combo editable real: si ya existe una etiqueta con ese nombre en
     /// esa área, la devuelve tal cual (mismo color de siempre). Si no
     /// existe, la crea en el momento -- código autogenerado real, color
@@ -74,30 +100,40 @@ public record BloqueRequest(
     string CodigoEtiqueta,
     string Descripcion);
 
+public record IndicadorRequest(int IdIndicador, decimal? Meta, decimal? Real, string? Comentario);
+
 public record GuardarPlanSemanalRequest(
     string CodigoArea,
     DateOnly FechaInicioSemana,
     string NombreResponsable,
     string CargoResponsable,
     IReadOnlyList<BloqueRequest> Bloques,
+    IReadOnlyList<IndicadorRequest> Indicadores,
     string RegistradoPor);
 
 public record ListarPlanesFiltro(string? CodigoArea, DateOnly? Desde, DateOnly? Hasta, string UsuarioActual, bool EsGerencia);
 
 public record BloqueDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Etiqueta, string ColorHex, string Descripcion, string? NotaGerencia);
 
+public record IndicadorDto(int Id, string CodigoArea, string Nombre, string? Unidad);
+
+public record IndicadorSemanalDto(Guid Id, int IdIndicador, string Nombre, string? Unidad, decimal? Meta, decimal? Real, string? Comentario);
+
 public record PlanSemanalDto(
     Guid Id, string CodigoArea, string Area, DateOnly FechaInicioSemana,
     string NombreResponsable, string CargoResponsable,
     IReadOnlyList<BloqueDto> Bloques,
+    IReadOnlyList<IndicadorSemanalDto> Indicadores,
     bool Enviada, DateTimeOffset? FechaEnvio, bool EnviadaFueraDeTiempo, string? EnviadaPor,
-    string? NotaGerencia, bool Bloqueada, DateTimeOffset FechaLimiteEnvio,
+    string? NotaGerencia, string EstadoAprobacion, string? AprobadoPor, DateTimeOffset? FechaAprobacion,
+    bool Bloqueada, DateTimeOffset FechaLimiteEnvio,
     DateTimeOffset CreadoEn, string CreadoPor, DateTimeOffset? ModificadoEn);
 
 public record PlanSemanalListItemDto(
     Guid Id, string CodigoArea, string Area, DateOnly FechaInicioSemana,
     string NombreResponsable, int CantidadBloques,
     bool Enviada, bool EnviadaFueraDeTiempo, bool Bloqueada,
+    string EstadoAprobacion,
     DateTimeOffset CreadoEn, string CreadoPor);
 
 public class AreaPlanificacionInvalidaException(string codigo)
@@ -126,3 +162,12 @@ public class PlanSemanalConNotaGerenciaException()
 
 public class UsuarioSinAreaPlanificacionException()
     : ReglaDeNegocioException("Tu usuario no tiene un área de planificación asignada -- pedile a un administrador que te la configure en Usuarios y roles");
+
+public class IndicadorPlanificacionInvalidoException(int idIndicador)
+    : ReglaDeNegocioException($"El indicador {idIndicador} no existe, no está activo, o no pertenece a esta área");
+
+public class PlanSemanalNoEnviadoException()
+    : ReglaDeNegocioException("Gerencia solo puede aprobar u observar un plan que el área ya envió");
+
+public class ComentarioObligatorioException()
+    : SolicitudInvalidaException("El comentario es obligatorio para solicitar cambios");

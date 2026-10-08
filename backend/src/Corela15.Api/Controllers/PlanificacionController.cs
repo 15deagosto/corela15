@@ -8,10 +8,13 @@ namespace Corela15.Api.Controllers;
 
 public record BloqueBody(int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Descripcion);
 
+public record IndicadorBody(int IdIndicador, decimal? Meta, decimal? Real, string? Comentario);
+
 public record GuardarPlanBody(
     string CodigoArea, DateOnly FechaInicioSemana,
     string NombreResponsable, string CargoResponsable,
-    IReadOnlyList<BloqueBody> Bloques);
+    IReadOnlyList<BloqueBody> Bloques,
+    IReadOnlyList<IndicadorBody>? Indicadores);
 
 /// <summary>
 /// Planificación semanal real de cada área -- ver <see cref="IPlanificacionService"/>
@@ -31,6 +34,7 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
         var resultado = await service.GuardarAsync(new GuardarPlanSemanalRequest(
             body.CodigoArea, body.FechaInicioSemana, body.NombreResponsable, body.CargoResponsable,
             body.Bloques.Select(b => new BloqueRequest(b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Descripcion)).ToList(),
+            (body.Indicadores ?? []).Select(i => new IndicadorRequest(i.IdIndicador, i.Meta, i.Real, i.Comentario)).ToList(),
             User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
     }
@@ -64,6 +68,37 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     [Authorize(Policy = "Menu:planificacion-gerencia")]
     public async Task<ActionResult<PlanSemanalDto>> GuardarNotaBloque(Guid idBloque, NotaBody body, CancellationToken cancellationToken)
         => Ok(await service.GuardarNotaBloqueAsync(idBloque, body.Nota, cancellationToken));
+
+    /// <summary>Solo gerencia -- aprueba el plan tal como está (exige que ya esté enviado).</summary>
+    [HttpPost("planes/{id:guid}/aprobar")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<PlanSemanalDto>> Aprobar(Guid id, CancellationToken cancellationToken)
+        => Ok(await service.AprobarAsync(id, User.Identity!.Name!, cancellationToken));
+
+    public record SolicitarCambiosBody(string Comentario);
+
+    /// <summary>Solo gerencia -- devuelve el plan con observaciones (comentario obligatorio).</summary>
+    [HttpPost("planes/{id:guid}/solicitar-cambios")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<PlanSemanalDto>> SolicitarCambios(Guid id, SolicitarCambiosBody body, CancellationToken cancellationToken)
+        => Ok(await service.SolicitarCambiosAsync(id, User.Identity!.Name!, body.Comentario, cancellationToken));
+
+    [HttpGet("indicadores")]
+    public async Task<ActionResult<IReadOnlyList<object>>> Indicadores([FromQuery] string? codigoArea, CancellationToken cancellationToken)
+    {
+        var query = db.Indicadores.Where(i => i.Activo);
+        if (!string.IsNullOrWhiteSpace(codigoArea))
+            query = query.Where(i => i.CodigoArea == codigoArea);
+
+        return Ok(await query.OrderBy(i => i.Nombre).Select(i => new { i.Id, i.CodigoArea, i.Nombre, i.Unidad }).ToListAsync(cancellationToken));
+    }
+
+    public record ObtenerOCrearIndicadorBody(string CodigoArea, string Nombre, string? Unidad);
+
+    /// <summary>Combo editable real para KPIs -- ver <see cref="IPlanificacionService.ObtenerOCrearIndicadorAsync"/>.</summary>
+    [HttpPost("indicadores/obtener-o-crear")]
+    public async Task<ActionResult<IndicadorDto>> ObtenerOCrearIndicador(ObtenerOCrearIndicadorBody body, CancellationToken cancellationToken)
+        => Ok(await service.ObtenerOCrearIndicadorAsync(body.CodigoArea, body.Nombre, body.Unidad, cancellationToken));
 
     [HttpGet("areas")]
     public async Task<ActionResult<IReadOnlyList<object>>> Areas(CancellationToken cancellationToken)

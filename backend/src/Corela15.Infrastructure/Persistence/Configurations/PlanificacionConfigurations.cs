@@ -45,6 +45,8 @@ public class PlanSemanalConfiguration : IEntityTypeConfiguration<PlanSemanal>
         b.Property(x => x.ModificadoPor).HasMaxLength(100);
         b.Property(x => x.EnviadaPor).HasMaxLength(100);
         b.Property(x => x.NotaGerencia).HasMaxLength(2000);
+        b.Property(x => x.EstadoAprobacion).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.AprobadoPor).HasMaxLength(100);
 
         b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
 
@@ -69,5 +71,22 @@ public class PlanSemanalBloqueConfiguration : IEntityTypeConfiguration<PlanSeman
         b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.CodigoEtiqueta).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.IdPlanSemanal);
+    }
+}
+
+public class PlanSemanalIndicadorConfiguration : IEntityTypeConfiguration<PlanSemanalIndicador>
+{
+    public void Configure(EntityTypeBuilder<PlanSemanalIndicador> b)
+    {
+        b.ToTable("plan_semanal_indicador", "planificacion");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Meta).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Real).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Comentario).HasMaxLength(500);
+
+        b.HasOne(x => x.PlanSemanal).WithMany(x => x.Indicadores).HasForeignKey(x => x.IdPlanSemanal).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Indicador).WithMany().HasForeignKey(x => x.IdIndicador).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => new { x.IdPlanSemanal, x.IdIndicador }).IsUnique();
     }
 }
