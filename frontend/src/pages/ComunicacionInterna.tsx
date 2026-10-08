@@ -705,7 +705,14 @@ function ReenviarModal({ mensaje, canales, onClose }: { mensaje: Mensaje; canale
 
 export function ComunicacionInterna() {
   const queryClient = useQueryClient()
-  const { sesion } = useAuth()
+  const { sesion, tieneOpcion } = useAuth()
+  // Un usuario restringido (ej. Cajas) solo participa en los canales a los
+  // que ya lo agregaron -- nunca inicia una conversación nueva por su
+  // cuenta (crear canal, mensaje directo, buscar personas, descubrir
+  // canales públicos). El backend ya rechaza estos endpoints sin esta
+  // opción (403) -- acá se oculta la UI para que ni siquiera aparezca el
+  // botón, no solo para que falle si lo intenta.
+  const puedeIniciarConversaciones = tieneOpcion('comunicacion-interna.iniciar-conversaciones')
   const [canalSeleccionado, setCanalSeleccionado] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
   const [archivos, setArchivos] = useState<File[]>([])
@@ -832,7 +839,7 @@ export function ComunicacionInterna() {
   const { data: usuariosBusqueda } = useQuery<UsuarioParaChat[]>({
     queryKey: ['comunicacion-buscar-usuarios', busquedaCanalLimpia],
     queryFn: async () => (await api.get('/api/comunicacion/usuarios/buscar', { params: { q: busquedaCanalLimpia } })).data,
-    enabled: busquedaCanalLimpia.length >= 2,
+    enabled: busquedaCanalLimpia.length >= 2 && puedeIniciarConversaciones,
   })
 
   const abrirPanel = (panel: 'canal' | 'directo' | 'descubrir') => {
@@ -857,10 +864,11 @@ export function ComunicacionInterna() {
               <input
                 value={busquedaCanal}
                 onChange={(e) => setBusquedaCanal(e.target.value)}
-                placeholder="Buscar conversación o persona…"
+                placeholder={puedeIniciarConversaciones ? 'Buscar conversación o persona…' : 'Buscar conversación…'}
                 className="w-full rounded-full border border-black/[0.08] bg-white px-3.5 py-1.5 text-xs text-graphite-100 outline-none focus:border-gold-500/50"
               />
             </div>
+            {puedeIniciarConversaciones && (
             <div className="relative">
               <button
                 type="button"
@@ -887,13 +895,18 @@ export function ComunicacionInterna() {
                 </>
               )}
             </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {canales?.length === 0 && (
               <div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
                 <MessagesSquare size={28} className="text-graphite-300" />
-                <p className="text-xs text-graphite-600">Todavía no tenés conversaciones — tocá "+" para empezar una.</p>
+                <p className="text-xs text-graphite-600">
+                  {puedeIniciarConversaciones
+                    ? 'Todavía no tenés conversaciones — tocá "+" para empezar una.'
+                    : 'Todavía no te agregaron a ningún canal. Pedile a un administrador que te agregue.'}
+                </p>
               </div>
             )}
             {canales && canales.length > 0 && canalesFiltrados.length === 0 && busquedaCanalLimpia.length < 2 && (

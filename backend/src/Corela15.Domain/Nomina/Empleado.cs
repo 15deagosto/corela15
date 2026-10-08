@@ -49,4 +49,15 @@ public class Empleado
     /// fuente real (el rol de pagos).
     /// </summary>
     public decimal? SueldoActual { get; set; }
+
+    /// <summary>
+    /// ID real de este empleado en NOMINA.EMPLEADO de Softbank -- clave
+    /// real para la sincronización idempotente (<see cref="Corela15.
+    /// Application.Nomina.IEmpleadoSyncService"/>), mismo criterio ya
+    /// usado en `Usuario.CodigoUsuarioSoftbank`: nunca se usa como PK acá
+    /// (Corela15 sigue usando Guid propio), solo para volver a encontrar
+    /// el mismo empleado real en cada corrida de la sincronización sin
+    /// duplicarlo.
+    /// </summary>
+    public int? CodigoEmpleadoSoftbank { get; set; }
 }

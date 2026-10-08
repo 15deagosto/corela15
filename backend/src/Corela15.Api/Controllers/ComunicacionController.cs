@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Corela15.Api.Autorizacion;
 using Corela15.Api.Idempotencia;
 using Corela15.Application.Comunicacion;
 using Microsoft.AspNetCore.Authorization;
@@ -38,12 +39,16 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     // Autoservicio real: cualquier canal de grupo activo, marcando cuáles
     // ya integra el usuario — para poder unirse con un clic a uno que no
     // creó él (ej. "Cajas"/"Balcón de Servicio", sembrados desde el día
-    // uno, o uno nuevo que armó otra persona).
+    // uno, o uno nuevo que armó otra persona). Gateado por la Opción --
+    // un usuario restringido (ej. Cajas) no debe ver ni siquiera qué otros
+    // canales existen, solo los que ya le agregaron.
     [HttpGet("canales/descubrir")]
+    [RequireOpcion("comunicacion-interna.iniciar-conversaciones")]
     public async Task<ActionResult<IReadOnlyList<CanalDescubribleDto>>> Descubrir(CancellationToken cancellationToken) =>
         Ok(await service.ListarCanalesDescubriblesAsync(IdUsuarioActual(), cancellationToken));
 
     [HttpPost("canales")]
+    [RequireOpcion("comunicacion-interna.iniciar-conversaciones")]
     public async Task<ActionResult<CanalDto>> CrearCanal([FromBody] CrearCanalBody body, CancellationToken cancellationToken)
     {
         var resultado = await service.CrearCanalAsync(
@@ -53,6 +58,7 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     }
 
     [HttpPost("directo/{idUsuario:guid}")]
+    [RequireOpcion("comunicacion-interna.iniciar-conversaciones")]
     public async Task<ActionResult<CanalDto>> ObtenerODirecto(Guid idUsuario, CancellationToken cancellationToken) =>
         Ok(await service.ObtenerOCrearDirectoAsync(IdUsuarioActual(), idUsuario, cancellationToken));
 
@@ -126,6 +132,7 @@ public class ComunicacionController(IComunicacionService service) : ControllerBa
     }
 
     [HttpGet("usuarios/buscar")]
+    [RequireOpcion("comunicacion-interna.iniciar-conversaciones")]
     public async Task<ActionResult<IReadOnlyList<UsuarioParaChatDto>>> BuscarUsuarios(
         [FromQuery] string? q, CancellationToken cancellationToken) =>
         Ok(await service.BuscarUsuariosAsync(q, IdUsuarioActual(), cancellationToken));

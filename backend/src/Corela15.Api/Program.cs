@@ -90,6 +90,8 @@ builder.Services.AddScoped<IPagoExternoService, PagoExternoService>();
 builder.Services.AddScoped<IRolPagosService, RolPagosService>();
 builder.Services.AddScoped<IBeneficioSocialService, BeneficioSocialService>();
 builder.Services.AddScoped<IEmpleadoService, EmpleadoService>();
+builder.Services.AddScoped<IEmpleadoSyncService, EmpleadoSyncService>();
+builder.Services.AddScoped<IRolPagosExcelImportService, RolPagosExcelImportService>();
 builder.Services.AddScoped<ISolicitudAccionPersonalService, SolicitudAccionPersonalService>();
 builder.Services.AddScoped<ICalculoImpuestoRentaService, CalculoImpuestoRentaService>();
 builder.Services.AddScoped<ICuentaPorCobrarService, CuentaPorCobrarService>();

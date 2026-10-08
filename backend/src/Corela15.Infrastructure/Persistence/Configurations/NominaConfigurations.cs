@@ -18,6 +18,7 @@ public class EmpleadoConfiguration : IEntityTypeConfiguration<Empleado>
         b.HasOne(x => x.Cargo).WithMany().HasForeignKey(x => x.IdCargo).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.IdPersona).IsUnique();
+        b.HasIndex(x => x.CodigoEmpleadoSoftbank).IsUnique().HasFilter("codigo_empleado_softbank IS NOT NULL");
     }
 }
 
@@ -192,6 +193,32 @@ public class RolPagosEmpleadoConfiguration : IEntityTypeConfiguration<RolPagosEm
         b.Property(x => x.Ingresos).HasColumnType("numeric(18,2)");
         b.Property(x => x.Egresos).HasColumnType("numeric(18,2)");
         b.Property(x => x.Total).HasColumnType("numeric(18,2)");
+        b.Property(x => x.SueldoAfiliado).HasColumnType("numeric(18,2)");
+        b.Property(x => x.SueldoProporcional).HasColumnType("numeric(18,2)");
+        b.Property(x => x.HorasSuplementarias50).HasColumnType("numeric(18,2)");
+        b.Property(x => x.HorasSuplementarias100).HasColumnType("numeric(18,2)");
+        b.Property(x => x.HorasExtraordinarias50).HasColumnType("numeric(18,2)");
+        b.Property(x => x.HorasExtraordinarias100).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Movilizacion).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Bonificaciones).HasColumnType("numeric(18,2)");
+        b.Property(x => x.ComponenteSalarial).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Comisiones).HasColumnType("numeric(18,2)");
+        b.Property(x => x.FondosReservaValorAcumulado).HasColumnType("numeric(18,2)");
+        b.Property(x => x.FondosReservaValorMensual).HasColumnType("numeric(18,2)");
+        b.Property(x => x.DecimoTerceroValorAcumulado).HasColumnType("numeric(18,2)");
+        b.Property(x => x.DecimoTerceroValorMensual).HasColumnType("numeric(18,2)");
+        b.Property(x => x.DecimoCuartoValorAcumulado).HasColumnType("numeric(18,2)");
+        b.Property(x => x.DecimoCuartoValorMensual).HasColumnType("numeric(18,2)");
+        b.Property(x => x.AporteIndividualIess).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Sanciones).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Atrasos).HasColumnType("numeric(18,2)");
+        b.Property(x => x.Descuentos).HasColumnType("numeric(18,2)");
+        b.Property(x => x.AnticipoSueldo).HasColumnType("numeric(18,2)");
+        b.Property(x => x.SubsidioIess).HasColumnType("numeric(18,2)");
+        b.Property(x => x.ActasFiniquito).HasColumnType("numeric(18,2)");
+        b.Property(x => x.PrestamoQuirografario).HasColumnType("numeric(18,2)");
+        b.Property(x => x.PrestamoHipotecario).HasColumnType("numeric(18,2)");
+        b.Property(x => x.RetencionRenta).HasColumnType("numeric(18,2)");
 
         b.HasOne(x => x.RolPagos).WithMany(x => x.Empleados).HasForeignKey(x => x.IdRolPagos)
             .OnDelete(DeleteBehavior.Cascade);

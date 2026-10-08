@@ -16,6 +16,8 @@ import {
   IdCard,
   FileText,
   Receipt,
+  RefreshCw,
+  Upload,
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -116,6 +118,128 @@ function badgeEstadoEmpleado(estado: string) {
 
 function lineaVacia(): LineaForm {
   return { idEmpleado: '', ingresos: '', egresos: '0', diasLaborados: '30' }
+}
+
+const HOJAS_ROL_EXCEL = ['ADMINISTRATIVOS', 'NEGOCIOS-OPERATIVOS', 'SERVICIOS PROFESIONALES']
+
+function ImportarRolExcelForm({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [hoja, setHoja] = useState(HOJAS_ROL_EXCEL[0])
+  const [periodo, setPeriodo] = useState('')
+  const [tipo, setTipo] = useState('Mensual')
+
+  const importar = useMutation({
+    mutationFn: async () => {
+      if (!archivo) throw new Error('Elegí el archivo')
+      const form = new FormData()
+      form.append('archivo', archivo)
+      form.append('hoja', hoja)
+      form.append('periodo', periodo)
+      form.append('tipo', tipo)
+      return (
+        await api.post('/api/nomina/roles-pagos/importar-excel', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      ).data as {
+        filasEnElExcel: number; cargados: number; omitidos: number
+        totalIngresos: number; totalEgresos: number; detalle: string[]
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nomina-roles-pagos'] }),
+  })
+
+  return (
+    <div className="glass-card animate-zoom-in mb-6 rounded-xl p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-medium text-graphite-100">Importar rol desde el Excel real</h3>
+        <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+          <X size={18} />
+        </button>
+      </div>
+      <p className="mb-4 text-xs text-graphite-500">
+        Subí el mismo archivo "Rol &lt;mes&gt; &lt;año&gt;.xlsx" tal cual lo usa Contabilidad — hace match por cédula
+        contra los empleados ya sincronizados (si una cédula no aparece, sincronizá empleados primero).
+      </p>
+
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!archivo || !periodo) return
+          importar.mutate()
+        }}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Archivo Excel (.xlsx)</span>
+            <input
+              required
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-sm text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Hoja</span>
+            <select
+              value={hoja}
+              onChange={(e) => setHoja(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+            >
+              {HOJAS_ROL_EXCEL.map((h) => (
+                <option key={h} value={h}>{h}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Período</span>
+            <input
+              required
+              type="date"
+              value={periodo}
+              onChange={(e) => setPeriodo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-graphite-600">Tipo</span>
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value)}
+              className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-graphite-100 outline-none focus:border-gold-500/50"
+            >
+              <option value="Mensual">Mensual</option>
+              <option value="Quincenal">Quincenal</option>
+            </select>
+          </label>
+        </div>
+
+        <button
+          type="submit"
+          disabled={importar.isPending}
+          className="btn-hover flex items-center justify-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          <Upload size={16} /> {importar.isPending ? 'Importando...' : 'Importar'}
+        </button>
+
+        {importar.isSuccess && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+            {importar.data.cargados} de {importar.data.filasEnElExcel} empleados cargados
+            {importar.data.omitidos > 0 && ` (${importar.data.omitidos} omitidos — revisá el detalle en consola)`}.
+            Total ingresos ${importar.data.totalIngresos.toFixed(2)} / egresos ${importar.data.totalEgresos.toFixed(2)}.
+          </div>
+        )}
+        {importar.isError && (
+          <p className="text-xs text-red-400">
+            {(importar.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+              ?? 'No se pudo importar el archivo.'}
+          </p>
+        )}
+      </form>
+    </div>
+  )
 }
 
 function GenerarRolPagosForm({ empleados, onClose }: { empleados: Empleado[]; onClose: () => void }) {
@@ -1525,6 +1649,7 @@ function GestionarEmpleadoModal({
 }
 
 function SeccionEmpleados() {
+  const queryClient = useQueryClient()
   const [mostrarForm, setMostrarForm] = useState(false)
   const [idGestionar, setIdGestionar] = useState<string | null>(null)
   const [recienCreado, setRecienCreado] = useState(false)
@@ -1532,6 +1657,13 @@ function SeccionEmpleados() {
   const { data: empleados, isLoading } = useQuery<Empleado[]>({
     queryKey: ['nomina-empleados'],
     queryFn: async () => (await api.get('/api/nomina/empleados')).data,
+  })
+
+  const sincronizar = useMutation({
+    mutationFn: async () => (await api.post('/api/nomina/empleados/sincronizar')).data as {
+      encontradosEnSoftbank: number; creados: number; actualizados: number; omitidos: number
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nomina-empleados'] }),
   })
 
   const { data: cargos } = useQuery<CargoItem[]>({
@@ -1548,7 +1680,27 @@ function SeccionEmpleados() {
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <button
+            type="button"
+            onClick={() => sincronizar.mutate()}
+            disabled={sincronizar.isPending}
+            className="btn-hover flex items-center gap-1.5 rounded-lg border border-graphite-700 px-3 py-2 text-sm font-medium text-graphite-300 hover:text-white disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={sincronizar.isPending ? 'animate-spin' : ''} />
+            {sincronizar.isPending ? 'Sincronizando...' : 'Sincronizar desde Softbank'}
+          </button>
+          {sincronizar.isSuccess && (
+            <p className="mt-1.5 text-xs text-graphite-400">
+              {sincronizar.data.encontradosEnSoftbank} colaboradores reales encontrados — {sincronizar.data.creados} nuevos,{' '}
+              {sincronizar.data.actualizados} actualizados, {sincronizar.data.omitidos} omitidos.
+            </p>
+          )}
+          {sincronizar.isError && (
+            <p className="mt-1.5 text-xs text-red-400">No se pudo sincronizar — revisá la conexión a Softbank.</p>
+          )}
+        </div>
         {!mostrarForm && (
           <button
             type="button"
@@ -2257,6 +2409,7 @@ function SeccionAccionPersonal() {
 
 export function Nomina() {
   const [mostrarForm, setMostrarForm] = useState(false)
+  const [mostrarImportar, setMostrarImportar] = useState(false)
   const [tab, setTab] = useState<'roles' | 'beneficios' | 'empleados' | 'accion-personal'>('roles')
 
   const { data: empleados } = useQuery<Empleado[]>({
@@ -2276,15 +2429,27 @@ export function Nomina() {
         title="Nómina"
         subtitle="Empleados, roles de pago y beneficios sociales"
         actions={
-          tab === 'roles' &&
-          !mostrarForm && (
-            <button
-              type="button"
-              onClick={() => setMostrarForm(true)}
-              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
-            >
-              <Plus size={16} /> Generar rol de pagos
-            </button>
+          tab === 'roles' && (
+            <div className="flex gap-2">
+              {!mostrarImportar && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarImportar(true)}
+                  className="btn-hover flex items-center gap-1.5 rounded-lg border border-graphite-700 px-3 py-2 text-sm font-medium text-graphite-300 hover:text-white"
+                >
+                  <Upload size={16} /> Importar desde Excel
+                </button>
+              )}
+              {!mostrarForm && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarForm(true)}
+                  className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-3 py-2 text-sm font-medium text-white"
+                >
+                  <Plus size={16} /> Generar rol de pagos
+                </button>
+              )}
+            </div>
           )
         }
       />
@@ -2332,6 +2497,7 @@ export function Nomina() {
 
       {tab === 'roles' && (
         <>
+          {mostrarImportar && <ImportarRolExcelForm onClose={() => setMostrarImportar(false)} />}
           {mostrarForm && empleados && <GenerarRolPagosForm empleados={empleados} onClose={() => setMostrarForm(false)} />}
 
           <TableContainer>

@@ -3,6 +3,7 @@ using System;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Corela15.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(Corela15DbContext))]
-    partial class Corela15DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917223919_Seguridad_OpcionesComunicacionInterna")]
+    partial class Seguridad_OpcionesComunicacionInterna
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -6463,10 +6466,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<int?>("CodigoEmpleadoSoftbank")
-                        .HasColumnType("integer")
-                        .HasColumnName("codigo_empleado_softbank");
-
                     b.Property<string>("Estado")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -6499,11 +6498,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_empleado");
-
-                    b.HasIndex("CodigoEmpleadoSoftbank")
-                        .IsUnique()
-                        .HasDatabaseName("ix_empleado_codigo_empleado_softbank")
-                        .HasFilter("codigo_empleado_softbank IS NOT NULL");
 
                     b.HasIndex("IdAgencia")
                         .HasDatabaseName("ix_empleado_id_agencia");
@@ -6939,65 +6933,9 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<decimal>("ActasFiniquito")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("actas_finiquito");
-
-                    b.Property<decimal>("AnticipoSueldo")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("anticipo_sueldo");
-
                     b.Property<bool>("Anulado")
                         .HasColumnType("boolean")
                         .HasColumnName("anulado");
-
-                    b.Property<decimal>("AporteIndividualIess")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("aporte_individual_iess");
-
-                    b.Property<decimal>("Atrasos")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("atrasos");
-
-                    b.Property<decimal>("Bonificaciones")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("bonificaciones");
-
-                    b.Property<decimal>("Comisiones")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("comisiones");
-
-                    b.Property<decimal>("ComponenteSalarial")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("componente_salarial");
-
-                    b.Property<bool>("DecimoCuartoAcumula")
-                        .HasColumnType("boolean")
-                        .HasColumnName("decimo_cuarto_acumula");
-
-                    b.Property<decimal>("DecimoCuartoValorAcumulado")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("decimo_cuarto_valor_acumulado");
-
-                    b.Property<decimal>("DecimoCuartoValorMensual")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("decimo_cuarto_valor_mensual");
-
-                    b.Property<bool>("DecimoTerceroAcumula")
-                        .HasColumnType("boolean")
-                        .HasColumnName("decimo_tercero_acumula");
-
-                    b.Property<decimal>("DecimoTerceroValorAcumulado")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("decimo_tercero_valor_acumulado");
-
-                    b.Property<decimal>("DecimoTerceroValorMensual")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("decimo_tercero_valor_mensual");
-
-                    b.Property<decimal>("Descuentos")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("descuentos");
 
                     b.Property<int>("DiasLaborados")
                         .HasColumnType("integer")
@@ -7006,34 +6944,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("Egresos")
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("egresos");
-
-                    b.Property<bool>("FondosReservaAcumula")
-                        .HasColumnType("boolean")
-                        .HasColumnName("fondos_reserva_acumula");
-
-                    b.Property<decimal>("FondosReservaValorAcumulado")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("fondos_reserva_valor_acumulado");
-
-                    b.Property<decimal>("FondosReservaValorMensual")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("fondos_reserva_valor_mensual");
-
-                    b.Property<decimal>("HorasExtraordinarias100")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("horas_extraordinarias100");
-
-                    b.Property<decimal>("HorasExtraordinarias50")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("horas_extraordinarias50");
-
-                    b.Property<decimal>("HorasSuplementarias100")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("horas_suplementarias100");
-
-                    b.Property<decimal>("HorasSuplementarias50")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("horas_suplementarias50");
 
                     b.Property<Guid>("IdEmpleado")
                         .HasColumnType("uuid")
@@ -7046,38 +6956,6 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("Ingresos")
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("ingresos");
-
-                    b.Property<decimal>("Movilizacion")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("movilizacion");
-
-                    b.Property<decimal>("PrestamoHipotecario")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("prestamo_hipotecario");
-
-                    b.Property<decimal>("PrestamoQuirografario")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("prestamo_quirografario");
-
-                    b.Property<decimal>("RetencionRenta")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("retencion_renta");
-
-                    b.Property<decimal>("Sanciones")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("sanciones");
-
-                    b.Property<decimal>("SubsidioIess")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("subsidio_iess");
-
-                    b.Property<decimal?>("SueldoAfiliado")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("sueldo_afiliado");
-
-                    b.Property<decimal?>("SueldoProporcional")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("sueldo_proporcional");
 
                     b.Property<decimal>("Total")
                         .HasColumnType("numeric(18,2)")

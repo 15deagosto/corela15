@@ -81,7 +81,8 @@ public class NominaController(
     Corela15DbContext db, IRolPagosService rolPagosService, IBeneficioSocialService beneficioSocialService,
     IEmpleadoService empleadoService, ISolicitudAccionPersonalService solicitudAccionPersonalService,
     ICalculoImpuestoRentaService calculoImpuestoRentaService,
-    Corela15.Application.Sujeto.ISocioService socioService, Corela15.Application.Sujeto.IDatosPersonaService datosPersonaService)
+    Corela15.Application.Sujeto.ISocioService socioService, Corela15.Application.Sujeto.IDatosPersonaService datosPersonaService,
+    IEmpleadoSyncService empleadoSyncService, IRolPagosExcelImportService rolPagosExcelImportService)
     : ControllerBase
 {
     [HttpGet("empleados")]
@@ -274,6 +275,32 @@ public class NominaController(
     {
         var resultado = await rolPagosService.GenerarAsync(request, cancellationToken);
         return Created($"/api/nomina/roles-pagos/{resultado.IdRolPagos}", resultado);
+    }
+
+    // Sincronización real de colaboradores desde Softbank + carga del rol
+    // de pagos tal cual el Excel real mensual de la cooperativa (ver
+    // IEmpleadoSyncService/IRolPagosExcelImportService).
+
+    [HttpPost("empleados/sincronizar")]
+    public async Task<ActionResult<SincronizacionEmpleadosResult>> SincronizarEmpleados(CancellationToken cancellationToken)
+    {
+        var resultado = await empleadoSyncService.SincronizarAsync(cancellationToken);
+        return Ok(resultado);
+    }
+
+    [HttpPost("roles-pagos/importar-excel")]
+    [RequestSizeLimit(20_000_000)]
+    public async Task<ActionResult<ImportacionRolPagosResult>> ImportarRolExcel(
+        IFormFile archivo, [FromForm] string hoja, [FromForm] DateOnly periodo, [FromForm] string tipo,
+        CancellationToken cancellationToken)
+    {
+        if (archivo.Length == 0) return BadRequest(new { detail = "El archivo está vacío." });
+
+        var registradoPor = User.Identity?.Name ?? "sistema";
+        await using var stream = archivo.OpenReadStream();
+        var resultado = await rolPagosExcelImportService.ImportarAsync(
+            stream, hoja, periodo, tipo, registradoPor, cancellationToken);
+        return Ok(resultado);
     }
 
     // Décimos, fondos de reserva y provisión de vacaciones (ver CLAUDE.md
