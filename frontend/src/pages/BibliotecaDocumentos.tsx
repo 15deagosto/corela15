@@ -150,9 +150,18 @@ function FolderTree({
 }) {
   const [colapsadas, setColapsadas] = useState<Set<string>>(new Set())
   const hijosPorPadre = useMemo(() => {
+    // Una carpeta compartida directo (ej. una subcarpeta puntual de la
+    // carpeta personal de otro usuario) puede llegar acá sin que su padre
+    // real esté en la lista -- el viewer tiene acceso a ella pero no al
+    // padre, caso real y esperado (ver AccesoDocumentalService, herencia
+    // nunca expone el árbol completo por encima). Tratarla como huérfana
+    // de su padre real (`idCarpetaPadre` ya no está en `idsVisibles`) y
+    // colgarla del nivel raíz en vez de perderla en silencio -- sin esto,
+    // el árbol nunca la mostraba aunque el backend sí la devolviera.
+    const idsVisibles = new Set(carpetas.map((c) => c.id))
     const mapa = new Map<string | null, CarpetaItem[]>()
     for (const c of carpetas) {
-      const clave = c.idCarpetaPadre
+      const clave = c.idCarpetaPadre && idsVisibles.has(c.idCarpetaPadre) ? c.idCarpetaPadre : null
       if (!mapa.has(clave)) mapa.set(clave, [])
       mapa.get(clave)!.push(c)
     }
