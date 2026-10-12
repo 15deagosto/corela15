@@ -65,8 +65,10 @@ interface MatrizDocumental {
 
 /**
  * ACL real por carpeta — "como compartir por red": sin fila acá, no se ve
- * nada de esa carpeta. "veTodo" (ADMINISTRADOR o biblioteca-documentos-
- * gerencia) ve/administra todo sin filas.
+ * nada de esa carpeta, ni siquiera siendo ADMINISTRADOR (pedido explícito
+ * del usuario: "cada usuario decide quién ve cada cosa"). Solo el menú
+ * dedicado `biblioteca-documentos-gerencia` (no otorgado a nadie por
+ * defecto) da "veTodo" real, para un futuro rol de auditoría documental.
  */
 interface MiAcceso {
   veTodo: boolean

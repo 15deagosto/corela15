@@ -51,8 +51,19 @@ public record OtorgarAccesoBody(Guid IdUsuario, string NivelAcceso);
 [Authorize(Policy = "Menu:biblioteca-documentos")]
 public class DocumentosController(IDocumentoService service, ICarpetaService carpetaService, IAccesoDocumentalService accesoService) : ControllerBase
 {
-    /// <summary>ADMINISTRADOR o el menú dedicado ven/administran TODAS las carpetas sin ACL — mismo patrón ya usado en Planificación (planificacion-gerencia).</summary>
-    private bool VeTodo => User.IsInRole("ADMINISTRADOR") || User.HasClaim("menu", "biblioteca-documentos-gerencia");
+    /// <summary>
+    /// Pedido explícito del usuario: "así yo sea admin no quiero poder ver
+    /// todos los datos de todos los usuarios... que cada usuario decida
+    /// quién ve cada cosa" -- ADMINISTRADOR ya NO tiene bypass automático
+    /// (a diferencia de Planificación, donde sí se mantiene esa excepción
+    /// real por pedido distinto del mismo usuario). Solo el menú dedicado
+    /// `biblioteca-documentos-gerencia` (no otorgado a ningún rol por
+    /// defecto desde esta decisión -- ver migración `Documentos_
+    /// QuitarBypassAdministrador`) da visibilidad total, para cuando en el
+    /// futuro se necesite un rol real de auditoría/cumplimiento
+    /// documental, asignado a propósito, nunca implícito por ser admin.
+    /// </summary>
+    private bool VeTodo => User.HasClaim("menu", "biblioteca-documentos-gerencia");
 
     private Guid IdUsuarioActual => Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")!.Value);
 
