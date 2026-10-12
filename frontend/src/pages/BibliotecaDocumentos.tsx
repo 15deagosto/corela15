@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2,
-  Folder, FolderPlus, ChevronRight, ChevronDown, Users,
+  Folder, FolderPlus, ChevronRight, ChevronDown, Users, Eye,
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -539,7 +539,15 @@ function NuevoDocumentoModal({
                 required
                 type="file"
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx"
-                onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  setArchivo(f)
+                  // Autocompleta el título real desde el nombre del archivo
+                  // -- solo si el campo sigue vacío, nunca pisa un título
+                  // que el usuario ya haya escrito a mano. Sigue siendo
+                  // editable después, es solo el punto de partida.
+                  if (f && !titulo.trim()) setTitulo(tituloDesdeNombreArchivo(f.name))
+                }}
                 className="text-xs text-graphite-600"
               />
             </label>
@@ -589,7 +597,19 @@ function NuevoDocumentoModal({
   )
 }
 
-type TabGestion = 'metadatos' | 'version'
+type TabGestion = 'metadatos' | 'version' | 'vista-previa'
+
+/** Nombre de archivo -> título real legible: sin extensión, guiones/guiones bajos como espacio, espacios dobles colapsados. Punto de partida editable, nunca se fuerza. */
+function tituloDesdeNombreArchivo(nombreArchivo: string): string {
+  const sinExtension = nombreArchivo.replace(/\.[^./]+$/, '')
+  return sinExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** true si el navegador puede mostrar este tipo de archivo inline (pdf/texto) -- el resto (doc/docx/xls/xlsx/ppt/pptx) no tiene vista previa real sin un conversor de oficina, que este core no tiene. */
+function tienePreviaReal(nombreArchivo: string): boolean {
+  const ext = nombreArchivo.split('.').pop()?.toLowerCase()
+  return ext === 'pdf' || ext === 'txt'
+}
 
 function GestionarDocumentoModal({
   documento,
@@ -609,7 +629,7 @@ function GestionarDocumentoModal({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<TabGestion>('metadatos')
+  const [tab, setTab] = useState<TabGestion>('vista-previa')
 
   const [titulo, setTitulo] = useState(documento.titulo)
   const [idCarpeta, setIdCarpeta] = useState(documento.idCarpeta)
@@ -688,6 +708,38 @@ function GestionarDocumentoModal({
     window.URL.revokeObjectURL(url)
   }
 
+  // Vista previa real: solo pdf/txt se pueden mostrar inline en el
+  // navegador sin un conversor de oficina (que este core no tiene) -- el
+  // resto siempre ofrece descarga directa, nunca un error silencioso.
+  const previaDisponible = tienePreviaReal(documento.nombreArchivoOriginal)
+  const esTexto = documento.nombreArchivoOriginal.toLowerCase().endsWith('.txt')
+  const [previaUrl, setPreviaUrl] = useState<string | null>(null)
+  const [previaTexto, setPreviaTexto] = useState<string | null>(null)
+  const [previaCargando, setPreviaCargando] = useState(false)
+  const [previaError, setPreviaError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (tab !== 'vista-previa' || !previaDisponible || previaUrl || previaTexto) return
+    let cancelado = false
+    setPreviaCargando(true)
+    setPreviaError(null)
+    api.get(`/api/biblioteca-documentos/${documento.id}/descargar`, { responseType: 'blob' })
+      .then((respuesta) => {
+        if (cancelado) return
+        if (esTexto) {
+          respuesta.data.text().then((texto: string) => !cancelado && setPreviaTexto(texto))
+        } else {
+          setPreviaUrl(window.URL.createObjectURL(new Blob([respuesta.data], { type: 'application/pdf' })))
+        }
+      })
+      .catch(() => !cancelado && setPreviaError('No se pudo cargar la vista previa.'))
+      .finally(() => !cancelado && setPreviaCargando(false))
+    return () => { cancelado = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  useEffect(() => () => { if (previaUrl) window.URL.revokeObjectURL(previaUrl) }, [previaUrl])
+
   return (
     <ModalPortal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -706,6 +758,15 @@ function GestionarDocumentoModal({
 
           <div className="flex flex-1 overflow-hidden">
             <div className="flex w-48 flex-shrink-0 flex-col gap-0.5 border-r border-black/[0.06] p-2">
+              <button
+                type="button"
+                onClick={() => setTab('vista-previa')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
+                  tab === 'vista-previa' ? 'bg-gold-500/10 text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
+                }`}
+              >
+                <Eye size={13} /> Vista previa
+              </button>
               <button
                 type="button"
                 onClick={() => setTab('metadatos')}
@@ -745,6 +806,36 @@ function GestionarDocumentoModal({
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
+              {tab === 'vista-previa' && (
+                <div className="flex h-full flex-col">
+                  {!previaDisponible ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                      <Library size={32} className="text-graphite-300" />
+                      <p className="text-sm text-graphite-600">
+                        No hay vista previa disponible para "{documento.nombreArchivoOriginal}" — este core no convierte
+                        documentos de Office a una vista en pantalla. Descargalo para verlo.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={descargar}
+                        className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-xs font-medium text-white"
+                      >
+                        <Download size={13} /> Descargar
+                      </button>
+                    </div>
+                  ) : previaCargando ? (
+                    <p className="p-4 text-center text-sm text-graphite-600">Cargando vista previa…</p>
+                  ) : previaError ? (
+                    <p className="p-4 text-center text-sm text-red-700">{previaError}</p>
+                  ) : previaTexto !== null ? (
+                    <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-xs text-graphite-100">
+                      {previaTexto}
+                    </pre>
+                  ) : previaUrl ? (
+                    <iframe src={previaUrl} title={documento.titulo} className="min-h-[60vh] flex-1 rounded-lg border border-black/[0.06]" />
+                  ) : null}
+                </div>
+              )}
               {tab === 'metadatos' && (
                 <fieldset disabled={!puedeEditar}>
                   {!puedeEditar && (

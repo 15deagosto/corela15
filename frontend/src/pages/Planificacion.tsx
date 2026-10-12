@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare, Pencil, Check, FileSpreadsheet, FileText, FileDown } from 'lucide-react'
+import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare, Pencil, Check, FileSpreadsheet, FileText, FileDown, Flag, ClipboardList } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { PageHeader } from '../components/PageHeader'
@@ -70,6 +70,7 @@ interface Bloque {
   horaFin: string
   codigoEtiqueta: string
   descripcion: string
+  idDisposicion: string | null
 }
 
 /** Estado del formulario -- guarda el NOMBRE escrito (combo editable), se resuelve a código real recién al guardar. */
@@ -79,6 +80,19 @@ interface BloqueEditor {
   horaFin: string
   nombreEtiqueta: string
   descripcion: string
+  idDisposicion: string | null
+}
+
+interface DisposicionGerencia {
+  id: string
+  titulo: string
+  descripcion: string | null
+  fechaLimite: string
+  estado: 'Abierta' | 'Cerrada'
+  areas: string[]
+  horasDedicadas: number
+  creadoEn: string
+  creadoPor: string
 }
 
 interface PlanSemanal {
@@ -88,7 +102,7 @@ interface PlanSemanal {
   fechaInicioSemana: string
   nombreResponsable: string
   cargoResponsable: string
-  bloques: (Bloque & { etiqueta: string; colorHex: string; notaGerencia: string | null })[]
+  bloques: (Bloque & { etiqueta: string; colorHex: string; notaGerencia: string | null; tituloDisposicion: string | null })[]
   indicadores: IndicadorSemanal[]
   enviada: boolean
   fechaEnvio: string | null
@@ -586,12 +600,15 @@ function BotonesExportarPlan({
 export function Planificacion() {
   const { tieneMenu } = useAuth()
   const esGerencia = tieneMenu('planificacion-gerencia')
-  const [tab, setTab] = useState<'editor' | 'historial'>('editor')
+  const [tab, setTab] = useState<'editor' | 'historial' | 'disposiciones'>('editor')
 
   const { data: areas } = useQuery<Catalogo[]>({
     queryKey: ['planificacion-areas'],
     queryFn: async () => (await api.get(`${BASE}/areas`)).data,
   })
+
+  const tabs = esGerencia ? (['editor', 'historial', 'disposiciones'] as const) : (['editor', 'historial'] as const)
+  const etiquetaTab = { editor: 'Nueva / editar semana', historial: 'Historial', disposiciones: 'Disposiciones de gerencia' }
 
   return (
     <div className="animate-fade-in">
@@ -606,7 +623,7 @@ export function Planificacion() {
       />
 
       <div className="mb-4 flex gap-1 border-b border-black/[0.06]">
-        {(['editor', 'historial'] as const).map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             type="button"
@@ -615,13 +632,149 @@ export function Planificacion() {
               tab === t ? 'border-gold-500 text-graphite-100' : 'border-transparent text-graphite-600 hover:text-graphite-100'
             }`}
           >
-            {t === 'editor' ? 'Nueva / editar semana' : 'Historial'}
+            {etiquetaTab[t]}
           </button>
         ))}
       </div>
 
       {tab === 'editor' && <SeccionEditor areas={areas ?? []} />}
       {tab === 'historial' && <SeccionHistorial areas={areas ?? []} esGerencia={esGerencia} />}
+      {tab === 'disposiciones' && esGerencia && <SeccionDisposiciones areas={areas ?? []} />}
+    </div>
+  )
+}
+
+function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
+  const queryClient = useQueryClient()
+  const [titulo, setTitulo] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [fechaLimite, setFechaLimite] = useState('')
+  const [codigosArea, setCodigosArea] = useState<string[]>([])
+
+  const { data: disposiciones, isLoading } = useQuery<DisposicionGerencia[]>({
+    queryKey: ['planificacion-disposiciones-gerencia'],
+    queryFn: async () => (await api.get(`${BASE}/disposiciones`)).data,
+  })
+
+  const crear = useMutation({
+    mutationFn: async () =>
+      (await api.post(`${BASE}/disposiciones`, { titulo, descripcion: descripcion || null, fechaLimite, codigosArea })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })
+      setTitulo('')
+      setDescripcion('')
+      setFechaLimite('')
+      setCodigosArea([])
+    },
+  })
+
+  const cerrar = useMutation({
+    mutationFn: async (id: string) => api.post(`${BASE}/disposiciones/${id}/cerrar`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] }),
+  })
+
+  const toggleArea = (codigo: string) =>
+    setCodigosArea((cs) => (cs.includes(codigo) ? cs.filter((c) => c !== codigo) : [...cs, codigo]))
+
+  return (
+    <div className="space-y-4">
+      <div className="glass-card rounded-xl p-4">
+        <h3 className="mb-1 font-medium text-graphite-100">Nueva disposición</h3>
+        <p className="mb-3 text-xs text-graphite-600">
+          Cada área asignada va a poder elegir, desde su propia planificación semanal, qué bloques de tiempo le dedica
+          — las horas reales dedicadas por todas las áreas se suman automáticamente acá abajo, sin que nadie lo reporte aparte.
+        </p>
+        <form
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!titulo.trim() || !fechaLimite || codigosArea.length === 0) return
+            crear.mutate()
+          }}
+        >
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <span className="text-xs font-medium uppercase text-graphite-600">Título</span>
+            <input required value={titulo} onChange={(e) => setTitulo(e.target.value)} className={INPUT_CLASS} placeholder="Ej. Entrega de informe de cumplimiento X" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <span className="text-xs font-medium uppercase text-graphite-600">Descripción (opcional)</span>
+            <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={`${INPUT_CLASS} min-h-[60px]`} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium uppercase text-graphite-600">Plazo (fecha límite)</span>
+            <input required type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} className={INPUT_CLASS} />
+          </label>
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium uppercase text-graphite-600">Áreas destinatarias</span>
+            <div className="flex flex-wrap gap-1.5">
+              {areas.map((a) => (
+                <button
+                  key={a.codigo}
+                  type="button"
+                  onClick={() => toggleArea(a.codigo)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    codigosArea.includes(a.codigo)
+                      ? 'border-gold-500 bg-gold-500/10 text-gold-300'
+                      : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
+                  }`}
+                >
+                  {a.nombre}
+                </button>
+              ))}
+            </div>
+          </div>
+          {crear.isError && <div className="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700 sm:col-span-2">{mensajeError(crear.error)}</div>}
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              disabled={!titulo.trim() || !fechaLimite || codigosArea.length === 0 || crear.isPending}
+              className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              <ClipboardList size={14} /> {crear.isPending ? 'Creando…' : 'Crear disposición'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="glass-card rounded-xl p-4">
+        <h3 className="mb-3 font-medium text-graphite-100">Disposiciones reales</h3>
+        {isLoading ? (
+          <p className="text-sm text-graphite-600">Cargando…</p>
+        ) : !disposiciones || disposiciones.length === 0 ? (
+          <p className="text-sm text-graphite-600">Sin disposiciones registradas todavía.</p>
+        ) : (
+          <div className="space-y-2">
+            {disposiciones.map((d) => (
+              <div key={d.id} className="rounded-lg border border-black/[0.06] p-3">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+                    <Flag size={13} /> {d.titulo}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={d.estado === 'Abierta' ? 'exito' : 'neutral'}>{d.estado === 'Abierta' ? 'Abierta' : 'Cerrada'}</Badge>
+                    {d.estado === 'Abierta' && (
+                      <button
+                        type="button"
+                        onClick={() => cerrar.mutate(d.id)}
+                        disabled={cerrar.isPending}
+                        className="text-xs font-medium text-graphite-600 hover:text-red-700 disabled:opacity-50"
+                      >
+                        Cerrar
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {d.descripcion && <p className="mb-2 text-xs text-graphite-600">{d.descripcion}</p>}
+                <div className="flex flex-wrap items-center gap-3 text-xs text-graphite-500">
+                  <span>Plazo: {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  <span>Áreas: {d.areas.map((codigo) => areas.find((a) => a.codigo === codigo)?.nombre ?? codigo).join(', ')}</span>
+                  <span className="font-medium text-gold-600">Horas dedicadas (todas las áreas): {d.horasDedicadas.toFixed(1)}h</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -632,6 +785,7 @@ interface BloqueModalDatos {
   horaFin: string
   nombreEtiqueta: string
   descripcion: string
+  idDisposicion: string | null
 }
 
 /**
@@ -642,12 +796,14 @@ interface BloqueModalDatos {
  * ya establecido en el resto del proyecto.
  */
 function BloqueModal({
-  datos, esNuevo, etiquetas, codigoArea, bloquesExistentes, onGuardar, onEliminar, onClose, onRenombrada,
+  datos, esNuevo, etiquetas, codigoArea, disposiciones, bloquesExistentes, onGuardar, onEliminar, onClose, onRenombrada,
 }: {
   datos: BloqueModalDatos
   esNuevo: boolean
   etiquetas: Catalogo[]
   codigoArea: string
+  /** Disposiciones de gerencia reales asignadas a esta área, todavía abiertas -- para poder dedicarle tiempo a una desde este bloque. */
+  disposiciones: DisposicionGerencia[]
   /** Bloques ya reales de la semana (sin incluir este) -- para no dejar elegir un horario que se cruce con otro del mismo día. */
   bloquesExistentes: { diaSemana: number; horaInicio: string; horaFin: string }[]
   onGuardar: (datos: BloqueModalDatos) => void
@@ -760,6 +916,23 @@ function BloqueModal({
               placeholder="Descripción de la actividad"
             />
           </label>
+          {disposiciones.length > 0 && (
+            <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+              <span className="text-xs font-medium uppercase text-graphite-600">Disposición de gerencia (opcional)</span>
+              <select
+                value={form.idDisposicion ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, idDisposicion: e.target.value || null }))}
+                className={INPUT_CLASS}
+              >
+                <option value="">— Ninguna —</option>
+                {disposiciones.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.titulo} — vence {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="mt-5 flex items-center justify-between">
@@ -922,7 +1095,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     setBloques(
       planExistente.bloques.map((b) => ({
         diaSemana: b.diaSemana, horaInicio: b.horaInicio.slice(0, 5), horaFin: b.horaFin.slice(0, 5),
-        nombreEtiqueta: b.etiqueta, descripcion: b.descripcion,
+        nombreEtiqueta: b.etiqueta, descripcion: b.descripcion, idDisposicion: b.idDisposicion,
       })),
     )
     setIndicadores(
@@ -962,6 +1135,14 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     enabled: !!codigoArea,
   })
 
+  // Disposiciones reales de gerencia asignadas a esta área, todavía
+  // abiertas -- para poder dedicarles tiempo desde un bloque de la semana.
+  const { data: disposiciones } = useQuery<DisposicionGerencia[]>({
+    queryKey: ['planificacion-disposiciones', codigoArea],
+    queryFn: async () => (await api.get(`${BASE}/disposiciones`, { params: { codigoArea } })).data,
+    enabled: !!codigoArea,
+  })
+
   const bloqueada = resultado?.bloqueada ?? false
 
   const enviar = useMutation({
@@ -994,13 +1175,13 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
     const horaReal = valido
       ? horaInicioClic
       : (opcionesDia.find((t) => !ocupadosDia.some((o) => minutos(t) >= minutos(o.horaInicio) && minutos(t) < minutos(o.horaFin))) ?? horaInicioClic)
-    setModalBloque({ datos: { diaSemana, horaInicio: horaReal, horaFin: horaFinPorDefecto(horaReal, diaSemana), nombreEtiqueta: '', descripcion: '' } })
+    setModalBloque({ datos: { diaSemana, horaInicio: horaReal, horaFin: horaFinPorDefecto(horaReal, diaSemana), nombreEtiqueta: '', descripcion: '', idDisposicion: null } })
   }
 
   const abrirEditarBloque = (b: GrillaBloque) =>
     setModalBloque({
       idxOriginal: b.idxOriginal,
-      datos: { diaSemana: b.diaSemana, horaInicio: b.horaInicio.slice(0, 5), horaFin: b.horaFin.slice(0, 5), nombreEtiqueta: b.etiqueta, descripcion: b.descripcion },
+      datos: { diaSemana: b.diaSemana, horaInicio: b.horaInicio.slice(0, 5), horaFin: b.horaFin.slice(0, 5), nombreEtiqueta: b.etiqueta, descripcion: b.descripcion, idDisposicion: b.idDisposicion ?? null },
     })
 
   const guardarDesdeModal = (datos: BloqueModalDatos) => {
@@ -1033,6 +1214,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         .filter(({ b }) => b.horaFin > b.horaInicio && b.nombreEtiqueta.trim())
         .map(({ b, i }) => {
           const real = etiquetas?.find((et) => et.nombre.trim().toLowerCase() === b.nombreEtiqueta.trim().toLowerCase())
+          const disposicion = disposiciones?.find((d) => d.id === b.idDisposicion)
           return {
             diaSemana: b.diaSemana,
             horaInicio: `${b.horaInicio}:00`,
@@ -1041,9 +1223,11 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
             etiqueta: b.nombreEtiqueta.trim(),
             colorHex: real?.colorHex ?? '#9ca3af',
             idxOriginal: i,
+            idDisposicion: b.idDisposicion,
+            tituloDisposicion: disposicion?.titulo ?? null,
           }
         }),
-    [bloques, etiquetas],
+    [bloques, etiquetas, disposiciones],
   )
 
   const guardar = useMutation({
@@ -1083,6 +1267,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
             horaFin: `${b.horaFin}:00`,
             codigoEtiqueta: mapaCodigos.get(b.nombreEtiqueta.trim().toLowerCase()) ?? '',
             descripcion: b.descripcion,
+            idDisposicion: b.idDisposicion,
           })),
           indicadores: indicadoresConNombre.map((i) => ({
             idIndicador: mapaIndicadores.get(i.nombreIndicador.trim().toLowerCase()) ?? 0,
@@ -1239,6 +1424,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
             esNuevo={modalBloque.idxOriginal === undefined}
             etiquetas={etiquetas ?? []}
             codigoArea={codigoArea}
+            disposiciones={disposiciones ?? []}
             bloquesExistentes={bloques
               .filter((_, idx) => idx !== modalBloque.idxOriginal)
               .map((b) => ({ diaSemana: b.diaSemana, horaInicio: b.horaInicio, horaFin: b.horaFin }))}
@@ -1667,6 +1853,8 @@ interface GrillaBloque {
   etiqueta: string
   colorHex: string
   notaGerencia?: string | null
+  idDisposicion?: string | null
+  tituloDisposicion?: string | null
   /** Índice real dentro de `bloques` (el editor) -- para poder editarlo al hacer clic sobre el bloque en la grilla. */
   idxOriginal?: number
 }
@@ -1755,8 +1943,10 @@ function GrillaSemanal({
                     const top = minutosDesde(b.horaInicio) * PX_POR_MIN
                     const height = (minutosDesde(b.horaFin) - minutosDesde(b.horaInicio)) * PX_POR_MIN
                     const tieneNota = !!b.notaGerencia
+                    const tieneDisposicion = !!b.tituloDisposicion
                     const interactivo = !!(onDobleClickBloque || onClickBloque)
                     const titulo = `${b.horaInicio}–${b.horaFin}: ${b.descripcion}` +
+                      (tieneDisposicion ? `\n\nDisposición de gerencia: ${b.tituloDisposicion}` : '') +
                       (tieneNota ? `\n\nNota de gerencia: ${b.notaGerencia}` : onDobleClickBloque ? '\n\nDoble clic para comentar' : onClickBloque ? '\n\nClic para editar' : '')
                     return (
                       <div
@@ -1777,6 +1967,7 @@ function GrillaSemanal({
                       >
                         <div className="flex items-center gap-1 font-semibold">
                           {b.horaInicio}–{b.horaFin}
+                          {tieneDisposicion && <Flag size={11} className="flex-shrink-0" />}
                           {tieneNota && <MessageSquare size={11} className="flex-shrink-0" />}
                         </div>
                         <div className="font-medium opacity-90">{b.etiqueta}</div>

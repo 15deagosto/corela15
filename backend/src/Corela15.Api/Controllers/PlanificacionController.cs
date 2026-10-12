@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Corela15.Api.Controllers;
 
-public record BloqueBody(int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Descripcion);
+public record BloqueBody(int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Descripcion, Guid? IdDisposicion);
 
 public record IndicadorBody(int IdIndicador, decimal? Meta, decimal? Real, string? Comentario);
 
@@ -33,7 +33,7 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     {
         var resultado = await service.GuardarAsync(new GuardarPlanSemanalRequest(
             body.CodigoArea, body.FechaInicioSemana, body.NombreResponsable, body.CargoResponsable,
-            body.Bloques.Select(b => new BloqueRequest(b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Descripcion)).ToList(),
+            body.Bloques.Select(b => new BloqueRequest(b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Descripcion, b.IdDisposicion)).ToList(),
             (body.Indicadores ?? []).Select(i => new IndicadorRequest(i.IdIndicador, i.Meta, i.Real, i.Comentario)).ToList(),
             User.Identity!.Name!), cancellationToken);
         return Ok(resultado);
@@ -99,6 +99,30 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     [HttpPost("indicadores/obtener-o-crear")]
     public async Task<ActionResult<IndicadorDto>> ObtenerOCrearIndicador(ObtenerOCrearIndicadorBody body, CancellationToken cancellationToken)
         => Ok(await service.ObtenerOCrearIndicadorAsync(body.CodigoArea, body.Nombre, body.Unidad, cancellationToken));
+
+    public record CrearDisposicionBody(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea);
+
+    /// <summary>Solo gerencia -- crea una disposición real con plazo, asignada a una o más áreas.</summary>
+    [HttpPost("disposiciones")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<DisposicionGerenciaDto>> CrearDisposicion(CrearDisposicionBody body, CancellationToken cancellationToken)
+        => Ok(await service.CrearDisposicionAsync(
+            new CrearDisposicionRequest(body.Titulo, body.Descripcion, body.FechaLimite, body.CodigosArea, User.Identity!.Name!),
+            cancellationToken));
+
+    /// <summary>Solo gerencia -- cierra una disposición.</summary>
+    [HttpPost("disposiciones/{id:guid}/cerrar")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<IActionResult> CerrarDisposicion(Guid id, CancellationToken cancellationToken)
+    {
+        await service.CerrarDisposicionAsync(id, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>Gerencia ve todas; un área ve solo las abiertas que tiene asignadas (para poder etiquetar bloques con ellas).</summary>
+    [HttpGet("disposiciones")]
+    public async Task<ActionResult<IReadOnlyList<DisposicionGerenciaDto>>> Disposiciones([FromQuery] string? codigoArea, CancellationToken cancellationToken)
+        => Ok(await service.ListarDisposicionesAsync(EsGerencia, codigoArea, cancellationToken));
 
     [HttpGet("areas")]
     public async Task<ActionResult<IReadOnlyList<object>>> Areas(CancellationToken cancellationToken)

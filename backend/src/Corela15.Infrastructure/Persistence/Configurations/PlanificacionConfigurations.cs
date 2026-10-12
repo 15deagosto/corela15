@@ -69,8 +69,38 @@ public class PlanSemanalBloqueConfiguration : IEntityTypeConfiguration<PlanSeman
 
         b.HasOne(x => x.PlanSemanal).WithMany(x => x.Bloques).HasForeignKey(x => x.IdPlanSemanal).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.CodigoEtiqueta).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Disposicion).WithMany().HasForeignKey(x => x.IdDisposicion).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.IdPlanSemanal);
+        b.HasIndex(x => x.IdDisposicion);
+    }
+}
+
+public class DisposicionGerenciaConfiguration : IEntityTypeConfiguration<DisposicionGerencia>
+{
+    public void Configure(EntityTypeBuilder<DisposicionGerencia> b)
+    {
+        b.ToTable("disposicion_gerencia", "planificacion");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Titulo).HasMaxLength(250).IsRequired();
+        b.Property(x => x.Descripcion).HasMaxLength(2000);
+        b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+    }
+}
+
+public class DisposicionGerenciaAreaConfiguration : IEntityTypeConfiguration<DisposicionGerenciaArea>
+{
+    public void Configure(EntityTypeBuilder<DisposicionGerenciaArea> b)
+    {
+        b.ToTable("disposicion_gerencia_area", "planificacion");
+        b.HasKey(x => x.Id);
+
+        b.HasOne(x => x.Disposicion).WithMany(x => x.Areas).HasForeignKey(x => x.IdDisposicion).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
+
+        b.HasIndex(x => new { x.IdDisposicion, x.CodigoArea }).IsUnique();
+        b.HasIndex(x => x.CodigoArea);
     }
 }
 

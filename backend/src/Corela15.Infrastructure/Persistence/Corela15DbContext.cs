@@ -289,6 +289,8 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<PlanSemanal> PlanesSemanales => Set<PlanSemanal>();
     public DbSet<PlanSemanalBloque> PlanesSemanalesBloques => Set<PlanSemanalBloque>();
     public DbSet<PlanSemanalIndicador> PlanesSemanalesIndicadores => Set<PlanSemanalIndicador>();
+    public DbSet<DisposicionGerencia> DisposicionesGerencia => Set<DisposicionGerencia>();
+    public DbSet<DisposicionGerenciaArea> DisposicionesGerenciaArea => Set<DisposicionGerenciaArea>();
     public DbSet<EstadoAvanceRiesgo> EstadosAvanceRiesgo => Set<EstadoAvanceRiesgo>();
     public DbSet<AvanceRiesgo> AvancesRiesgo => Set<AvanceRiesgo>();
     public DbSet<AvanceRiesgoDetalle> AvancesRiesgoDetalle => Set<AvanceRiesgoDetalle>();

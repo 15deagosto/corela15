@@ -72,6 +72,15 @@ public interface IPlanificacionService
     /// </summary>
     Task<IndicadorDto> ObtenerOCrearIndicadorAsync(string codigoArea, string nombre, string? unidad, CancellationToken cancellationToken = default);
 
+    /// <summary>Solo gerencia -- crea una disposición real con plazo, asignada a una o más áreas.</summary>
+    Task<DisposicionGerenciaDto> CrearDisposicionAsync(CrearDisposicionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Solo gerencia -- cierra una disposición (ya no se puede seguir etiquetando bloques nuevos con ella).</summary>
+    Task CerrarDisposicionAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Gerencia ve todas; un área ve solo las que tiene asignadas (abiertas, para poder etiquetar bloques) -- ver DisposicionGerenciaArea.</summary>
+    Task<IReadOnlyList<DisposicionGerenciaDto>> ListarDisposicionesAsync(bool esGerencia, string? codigoArea, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Combo editable real: si ya existe una etiqueta con ese nombre en
     /// esa área, la devuelve tal cual (mismo color de siempre). Si no
@@ -98,7 +107,8 @@ public record BloqueRequest(
     TimeOnly HoraInicio,
     TimeOnly HoraFin,
     string CodigoEtiqueta,
-    string Descripcion);
+    string Descripcion,
+    Guid? IdDisposicion);
 
 public record IndicadorRequest(int IdIndicador, decimal? Meta, decimal? Real, string? Comentario);
 
@@ -113,7 +123,11 @@ public record GuardarPlanSemanalRequest(
 
 public record ListarPlanesFiltro(string? CodigoArea, DateOnly? Desde, DateOnly? Hasta, string UsuarioActual, bool EsGerencia);
 
-public record BloqueDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Etiqueta, string ColorHex, string Descripcion, string? NotaGerencia);
+public record BloqueDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Etiqueta, string ColorHex, string Descripcion, string? NotaGerencia, Guid? IdDisposicion, string? TituloDisposicion);
+
+public record CrearDisposicionRequest(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea, string CreadoPor);
+
+public record DisposicionGerenciaDto(Guid Id, string Titulo, string? Descripcion, DateOnly FechaLimite, string Estado, IReadOnlyList<string> Areas, decimal HorasDedicadas, DateTimeOffset CreadoEn, string CreadoPor);
 
 public record IndicadorDto(int Id, string CodigoArea, string Nombre, string? Unidad);
 
@@ -171,3 +185,9 @@ public class PlanSemanalNoEnviadoException()
 
 public class ComentarioObligatorioException()
     : SolicitudInvalidaException("El comentario es obligatorio para solicitar cambios");
+
+public class DisposicionGerenciaInvalidaException(Guid id)
+    : ReglaDeNegocioException($"La disposición {id} no existe, está cerrada, o no está asignada a esta área");
+
+public class DisposicionSinAreasException()
+    : SolicitudInvalidaException("Una disposición de gerencia necesita al menos un área destinataria");

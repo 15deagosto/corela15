@@ -26,4 +26,8 @@ public class PlanSemanalBloque
 
     /// <summary>Nota real de gerencia sobre este bloque puntual (una hora específica de la semana) -- distinta de PlanSemanal.NotaGerencia (la nota general).</summary>
     public string? NotaGerencia { get; set; }
+
+    /// <summary>Disposición de gerencia real a la que se dedica este bloque de tiempo -- opcional, ver DisposicionGerencia.</summary>
+    public Guid? IdDisposicion { get; set; }
+    public DisposicionGerencia? Disposicion { get; set; }
 }

@@ -115,6 +115,19 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
                 throw new IndicadorPlanificacionInvalidoException(i.IdIndicador);
         }
 
+        foreach (var idDisposicion in request.Bloques.Where(b => b.IdDisposicion is not null).Select(b => b.IdDisposicion!.Value).Distinct())
+        {
+            // Solo se puede etiquetar un bloque con una disposición
+            // real asignada a ESTA área y todavía abierta -- nunca una
+            // cerrada ni una de otra área, aunque el usuario conozca su
+            // Id.
+            var disposicionValida = await db.DisposicionesGerenciaArea
+                .AnyAsync(a => a.IdDisposicion == idDisposicion && a.CodigoArea == request.CodigoArea
+                    && a.Disposicion.Estado == EstadoDisposicionGerencia.Abierta, cancellationToken);
+            if (!disposicionValida)
+                throw new DisposicionGerenciaInvalidaException(idDisposicion);
+        }
+
         var existente = await db.PlanesSemanales
             .Include(p => p.Bloques)
             .Include(p => p.Indicadores)
@@ -187,6 +200,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
                 HoraFin = b.HoraFin,
                 CodigoEtiqueta = b.CodigoEtiqueta,
                 Descripcion = b.Descripcion,
+                IdDisposicion = b.IdDisposicion,
             });
         }
 
@@ -365,6 +379,86 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return new IndicadorDto(indicador.Id, indicador.CodigoArea, indicador.Nombre, indicador.Unidad);
     }
 
+    public async Task<DisposicionGerenciaDto> CrearDisposicionAsync(CrearDisposicionRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Titulo))
+            throw new BloqueHorarioInvalidoException("El título de la disposición no puede estar vacío.");
+        if (request.CodigosArea.Count == 0)
+            throw new DisposicionSinAreasException();
+
+        var areasValidas = await db.AreasPlanificacion
+            .Where(a => request.CodigosArea.Contains(a.Codigo) && a.Activo)
+            .Select(a => a.Codigo)
+            .ToListAsync(cancellationToken);
+        var invalidas = request.CodigosArea.Except(areasValidas).ToList();
+        if (invalidas.Count > 0)
+            throw new AreaPlanificacionInvalidaException(string.Join(", ", invalidas));
+
+        var disposicion = new DisposicionGerencia
+        {
+            Id = Guid.NewGuid(),
+            Titulo = request.Titulo.Trim(),
+            Descripcion = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim(),
+            FechaLimite = request.FechaLimite,
+            Estado = EstadoDisposicionGerencia.Abierta,
+            CreadoEn = DateTimeOffset.UtcNow,
+            CreadoPor = request.CreadoPor,
+        };
+        foreach (var codigoArea in areasValidas.Distinct())
+            disposicion.Areas.Add(new DisposicionGerenciaArea { Id = Guid.NewGuid(), CodigoArea = codigoArea });
+
+        db.DisposicionesGerencia.Add(disposicion);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new DisposicionGerenciaDto(disposicion.Id, disposicion.Titulo, disposicion.Descripcion, disposicion.FechaLimite,
+            disposicion.Estado.ToString(), areasValidas.Distinct().ToList(), 0m, disposicion.CreadoEn, disposicion.CreadoPor);
+    }
+
+    public async Task CerrarDisposicionAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var disposicion = await db.DisposicionesGerencia.FirstOrDefaultAsync(d => d.Id == id, cancellationToken)
+            ?? throw new DisposicionGerenciaInvalidaException(id);
+        disposicion.Estado = EstadoDisposicionGerencia.Cerrada;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DisposicionGerenciaDto>> ListarDisposicionesAsync(bool esGerencia, string? codigoArea, CancellationToken cancellationToken = default)
+    {
+        var query = db.DisposicionesGerencia.Include(d => d.Areas).AsQueryable();
+
+        if (!esGerencia)
+        {
+            // Un área normal solo ve las disposiciones reales que le
+            // asignaron, y solo mientras estén abiertas -- una cerrada
+            // ya no tiene sentido ofrecerla para etiquetar bloques
+            // nuevos (sigue visible en los bloques ya guardados vía
+            // BloqueDto.TituloDisposicion, pero no en este listado).
+            if (string.IsNullOrWhiteSpace(codigoArea)) return [];
+            query = query.Where(d => d.Estado == EstadoDisposicionGerencia.Abierta && d.Areas.Any(a => a.CodigoArea == codigoArea));
+        }
+
+        var disposiciones = await query.OrderByDescending(d => d.FechaLimite).ToListAsync(cancellationToken);
+
+        // Horas dedicadas reales = suma de la duración de todos los
+        // bloques (de cualquier área, cualquier semana) que se
+        // etiquetaron con cada disposición -- el avance real que
+        // gerencia pidió ver, sin que nadie lo reporte aparte.
+        var horasPorDisposicion = await db.PlanesSemanalesBloques
+            .Where(b => b.IdDisposicion != null)
+            .GroupBy(b => b.IdDisposicion!.Value)
+            .Select(g => new { IdDisposicion = g.Key, Bloques = g.Select(b => new { b.HoraInicio, b.HoraFin }).ToList() })
+            .ToListAsync(cancellationToken);
+        var horasPorId = horasPorDisposicion.ToDictionary(
+            x => x.IdDisposicion,
+            x => x.Bloques.Sum(b => (decimal)(b.HoraFin.ToTimeSpan() - b.HoraInicio.ToTimeSpan()).TotalHours));
+
+        return disposiciones.Select(d => new DisposicionGerenciaDto(
+            d.Id, d.Titulo, d.Descripcion, d.FechaLimite, d.Estado.ToString(),
+            d.Areas.Select(a => a.CodigoArea).ToList(),
+            horasPorId.GetValueOrDefault(d.Id, 0m),
+            d.CreadoEn, d.CreadoPor)).ToList();
+    }
+
     private async Task ValidarPerteneceAlAreaAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken)
     {
         var areaUsuario = await db.Usuarios
@@ -388,12 +482,13 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         var plan = await db.PlanesSemanales
             .Include(p => p.Area)
             .Include(p => p.Bloques).ThenInclude(b => b.Etiqueta)
+            .Include(p => p.Bloques).ThenInclude(b => b.Disposicion)
             .Include(p => p.Indicadores).ThenInclude(i => i.Indicador)
             .FirstAsync(p => p.Id == idPlan, cancellationToken);
 
         var bloques = plan.Bloques
             .OrderBy(b => b.DiaSemana).ThenBy(b => b.HoraInicio)
-            .Select(b => new BloqueDto(b.Id, b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Etiqueta.Nombre, b.Etiqueta.ColorHex, b.Descripcion, b.NotaGerencia))
+            .Select(b => new BloqueDto(b.Id, b.DiaSemana, b.HoraInicio, b.HoraFin, b.CodigoEtiqueta, b.Etiqueta.Nombre, b.Etiqueta.ColorHex, b.Descripcion, b.NotaGerencia, b.IdDisposicion, b.Disposicion?.Titulo))
             .ToList();
 
         var indicadores = plan.Indicadores
