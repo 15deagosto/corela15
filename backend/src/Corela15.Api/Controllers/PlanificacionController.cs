@@ -119,10 +119,18 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
         return NoContent();
     }
 
-    /// <summary>Gerencia ve todas; un área ve solo las abiertas que tiene asignadas (para poder etiquetar bloques con ellas).</summary>
+    /// <summary>Gerencia ve todas (o solo las de un área puntual, cualquier estado); un área normal ve solo las abiertas que tiene asignadas (para poder etiquetar bloques con ellas).</summary>
     [HttpGet("disposiciones")]
     public async Task<ActionResult<IReadOnlyList<DisposicionGerenciaDto>>> Disposiciones([FromQuery] string? codigoArea, CancellationToken cancellationToken)
         => Ok(await service.ListarDisposicionesAsync(EsGerencia, codigoArea, cancellationToken));
+
+    public record CalificarCumplimientoBody(string Cumplimiento, string? Comentario);
+
+    /// <summary>Solo gerencia -- califica si esta área concreta cumplió o no la disposición.</summary>
+    [HttpPost("disposiciones/{id:guid}/areas/{codigoArea}/calificar")]
+    [Authorize(Policy = "Menu:planificacion-gerencia")]
+    public async Task<ActionResult<DisposicionGerenciaDto>> CalificarCumplimiento(Guid id, string codigoArea, CalificarCumplimientoBody body, CancellationToken cancellationToken)
+        => Ok(await service.CalificarCumplimientoAsync(id, codigoArea, body.Cumplimiento, body.Comentario, User.Identity!.Name!, cancellationToken));
 
     [HttpGet("areas")]
     public async Task<ActionResult<IReadOnlyList<object>>> Areas(CancellationToken cancellationToken)

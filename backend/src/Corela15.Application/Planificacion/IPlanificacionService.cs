@@ -78,8 +78,16 @@ public interface IPlanificacionService
     /// <summary>Solo gerencia -- cierra una disposición (ya no se puede seguir etiquetando bloques nuevos con ella).</summary>
     Task CerrarDisposicionAsync(Guid id, CancellationToken cancellationToken = default);
 
-    /// <summary>Gerencia ve todas; un área ve solo las que tiene asignadas (abiertas, para poder etiquetar bloques) -- ver DisposicionGerenciaArea.</summary>
+    /// <summary>
+    /// Gerencia sin filtro ve todas; gerencia con `codigoArea` ve todas las
+    /// de esa área (cualquier estado, para poder calificar cumplimiento);
+    /// un área normal ve solo las que tiene asignadas, abiertas, para
+    /// poder etiquetar bloques -- ver DisposicionGerenciaArea.
+    /// </summary>
     Task<IReadOnlyList<DisposicionGerenciaDto>> ListarDisposicionesAsync(bool esGerencia, string? codigoArea, CancellationToken cancellationToken = default);
+
+    /// <summary>Solo gerencia -- califica si esta área concreta cumplió o no la disposición (independiente de las demás áreas asignadas).</summary>
+    Task<DisposicionGerenciaDto> CalificarCumplimientoAsync(Guid idDisposicion, string codigoArea, string cumplimiento, string? comentario, string calificadoPor, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Combo editable real: si ya existe una etiqueta con ese nombre en
@@ -127,7 +135,9 @@ public record BloqueDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly Ho
 
 public record CrearDisposicionRequest(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea, string CreadoPor);
 
-public record DisposicionGerenciaDto(Guid Id, string Titulo, string? Descripcion, DateOnly FechaLimite, string Estado, IReadOnlyList<string> Areas, decimal HorasDedicadas, DateTimeOffset CreadoEn, string CreadoPor);
+public record DisposicionAreaDto(string CodigoArea, string NombreArea, string Cumplimiento, string? ComentarioCumplimiento, string? CalificadoPor, DateTimeOffset? FechaCalificacion, decimal HorasDedicadas);
+
+public record DisposicionGerenciaDto(Guid Id, string Titulo, string? Descripcion, DateOnly FechaLimite, string Estado, IReadOnlyList<DisposicionAreaDto> Areas, decimal HorasDedicadas, DateTimeOffset CreadoEn, string CreadoPor);
 
 public record IndicadorDto(int Id, string CodigoArea, string Nombre, string? Unidad);
 
@@ -191,3 +201,9 @@ public class DisposicionGerenciaInvalidaException(Guid id)
 
 public class DisposicionSinAreasException()
     : SolicitudInvalidaException("Una disposición de gerencia necesita al menos un área destinataria");
+
+public class DisposicionAreaInvalidaException()
+    : ReglaDeNegocioException("Esta disposición no está asignada a esa área");
+
+public class CumplimientoInvalidoException(string valor)
+    : SolicitudInvalidaException($"'{valor}' no es un valor válido de cumplimiento (Cumplio/NoCumplio/SinEvaluar)");

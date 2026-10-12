@@ -30,7 +30,23 @@ public class DisposicionGerencia
     public string CreadoPor { get; set; } = string.Empty;
 }
 
-/// <summary>Áreas reales destinatarias de una disposición -- una disposición puede aplicar a una sola área o a varias a la vez (ej. "todas entregan tal informe").</summary>
+public enum CumplimientoDisposicion
+{
+    SinEvaluar,
+    Cumplio,
+    NoCumplio,
+}
+
+/// <summary>
+/// Áreas reales destinatarias de una disposición -- una disposición puede
+/// aplicar a una sola área o a varias a la vez (ej. "todas entregan tal
+/// informe"), y cada área puede cumplirla o no de forma independiente
+/// (una entrega a tiempo, otra no) -- por eso la calificación de
+/// cumplimiento vive acá, una fila por área, no una sola en la
+/// disposición. Solo gerencia la califica, en cualquier momento (no hace
+/// falta esperar a que el plan semanal se envíe -- la disposición tiene
+/// su propio plazo real, puede cruzar varias semanas).
+/// </summary>
 public class DisposicionGerenciaArea
 {
     public Guid Id { get; set; }
@@ -38,4 +54,9 @@ public class DisposicionGerenciaArea
     public DisposicionGerencia Disposicion { get; set; } = null!;
     public string CodigoArea { get; set; } = string.Empty;
     public AreaPlanificacion Area { get; set; } = null!;
+
+    public CumplimientoDisposicion Cumplimiento { get; set; } = CumplimientoDisposicion.SinEvaluar;
+    public string? ComentarioCumplimiento { get; set; }
+    public DateTimeOffset? FechaCalificacion { get; set; }
+    public string? CalificadoPor { get; set; }
 }

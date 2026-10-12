@@ -7656,10 +7656,30 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("CalificadoPor")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("calificado_por");
+
                     b.Property<string>("CodigoArea")
                         .IsRequired()
                         .HasColumnType("character varying(20)")
                         .HasColumnName("codigo_area");
+
+                    b.Property<string>("ComentarioCumplimiento")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("comentario_cumplimiento");
+
+                    b.Property<string>("Cumplimiento")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("cumplimiento");
+
+                    b.Property<DateTimeOffset?>("FechaCalificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_calificacion");
 
                     b.Property<Guid>("IdDisposicion")
                         .HasColumnType("uuid")

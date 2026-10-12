@@ -99,6 +99,10 @@ public class DisposicionGerenciaAreaConfiguration : IEntityTypeConfiguration<Dis
         b.HasOne(x => x.Disposicion).WithMany(x => x.Areas).HasForeignKey(x => x.IdDisposicion).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Area).WithMany().HasForeignKey(x => x.CodigoArea).OnDelete(DeleteBehavior.Restrict);
 
+        b.Property(x => x.Cumplimiento).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.ComentarioCumplimiento).HasMaxLength(1000);
+        b.Property(x => x.CalificadoPor).HasMaxLength(100);
+
         b.HasIndex(x => new { x.IdDisposicion, x.CodigoArea }).IsUnique();
         b.HasIndex(x => x.CodigoArea);
     }

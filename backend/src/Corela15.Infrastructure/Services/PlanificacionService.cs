@@ -410,8 +410,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         db.DisposicionesGerencia.Add(disposicion);
         await db.SaveChangesAsync(cancellationToken);
 
-        return new DisposicionGerenciaDto(disposicion.Id, disposicion.Titulo, disposicion.Descripcion, disposicion.FechaLimite,
-            disposicion.Estado.ToString(), areasValidas.Distinct().ToList(), 0m, disposicion.CreadoEn, disposicion.CreadoPor);
+        return await MapearDisposicionDtoAsync(disposicion.Id, cancellationToken);
     }
 
     public async Task CerrarDisposicionAsync(Guid id, CancellationToken cancellationToken = default)
@@ -420,6 +419,24 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             ?? throw new DisposicionGerenciaInvalidaException(id);
         disposicion.Estado = EstadoDisposicionGerencia.Cerrada;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<DisposicionGerenciaDto> CalificarCumplimientoAsync(Guid idDisposicion, string codigoArea, string cumplimiento, string? comentario, string calificadoPor, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<CumplimientoDisposicion>(cumplimiento, ignoreCase: true, out var valor))
+            throw new CumplimientoInvalidoException(cumplimiento);
+
+        var asignacion = await db.DisposicionesGerenciaArea
+            .FirstOrDefaultAsync(a => a.IdDisposicion == idDisposicion && a.CodigoArea == codigoArea, cancellationToken)
+            ?? throw new DisposicionAreaInvalidaException();
+
+        asignacion.Cumplimiento = valor;
+        asignacion.ComentarioCumplimiento = string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim();
+        asignacion.CalificadoPor = calificadoPor;
+        asignacion.FechaCalificacion = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await MapearDisposicionDtoAsync(idDisposicion, cancellationToken);
     }
 
     public async Task<IReadOnlyList<DisposicionGerenciaDto>> ListarDisposicionesAsync(bool esGerencia, string? codigoArea, CancellationToken cancellationToken = default)
@@ -436,27 +453,46 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             if (string.IsNullOrWhiteSpace(codigoArea)) return [];
             query = query.Where(d => d.Estado == EstadoDisposicionGerencia.Abierta && d.Areas.Any(a => a.CodigoArea == codigoArea));
         }
+        else if (!string.IsNullOrWhiteSpace(codigoArea))
+        {
+            // Gerencia revisando un área puntual (ej. desde el detalle de
+            // un plan semanal) -- ve todas las disposiciones de esa área
+            // sin importar el estado, para poder calificar cumplimiento
+            // incluso de una ya cerrada.
+            query = query.Where(d => d.Areas.Any(a => a.CodigoArea == codigoArea));
+        }
 
-        var disposiciones = await query.OrderByDescending(d => d.FechaLimite).ToListAsync(cancellationToken);
+        var ids = await query.OrderByDescending(d => d.FechaLimite).Select(d => d.Id).ToListAsync(cancellationToken);
+        var resultado = new List<DisposicionGerenciaDto>();
+        foreach (var id in ids)
+            resultado.Add(await MapearDisposicionDtoAsync(id, cancellationToken));
+        return resultado;
+    }
 
-        // Horas dedicadas reales = suma de la duración de todos los
-        // bloques (de cualquier área, cualquier semana) que se
-        // etiquetaron con cada disposición -- el avance real que
-        // gerencia pidió ver, sin que nadie lo reporte aparte.
-        var horasPorDisposicion = await db.PlanesSemanalesBloques
-            .Where(b => b.IdDisposicion != null)
-            .GroupBy(b => b.IdDisposicion!.Value)
-            .Select(g => new { IdDisposicion = g.Key, Bloques = g.Select(b => new { b.HoraInicio, b.HoraFin }).ToList() })
+    private async Task<DisposicionGerenciaDto> MapearDisposicionDtoAsync(Guid idDisposicion, CancellationToken cancellationToken)
+    {
+        var d = await db.DisposicionesGerencia
+            .Include(x => x.Areas).ThenInclude(a => a.Area)
+            .FirstAsync(x => x.Id == idDisposicion, cancellationToken);
+
+        // Horas dedicadas reales por área = suma de la duración de todos
+        // los bloques (cualquier semana) de esa área etiquetados con esta
+        // disposición -- el avance real que gerencia pidió ver, sin que
+        // nadie lo reporte aparte.
+        var bloques = await db.PlanesSemanalesBloques
+            .Where(b => b.IdDisposicion == idDisposicion)
+            .Select(b => new { b.PlanSemanal.CodigoArea, b.HoraInicio, b.HoraFin })
             .ToListAsync(cancellationToken);
-        var horasPorId = horasPorDisposicion.ToDictionary(
-            x => x.IdDisposicion,
-            x => x.Bloques.Sum(b => (decimal)(b.HoraFin.ToTimeSpan() - b.HoraInicio.ToTimeSpan()).TotalHours));
+        var horasPorArea = bloques
+            .GroupBy(b => b.CodigoArea)
+            .ToDictionary(g => g.Key, g => g.Sum(b => (decimal)(b.HoraFin.ToTimeSpan() - b.HoraInicio.ToTimeSpan()).TotalHours));
 
-        return disposiciones.Select(d => new DisposicionGerenciaDto(
-            d.Id, d.Titulo, d.Descripcion, d.FechaLimite, d.Estado.ToString(),
-            d.Areas.Select(a => a.CodigoArea).ToList(),
-            horasPorId.GetValueOrDefault(d.Id, 0m),
-            d.CreadoEn, d.CreadoPor)).ToList();
+        var areas = d.Areas.Select(a => new DisposicionAreaDto(
+            a.CodigoArea, a.Area.Nombre, a.Cumplimiento.ToString(), a.ComentarioCumplimiento,
+            a.CalificadoPor, a.FechaCalificacion, horasPorArea.GetValueOrDefault(a.CodigoArea, 0m))).ToList();
+
+        return new DisposicionGerenciaDto(d.Id, d.Titulo, d.Descripcion, d.FechaLimite, d.Estado.ToString(),
+            areas, areas.Sum(a => a.HorasDedicadas), d.CreadoEn, d.CreadoPor);
     }
 
     private async Task ValidarPerteneceAlAreaAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken)

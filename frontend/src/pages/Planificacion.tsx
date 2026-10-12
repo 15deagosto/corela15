@@ -83,13 +83,23 @@ interface BloqueEditor {
   idDisposicion: string | null
 }
 
+interface DisposicionArea {
+  codigoArea: string
+  nombreArea: string
+  cumplimiento: 'SinEvaluar' | 'Cumplio' | 'NoCumplio'
+  comentarioCumplimiento: string | null
+  calificadoPor: string | null
+  fechaCalificacion: string | null
+  horasDedicadas: number
+}
+
 interface DisposicionGerencia {
   id: string
   titulo: string
   descripcion: string | null
   fechaLimite: string
   estado: 'Abierta' | 'Cerrada'
-  areas: string[]
+  areas: DisposicionArea[]
   horasDedicadas: number
   creadoEn: string
   creadoPor: string
@@ -644,6 +654,90 @@ export function Planificacion() {
   )
 }
 
+function CumplimientoBadge({ cumplimiento }: { cumplimiento: DisposicionArea['cumplimiento'] }) {
+  if (cumplimiento === 'Cumplio') return <Badge variant="exito">Cumplió</Badge>
+  if (cumplimiento === 'NoCumplio') return <Badge variant="peligro">No cumplió</Badge>
+  return <Badge variant="neutral">Sin evaluar</Badge>
+}
+
+/**
+ * Calificación real de cumplimiento, por área, de una disposición de
+ * gerencia -- pedido explícito del usuario: no alcanza con aprobar el
+ * plan semanal en general, gerencia necesita poder decir si ESA área
+ * cumplió o no con lo que se le pidió. Reusado tanto en la pestaña
+ * "Disposiciones de gerencia" (todas las áreas de una disposición) como
+ * en el detalle de un plan semanal puntual (solo la disposición de esa
+ * área, en el contexto de su propia planificación).
+ */
+function CalificarCumplimiento({
+  idDisposicion, area, onCalificado,
+}: {
+  idDisposicion: string
+  area: DisposicionArea
+  onCalificado: () => void
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [comentario, setComentario] = useState(area.comentarioCumplimiento ?? '')
+
+  const calificar = useMutation({
+    mutationFn: async (valor: 'Cumplio' | 'NoCumplio') =>
+      api.post(`${BASE}/disposiciones/${idDisposicion}/areas/${area.codigoArea}/calificar`, { cumplimiento: valor, comentario: comentario || null }),
+    onSuccess: () => {
+      onCalificado()
+      setAbierto(false)
+    },
+  })
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-graphite-100">{area.nombreArea}</span>
+        <CumplimientoBadge cumplimiento={area.cumplimiento} />
+        <span className="text-xs text-graphite-500">{area.horasDedicadas.toFixed(1)}h dedicadas</span>
+        <button type="button" onClick={() => setAbierto((v) => !v)} className="text-xs font-medium text-gold-600 hover:underline">
+          Calificar
+        </button>
+      </div>
+      {area.cumplimiento !== 'SinEvaluar' && area.calificadoPor && (
+        <p className="text-[11px] text-graphite-500">
+          {area.cumplimiento === 'Cumplio' ? 'Cumplió' : 'No cumplió'} — calificado por {area.calificadoPor}
+          {area.fechaCalificacion && ` el ${new Date(area.fechaCalificacion).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}`}
+          {area.comentarioCumplimiento && `: "${area.comentarioCumplimiento}"`}
+        </p>
+      )}
+      {abierto && (
+        <div className="rounded-lg border border-black/[0.06] bg-black/[0.015] p-2">
+          <textarea
+            value={comentario}
+            onChange={(e) => setComentario(e.target.value)}
+            className={`${INPUT_CLASS} mb-2 min-h-[50px] w-full text-xs`}
+            placeholder="Comentario (opcional)"
+          />
+          {calificar.isError && <p className="mb-1 text-[11px] text-red-700">{mensajeError(calificar.error)}</p>}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={calificar.isPending}
+              onClick={() => calificar.mutate('NoCumplio')}
+              className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              No cumplió
+            </button>
+            <button
+              type="button"
+              disabled={calificar.isPending}
+              onClick={() => calificar.mutate('Cumplio')}
+              className="btn-hover rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
+            >
+              Cumplió
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
   const queryClient = useQueryClient()
   const [titulo, setTitulo] = useState('')
@@ -765,10 +859,19 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
                   </div>
                 </div>
                 {d.descripcion && <p className="mb-2 text-xs text-graphite-600">{d.descripcion}</p>}
-                <div className="flex flex-wrap items-center gap-3 text-xs text-graphite-500">
-                  <span>Plazo: {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                  <span>Áreas: {d.areas.map((codigo) => areas.find((a) => a.codigo === codigo)?.nombre ?? codigo).join(', ')}</span>
-                  <span className="font-medium text-gold-600">Horas dedicadas (todas las áreas): {d.horasDedicadas.toFixed(1)}h</span>
+                <p className="mb-2 text-xs text-graphite-500">
+                  Plazo: {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {' — '}Horas dedicadas (todas las áreas): <span className="font-medium text-gold-600">{d.horasDedicadas.toFixed(1)}h</span>
+                </p>
+                <div className="space-y-1.5 border-t border-black/[0.04] pt-2">
+                  {d.areas.map((a) => (
+                    <CalificarCumplimiento
+                      key={a.codigoArea}
+                      idDisposicion={d.id}
+                      area={a}
+                      onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })}
+                    />
+                  ))}
                 </div>
               </div>
             ))}
@@ -1580,6 +1683,15 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
   const [notaGerencia, setNotaGerencia] = useState('')
   useEffect(() => setNotaGerencia(plan?.notaGerencia ?? ''), [plan?.notaGerencia])
 
+  // Disposiciones reales de gerencia asignadas a esta área (cualquier
+  // estado, para poder calificar cumplimiento incluso de una ya
+  // cerrada) -- solo gerencia las ve/califica desde acá.
+  const { data: disposicionesArea } = useQuery<DisposicionGerencia[]>({
+    queryKey: ['planificacion-disposiciones-plan', plan?.codigoArea],
+    queryFn: async () => (await api.get(`${BASE}/disposiciones`, { params: { codigoArea: plan!.codigoArea } })).data,
+    enabled: esGerencia && !!plan?.codigoArea,
+  })
+
   const invalidar = (data: PlanSemanal) => {
     queryClient.setQueryData(['planificacion-plan', id], data)
     queryClient.invalidateQueries({ queryKey: ['planificacion-historial'] })
@@ -1698,6 +1810,34 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
                   >
                     {solicitarCambios.isPending ? 'Enviando…' : 'Devolver con observaciones'}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {esGerencia && disposicionesArea && disposicionesArea.length > 0 && (
+              <div className="rounded-xl border border-black/[0.06] p-4">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+                  <Flag size={14} /> Cumplimiento de disposiciones de gerencia — {plan.area}
+                </p>
+                <div className="space-y-2">
+                  {disposicionesArea.map((d) => {
+                    const areaEntry = d.areas.find((a) => a.codigoArea === plan.codigoArea)
+                    if (!areaEntry) return null
+                    return (
+                      <div key={d.id} className="rounded-lg border border-black/[0.06] p-2.5">
+                        <p className="mb-1 text-xs text-graphite-600">
+                          <span className="font-medium text-graphite-100">{d.titulo}</span> — plazo{' '}
+                          {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+                          {d.estado === 'Cerrada' && <span className="ml-1 text-graphite-400">(cerrada)</span>}
+                        </p>
+                        <CalificarCumplimiento
+                          idDisposicion={d.id}
+                          area={areaEntry}
+                          onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-plan', plan.codigoArea] })}
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
