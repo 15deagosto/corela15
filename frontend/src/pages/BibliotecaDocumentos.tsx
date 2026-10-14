@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2,
@@ -720,10 +720,15 @@ function tituloDesdeNombreArchivo(nombreArchivo: string): string {
   return sinExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-/** true si el navegador puede mostrar este tipo de archivo inline (pdf/texto) -- el resto (doc/docx/xls/xlsx/ppt/pptx) no tiene vista previa real sin un conversor de oficina, que este core no tiene. */
+/**
+ * true si hay vista previa real dentro del sistema: pdf/txt los muestra el
+ * navegador directo; .docx se renderiza en el propio navegador con
+ * docx-preview (sin servidor de conversión). El resto (.doc viejo, Excel,
+ * PowerPoint) sigue ofreciendo descarga directa.
+ */
 function tienePreviaReal(nombreArchivo: string): boolean {
   const ext = nombreArchivo.split('.').pop()?.toLowerCase()
-  return ext === 'pdf' || ext === 'txt'
+  return ext === 'pdf' || ext === 'txt' || ext === 'docx'
 }
 
 function GestionarDocumentoModal({
@@ -828,13 +833,16 @@ function GestionarDocumentoModal({
   // resto siempre ofrece descarga directa, nunca un error silencioso.
   const previaDisponible = tienePreviaReal(documento.nombreArchivoOriginal)
   const esTexto = documento.nombreArchivoOriginal.toLowerCase().endsWith('.txt')
+  const esDocx = documento.nombreArchivoOriginal.toLowerCase().endsWith('.docx')
   const [previaUrl, setPreviaUrl] = useState<string | null>(null)
   const [previaTexto, setPreviaTexto] = useState<string | null>(null)
+  const [previaDocx, setPreviaDocx] = useState<Blob | null>(null)
+  const contenedorDocx = useRef<HTMLDivElement>(null)
   const [previaCargando, setPreviaCargando] = useState(false)
   const [previaError, setPreviaError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (tab !== 'vista-previa' || !previaDisponible || previaUrl || previaTexto) return
+    if (tab !== 'vista-previa' || !previaDisponible || previaUrl || previaTexto || previaDocx) return
     let cancelado = false
     setPreviaCargando(true)
     setPreviaError(null)
@@ -843,6 +851,8 @@ function GestionarDocumentoModal({
         if (cancelado) return
         if (esTexto) {
           respuesta.data.text().then((texto: string) => !cancelado && setPreviaTexto(texto))
+        } else if (esDocx) {
+          setPreviaDocx(respuesta.data as Blob)
         } else {
           setPreviaUrl(window.URL.createObjectURL(new Blob([respuesta.data], { type: 'application/pdf' })))
         }
@@ -855,11 +865,27 @@ function GestionarDocumentoModal({
 
   useEffect(() => () => { if (previaUrl) window.URL.revokeObjectURL(previaUrl) }, [previaUrl])
 
+  // Word (.docx): se dibuja en el navegador con docx-preview, cargado solo
+  // cuando hace falta para no pesar en la carga inicial del sistema.
+  useEffect(() => {
+    if (!previaDocx || tab !== 'vista-previa' || !contenedorDocx.current) return
+    const contenedor = contenedorDocx.current
+    let cancelado = false
+    import('docx-preview')
+      .then(({ renderAsync }) => {
+        if (cancelado) return
+        contenedor.innerHTML = ''
+        return renderAsync(previaDocx, contenedor, undefined, { className: 'docx-previa', inWrapper: true, ignoreLastRenderedPageBreak: true })
+      })
+      .catch(() => !cancelado && setPreviaError('No se pudo mostrar este Word — descargalo para verlo.'))
+    return () => { cancelado = true }
+  }, [previaDocx, tab])
+
   return (
     <ModalPortal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
         <div
-          className="glass-card flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl"
+          className="glass-card flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between border-b border-black/[0.06] p-5 pb-4">
@@ -927,8 +953,8 @@ function GestionarDocumentoModal({
                     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                       <Library size={32} className="text-graphite-300" />
                       <p className="text-sm text-graphite-600">
-                        No hay vista previa disponible para "{documento.nombreArchivoOriginal}" — este core no convierte
-                        documentos de Office a una vista en pantalla. Descargalo para verlo.
+                        No hay vista previa para "{documento.nombreArchivoOriginal}" — dentro del sistema se pueden ver
+                        PDF, Word (.docx) y texto. Para Excel, PowerPoint o Word antiguo (.doc), descargalo.
                       </p>
                       <button
                         type="button"
@@ -946,6 +972,8 @@ function GestionarDocumentoModal({
                     <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-black/[0.06] bg-black/[0.015] p-3 text-xs text-graphite-100">
                       {previaTexto}
                     </pre>
+                  ) : previaDocx ? (
+                    <div ref={contenedorDocx} className="min-h-[60vh] flex-1 overflow-auto rounded-lg border border-black/[0.06] bg-graphite-50" />
                   ) : previaUrl ? (
                     <iframe src={previaUrl} title={documento.titulo} className="min-h-[60vh] flex-1 rounded-lg border border-black/[0.06]" />
                   ) : null}
