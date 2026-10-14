@@ -1681,6 +1681,39 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
   )
 }
 
+/**
+ * En qué parte de la semana se trabaja una disposición de gerencia: cada
+ * bloque etiquetado con ella (día, horario, categoría, descripción) y el
+ * total de horas de esta semana. Sin bloques, avisa que no se le asignó
+ * tiempo -- dato clave para que gerencia califique el cumplimiento.
+ */
+function BloquesDeDisposicion({ bloques }: { bloques: PlanSemanal['bloques'] }) {
+  if (bloques.length === 0) {
+    return <p className="mb-1.5 text-xs text-amber-700">Sin tiempo asignado en esta semana.</p>
+  }
+  const minutos = (h: string) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5))
+  const total = bloques.reduce((s, b) => s + minutos(b.horaFin) - minutos(b.horaInicio), 0) / 60
+  return (
+    <div className="mb-1.5">
+      <ul className="space-y-0.5">
+        {[...bloques]
+          .sort((a, b) => a.diaSemana - b.diaSemana || a.horaInicio.localeCompare(b.horaInicio))
+          .map((b) => (
+            <li key={b.id} className="flex flex-wrap items-center gap-1.5 text-xs text-graphite-600">
+              <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: b.colorHex }} />
+              <span className="font-medium text-graphite-100">
+                {DIAS[b.diaSemana - 1]} {b.horaInicio.slice(0, 5)}–{b.horaFin.slice(0, 5)}
+              </span>
+              <span>· {b.etiqueta}</span>
+              {b.descripcion && <span className="text-graphite-500">— {b.descripcion}</span>}
+            </li>
+          ))}
+      </ul>
+      <p className="mt-0.5 text-[11px] text-graphite-500">Esta semana: {total.toFixed(1)}h dedicadas</p>
+    </div>
+  )
+}
+
 function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: () => void; esGerencia: boolean }) {
   const queryClient = useQueryClient()
   const { data: plan, isLoading } = useQuery<PlanSemanal>({
@@ -1837,11 +1870,31 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
                           {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
                           {d.estado === 'Cerrada' && <span className="ml-1 text-graphite-400">(cerrada)</span>}
                         </p>
+                        <BloquesDeDisposicion bloques={plan.bloques.filter((b) => b.idDisposicion === d.id)} />
                         <CalificarCumplimiento
                           idDisposicion={d.id}
                           area={areaEntry}
                           onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-plan', plan.codigoArea] })}
                         />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!esGerencia && plan.bloques.some((b) => b.idDisposicion) && (
+              <div className="rounded-xl border border-black/[0.06] p-4">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+                  <Flag size={14} /> Tiempo dedicado a disposiciones de gerencia
+                </p>
+                <div className="space-y-2">
+                  {Array.from(new Set(plan.bloques.filter((b) => b.idDisposicion).map((b) => b.idDisposicion!))).map((idDisp) => {
+                    const bloquesDisp = plan.bloques.filter((b) => b.idDisposicion === idDisp)
+                    return (
+                      <div key={idDisp} className="rounded-lg border border-black/[0.06] p-2.5">
+                        <p className="mb-1 text-xs font-medium text-graphite-100">{bloquesDisp[0].tituloDisposicion}</p>
+                        <BloquesDeDisposicion bloques={bloquesDisp} />
                       </div>
                     )
                   })}
@@ -2092,7 +2145,7 @@ function GrillaSemanal({
                     const tieneNota = !!b.notaGerencia
                     const tieneDisposicion = !!b.tituloDisposicion
                     const interactivo = !!(onDobleClickBloque || onClickBloque)
-                    const titulo = `${b.horaInicio}–${b.horaFin}: ${b.descripcion}` +
+                    const titulo = `${b.horaInicio.slice(0, 5)}–${b.horaFin.slice(0, 5)}: ${b.descripcion}` +
                       (tieneDisposicion ? `\n\nDisposición de gerencia: ${b.tituloDisposicion}` : '') +
                       (tieneNota ? `\n\nNota de gerencia: ${b.notaGerencia}` : onDobleClickBloque ? '\n\nDoble clic para comentar' : onClickBloque ? '\n\nClic para editar' : '')
                     return (
@@ -2113,12 +2166,17 @@ function GrillaSemanal({
                         style={{ top: `${top}px`, height: `${Math.max(height, 22)}px`, backgroundColor: b.colorHex }}
                       >
                         <div className="flex items-center gap-1 font-semibold">
-                          {b.horaInicio}–{b.horaFin}
+                          {b.horaInicio.slice(0, 5)}–{b.horaFin.slice(0, 5)}
                           {tieneDisposicion && <Flag size={11} className="flex-shrink-0" />}
                           {tieneNota && <MessageSquare size={11} className="flex-shrink-0" />}
                         </div>
                         <div className="font-medium opacity-90">{b.etiqueta}</div>
                         {b.descripcion && <div className="truncate opacity-80">{b.descripcion}</div>}
+                        {tieneDisposicion && (
+                          <div className="mt-0.5 truncate rounded bg-white/20 px-1 py-0.5 text-[10px] font-medium">
+                            Disposición: {b.tituloDisposicion}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
