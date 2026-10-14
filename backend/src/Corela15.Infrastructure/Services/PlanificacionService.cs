@@ -29,6 +29,93 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return new DateTimeOffset(viernes.Year, viernes.Month, viernes.Day, 17, 0, 0, OffsetEcuador);
     }
 
+    private const string CodigoMenuPlanificacion = "planificacion";
+
+    public async Task<EspacioPlanificacionDto> ObtenerMiEspacioAsync(string usuarioActual, CancellationToken cancellationToken = default)
+    {
+        var usuario = await db.Usuarios.Include(u => u.Persona)
+            .FirstOrDefaultAsync(u => u.NombreUsuario == usuarioActual, cancellationToken)
+            ?? throw new UsuarioSinAreaPlanificacionException();
+        var espacio = await AsegurarEspacioPersonalAsync(usuario, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return new EspacioPlanificacionDto(espacio.Codigo, espacio.Nombre, usuario.NombreUsuario);
+    }
+
+    public async Task<IReadOnlyList<EspacioPlanificacionDto>> ListarEspaciosAsync(bool esGerencia, string usuarioActual, CancellationToken cancellationToken = default)
+    {
+        if (!esGerencia)
+            return [await ObtenerMiEspacioAsync(usuarioActual, cancellationToken)];
+
+        // Personas con acceso real al módulo: por rol permanente, rol
+        // temporal vigente u otorgamiento directo -- nunca alguien con el
+        // menú excluido. Mismo criterio de unión que AuthService. La cuenta
+        // genérica "admin" no es una persona real (mismo criterio que la
+        // lista de agentes de Mesa de Servicio): solo aparece si ya armó su
+        // propia planificación.
+        var ahora = DateTimeOffset.UtcNow;
+        var idsRol = db.RolesMenu
+            .Where(rm => rm.Activo && rm.Menu.Activo && rm.Menu.Codigo == CodigoMenuPlanificacion)
+            .Select(rm => rm.IdRol);
+        var elegibles = await db.Usuarios.Include(u => u.Persona)
+            .Where(u => u.Activo && u.NombreUsuario != "admin")
+            .Where(u => !db.UsuariosMenu.Any(um => um.IdUsuario == u.Id && um.Excluido && um.Menu.Codigo == CodigoMenuPlanificacion))
+            .Where(u => u.UsuarioRoles.Any(ur => ur.Activo && idsRol.Contains(ur.IdRol))
+                || db.UsuariosRolTemporal.Any(t => t.IdUsuario == u.Id && t.Activo && t.FechaCaducidad > ahora && idsRol.Contains(t.IdRol))
+                || db.UsuariosMenu.Any(um => um.IdUsuario == u.Id && um.Activo && !um.Excluido && um.Menu.Codigo == CodigoMenuPlanificacion))
+            .ToListAsync(cancellationToken);
+
+        foreach (var u in elegibles)
+            await AsegurarEspacioPersonalAsync(u, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await db.AreasPlanificacion
+            .Where(a => a.Activo && a.IdUsuario != null)
+            .OrderBy(a => a.Nombre)
+            .Select(a => new EspacioPlanificacionDto(a.Codigo, a.Nombre, a.Usuario!.NombreUsuario))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task ValidarDuenoEspacioAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken = default)
+        => await ValidarPerteneceAlAreaAsync(codigoArea, usuarioActual, cancellationToken);
+
+    /// <summary>
+    /// Crea (si no existe) el espacio personal del usuario y lo deja
+    /// vinculado en Usuario.CodigoAreaPlanificacion. No guarda -- el caller
+    /// hace SaveChanges. El nombre se sincroniza con el nombre real vigente.
+    /// </summary>
+    private async Task<Domain.Planificacion.AreaPlanificacion> AsegurarEspacioPersonalAsync(Domain.Seguridad.Usuario usuario, CancellationToken cancellationToken)
+    {
+        var nombre = usuario.Persona?.Nombre ?? usuario.NombreCompleto ?? usuario.NombreUsuario;
+        if (nombre.Length > 100) nombre = nombre[..100];
+
+        var espacio = db.AreasPlanificacion.Local.FirstOrDefault(a => a.IdUsuario == usuario.Id)
+            ?? await db.AreasPlanificacion.FirstOrDefaultAsync(a => a.IdUsuario == usuario.Id, cancellationToken);
+
+        if (espacio is null)
+        {
+            var baseCodigo = "P" + new string(usuario.NombreUsuario.ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+            if (baseCodigo.Length > 12) baseCodigo = baseCodigo[..12];
+            var codigo = baseCodigo;
+            var sufijo = 1;
+            while (db.AreasPlanificacion.Local.Any(a => a.Codigo == codigo)
+                   || await db.AreasPlanificacion.AnyAsync(a => a.Codigo == codigo, cancellationToken))
+                codigo = $"{baseCodigo}{++sufijo}";
+
+            espacio = new Domain.Planificacion.AreaPlanificacion { Codigo = codigo, Nombre = nombre, Activo = true, IdUsuario = usuario.Id };
+            db.AreasPlanificacion.Add(espacio);
+        }
+        else
+        {
+            espacio.Nombre = nombre;
+            espacio.Activo = true;
+        }
+
+        if (usuario.CodigoAreaPlanificacion != espacio.Codigo)
+            usuario.CodigoAreaPlanificacion = espacio.Codigo;
+
+        return espacio;
+    }
+
     public async Task<EtiquetaDto> ObtenerOCrearEtiquetaAsync(string codigoArea, string nombre, CancellationToken cancellationToken = default)
     {
         var nombreLimpio = nombre.Trim();
@@ -62,10 +149,11 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return new EtiquetaDto(etiqueta.Codigo, etiqueta.Nombre, etiqueta.ColorHex);
     }
 
-    public async Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, CancellationToken cancellationToken = default)
+    public async Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, string usuarioActual, CancellationToken cancellationToken = default)
     {
         var etiqueta = await db.EtiquetasPlanificacion.FirstOrDefaultAsync(e => e.Codigo == codigo, cancellationToken)
             ?? throw new EtiquetaPlanificacionInvalidaException(codigo);
+        await ValidarPerteneceAlAreaAsync(etiqueta.CodigoArea, usuarioActual, cancellationToken);
 
         var nombreLimpio = nombre.Trim();
         if (string.IsNullOrWhiteSpace(nombreLimpio))
@@ -259,9 +347,9 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         // tras el hallazgo de privacidad de esa ronda.
         if (!filtro.EsGerencia)
         {
-            var areaUsuario = await db.Usuarios
-                .Where(u => u.NombreUsuario == filtro.UsuarioActual)
-                .Select(u => u.CodigoAreaPlanificacion)
+            var areaUsuario = await db.AreasPlanificacion
+                .Where(a => a.IdUsuario != null && a.Usuario!.NombreUsuario == filtro.UsuarioActual)
+                .Select(a => a.Codigo)
                 .FirstOrDefaultAsync(cancellationToken);
             query = query.Where(p => p.CodigoArea == areaUsuario);
         }
@@ -387,7 +475,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             throw new DisposicionSinAreasException();
 
         var areasValidas = await db.AreasPlanificacion
-            .Where(a => request.CodigosArea.Contains(a.Codigo) && a.Activo)
+            .Where(a => request.CodigosArea.Contains(a.Codigo) && a.Activo && a.IdUsuario != null)
             .Select(a => a.Codigo)
             .ToListAsync(cancellationToken);
         var invalidas = request.CodigosArea.Except(areasValidas).ToList();
@@ -497,14 +585,15 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
 
     private async Task ValidarPerteneceAlAreaAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken)
     {
-        var areaUsuario = await db.Usuarios
-            .Where(u => u.NombreUsuario == usuarioActual)
-            .Select(u => u.CodigoAreaPlanificacion)
+        // El dueño real es el usuario vinculado al espacio personal --
+        // nunca un área de departamento heredada (esas quedaron inactivas
+        // y solo de historia, nadie puede escribir en ellas).
+        var dueno = await db.AreasPlanificacion
+            .Where(a => a.Codigo == codigoArea)
+            .Select(a => a.IdUsuario == null ? null : a.Usuario!.NombreUsuario)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (areaUsuario is null)
-            throw new UsuarioSinAreaPlanificacionException();
-        if (areaUsuario != codigoArea)
+        if (dueno is null || dueno != usuarioActual)
             throw new PlanSemanalAjenoException();
     }
 

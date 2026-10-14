@@ -1476,37 +1476,10 @@ public class ConfiguracionController(
         return NoContent();
     }
 
-    // Catálogos del módulo Planificación -- áreas de la cooperativa y
-    // etiquetas/categorías (con color real) para clasificar cada bloque
-    // de la planificación semanal. Mismo patrón simple que el resto.
-
-    [HttpGet("planificacion/areas")]
-    public async Task<ActionResult<IReadOnlyList<AreaPlanificacionDto>>> AreasPlanificacion(CancellationToken ct)
-        => Ok(await db.AreasPlanificacion.OrderBy(a => a.Nombre)
-            .Select(a => new AreaPlanificacionDto(a.Codigo, a.Nombre, a.Activo)).ToListAsync(ct));
-
-    [HttpPost("planificacion/areas")]
-    public async Task<ActionResult<AreaPlanificacionDto>> CrearAreaPlanificacion(CrearAreaPlanificacionRequest request, CancellationToken ct)
-    {
-        if (await db.AreasPlanificacion.AnyAsync(a => a.Codigo == request.Codigo, ct))
-            throw new CodigoDuplicadoException("un área", request.Codigo);
-
-        var area = new AreaPlanificacion { Codigo = request.Codigo, Nombre = request.Nombre, Activo = true };
-        db.AreasPlanificacion.Add(area);
-        await db.SaveChangesAsync(ct);
-        return Created($"/api/configuracion/planificacion/areas/{area.Codigo}", new AreaPlanificacionDto(area.Codigo, area.Nombre, area.Activo));
-    }
-
-    [HttpPut("planificacion/areas/{codigo}")]
-    public async Task<ActionResult<AreaPlanificacionDto>> ActualizarAreaPlanificacion(string codigo, ActualizarAreaPlanificacionRequest request, CancellationToken ct)
-    {
-        var area = await db.AreasPlanificacion.FirstOrDefaultAsync(a => a.Codigo == codigo, ct);
-        if (area is null) return NotFound();
-        area.Nombre = request.Nombre;
-        area.Activo = request.Activo;
-        await db.SaveChangesAsync(ct);
-        return Ok(new AreaPlanificacionDto(area.Codigo, area.Nombre, area.Activo));
-    }
+    // Catálogos del módulo Planificación -- etiquetas/categorías (con color
+    // real) y KPIs. Ya no hay catálogo de "áreas": desde oct-2026 cada
+    // usuario tiene su espacio personal automático (ver
+    // IPlanificacionService.ObtenerMiEspacioAsync).
 
     [HttpGet("planificacion/etiquetas")]
     public async Task<ActionResult<IReadOnlyList<EtiquetaPlanificacionDto>>> EtiquetasPlanificacion(CancellationToken ct)

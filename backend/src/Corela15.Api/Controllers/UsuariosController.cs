@@ -31,8 +31,6 @@ public record UsuarioDetalleDto(
     bool PermiteConsultaEmpleados, bool ValidaIp, bool CambiaClave, int? DiasCambioClave,
     string? CodigoAreaPlanificacion, string? AreaPlanificacion);
 
-public record ConfigurarAreaPlanificacionBody(string? CodigoAreaPlanificacion);
-
 public record HorarioAccesoDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, bool EsReceso, bool Activo);
 
 public record CrearHorarioAccesoBody(int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, bool EsReceso);
@@ -126,27 +124,9 @@ public class UsuariosController(Corela15DbContext db, IAuthService authService, 
             u.CodigoAreaPlanificacion, u.AreaPlanificacion?.Nombre));
     }
 
-    // Área real de planificación (ver Corela15.Domain.Planificacion) --
-    // quién puede cargar/ver el plan semanal de qué área. Flag simple sin
-    // invariante de negocio más allá de que el área exista y esté activa,
-    // mismo patrón directo-contra-DbContext que AcreditaPrestamo/DebitoSpi.
-    [HttpPatch("{id:guid}/area-planificacion")]
-    public async Task<IActionResult> ConfigurarAreaPlanificacion(
-        Guid id, [FromBody] ConfigurarAreaPlanificacionBody body, CancellationToken cancellationToken)
-    {
-        var u = await db.Usuarios.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (u is null) return NotFound();
-
-        if (body.CodigoAreaPlanificacion is not null &&
-            !await db.AreasPlanificacion.AnyAsync(a => a.Codigo == body.CodigoAreaPlanificacion && a.Activo, cancellationToken))
-        {
-            return BadRequest("El área de planificación no existe o no está activa");
-        }
-
-        u.CodigoAreaPlanificacion = body.CodigoAreaPlanificacion;
-        await db.SaveChangesAsync(cancellationToken);
-        return NoContent();
-    }
+    // (Ya no existe asignación manual de "área de planificación": desde
+    // oct-2026 la planificación es personal y cada usuario recibe su propio
+    // espacio automáticamente -- ver IPlanificacionService.ObtenerMiEspacioAsync.)
 
     // Horarios reales de acceso (ver HorarioAccesoUsuario.cs) — aplicados de
     // verdad en AuthService.LoginAsync, no solo datos decorativos. CRUD

@@ -12,6 +12,12 @@ public class AreaPlanificacionConfiguration : IEntityTypeConfiguration<AreaPlani
         b.HasKey(x => x.Codigo);
         b.Property(x => x.Codigo).HasMaxLength(20);
         b.Property(x => x.Nombre).HasMaxLength(100).IsRequired();
+
+        // Un solo espacio personal por usuario -- el índice único es lo
+        // que garantiza que crearlo "la primera vez que se necesita" nunca
+        // duplique, aunque dos requests lleguen a la vez.
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.IdUsuario).IsUnique().HasFilter("id_usuario IS NOT NULL");
     }
 }
 

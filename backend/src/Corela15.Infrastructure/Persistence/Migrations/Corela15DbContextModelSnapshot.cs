@@ -7593,6 +7593,10 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("activo");
 
+                    b.Property<Guid?>("IdUsuario")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_usuario");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -7601,6 +7605,11 @@ namespace Corela15.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Codigo")
                         .HasName("pk_area");
+
+                    b.HasIndex("IdUsuario")
+                        .IsUnique()
+                        .HasDatabaseName("ix_area_id_usuario")
+                        .HasFilter("id_usuario IS NOT NULL");
 
                     b.ToTable("area", "planificacion");
                 });
@@ -13076,6 +13085,17 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("PaisAcreedor");
 
                     b.Navigation("PeriodicidadPago");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Planificacion.AreaPlanificacion", b =>
+                {
+                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_area_usuarios_id_usuario");
+
+                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Planificacion.DisposicionGerenciaArea", b =>

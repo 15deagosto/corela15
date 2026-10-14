@@ -53,8 +53,17 @@ public class AccesoDocumentalService(Corela15DbContext db) : IAccesoDocumentalSe
         var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == request.IdUsuario && u.Activo, cancellationToken)
             ?? throw new UsuarioAccesoInvalidoException();
 
-        var existente = await db.CarpetaAccesos
-            .FirstOrDefaultAsync(a => a.IdUsuario == usuario.Id && a.IdCarpeta == idCarpeta, cancellationToken);
+        // Primer acceso propio de una carpeta que venía heredando: antes de
+        // cortar la herencia se copian los permisos heredados (igual que
+        // "convertir permisos heredados" de una carpeta de red). Sin esto,
+        // compartir una subcarpeta con alguien dejaba afuera al propio
+        // dueño y a todos los que ya la veían por herencia -- bug real
+        // encontrado al probar el flujo completo (oct-2026).
+        if (!await db.CarpetaAccesos.AnyAsync(a => a.IdCarpeta == idCarpeta, cancellationToken))
+            await CopiarPermisosHeredadosAsync(carpeta, request.RegistradoPor, cancellationToken);
+
+        var existente = db.CarpetaAccesos.Local.FirstOrDefault(a => a.IdUsuario == usuario.Id && a.IdCarpeta == idCarpeta)
+            ?? await db.CarpetaAccesos.FirstOrDefaultAsync(a => a.IdUsuario == usuario.Id && a.IdCarpeta == idCarpeta, cancellationToken);
 
         if (existente is not null)
         {
@@ -76,6 +85,34 @@ public class AccesoDocumentalService(Corela15DbContext db) : IAccesoDocumentalSe
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task CopiarPermisosHeredadosAsync(Carpeta carpeta, string registradoPor, CancellationToken cancellationToken)
+    {
+        // Sube por el árbol hasta la primera carpeta con ACL propio -- es
+        // exactamente la que hoy define el acceso efectivo de esta.
+        var actual = carpeta.IdCarpetaPadre;
+        List<CarpetaAcceso> heredados = [];
+        var visitados = new HashSet<Guid>();
+        while (actual is Guid idPadre && visitados.Add(idPadre))
+        {
+            heredados = await db.CarpetaAccesos.Where(a => a.IdCarpeta == idPadre).ToListAsync(cancellationToken);
+            if (heredados.Count > 0) break;
+            actual = await db.Carpetas.Where(c => c.Id == idPadre).Select(c => c.IdCarpetaPadre).FirstOrDefaultAsync(cancellationToken);
+        }
+
+        foreach (var h in heredados)
+        {
+            db.CarpetaAccesos.Add(new CarpetaAcceso
+            {
+                Id = Guid.NewGuid(),
+                IdUsuario = h.IdUsuario,
+                IdCarpeta = carpeta.Id,
+                NivelAcceso = h.NivelAcceso,
+                CreadoEn = DateTimeOffset.UtcNow,
+                CreadoPor = registradoPor,
+            });
+        }
     }
 
     public async Task QuitarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)

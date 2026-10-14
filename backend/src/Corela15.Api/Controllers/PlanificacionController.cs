@@ -86,6 +86,7 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     [HttpGet("indicadores")]
     public async Task<ActionResult<IReadOnlyList<object>>> Indicadores([FromQuery] string? codigoArea, CancellationToken cancellationToken)
     {
+        codigoArea = await ResolverEspacioConsultaAsync(codigoArea, cancellationToken);
         var query = db.Indicadores.Where(i => i.Activo);
         if (!string.IsNullOrWhiteSpace(codigoArea))
             query = query.Where(i => i.CodigoArea == codigoArea);
@@ -98,7 +99,10 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     /// <summary>Combo editable real para KPIs -- ver <see cref="IPlanificacionService.ObtenerOCrearIndicadorAsync"/>.</summary>
     [HttpPost("indicadores/obtener-o-crear")]
     public async Task<ActionResult<IndicadorDto>> ObtenerOCrearIndicador(ObtenerOCrearIndicadorBody body, CancellationToken cancellationToken)
-        => Ok(await service.ObtenerOCrearIndicadorAsync(body.CodigoArea, body.Nombre, body.Unidad, cancellationToken));
+    {
+        await service.ValidarDuenoEspacioAsync(body.CodigoArea, User.Identity!.Name!, cancellationToken);
+        return Ok(await service.ObtenerOCrearIndicadorAsync(body.CodigoArea, body.Nombre, body.Unidad, cancellationToken));
+    }
 
     public record CrearDisposicionBody(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea);
 
@@ -122,7 +126,7 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     /// <summary>Gerencia ve todas (o solo las de un área puntual, cualquier estado); un área normal ve solo las abiertas que tiene asignadas (para poder etiquetar bloques con ellas).</summary>
     [HttpGet("disposiciones")]
     public async Task<ActionResult<IReadOnlyList<DisposicionGerenciaDto>>> Disposiciones([FromQuery] string? codigoArea, CancellationToken cancellationToken)
-        => Ok(await service.ListarDisposicionesAsync(EsGerencia, codigoArea, cancellationToken));
+        => Ok(await service.ListarDisposicionesAsync(EsGerencia, await ResolverEspacioConsultaAsync(codigoArea, cancellationToken), cancellationToken));
 
     public record CalificarCumplimientoBody(string Cumplimiento, string? Comentario);
 
@@ -132,14 +136,32 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     public async Task<ActionResult<DisposicionGerenciaDto>> CalificarCumplimiento(Guid id, string codigoArea, CalificarCumplimientoBody body, CancellationToken cancellationToken)
         => Ok(await service.CalificarCumplimientoAsync(id, codigoArea, body.Cumplimiento, body.Comentario, User.Identity!.Name!, cancellationToken));
 
+    /// <summary>
+    /// Personas con planificación -- sin gerencia, solo la propia; con
+    /// gerencia, todas las personas con acceso al módulo. (La ruta se llama
+    /// "areas" por compatibilidad: cada "área" es hoy el espacio personal
+    /// de un usuario.)
+    /// </summary>
     [HttpGet("areas")]
-    public async Task<ActionResult<IReadOnlyList<object>>> Areas(CancellationToken cancellationToken)
-        => Ok(await db.AreasPlanificacion.Where(a => a.Activo).OrderBy(a => a.Nombre)
-            .Select(a => new { a.Codigo, a.Nombre }).ToListAsync(cancellationToken));
+    public async Task<ActionResult<IReadOnlyList<EspacioPlanificacionDto>>> Areas(CancellationToken cancellationToken)
+        => Ok(await service.ListarEspaciosAsync(EsGerencia, User.Identity!.Name!, cancellationToken));
+
+    /// <summary>Espacio de planificación propio -- se crea solo la primera vez.</summary>
+    [HttpGet("mi-espacio")]
+    public async Task<ActionResult<EspacioPlanificacionDto>> MiEspacio(CancellationToken cancellationToken)
+        => Ok(await service.ObtenerMiEspacioAsync(User.Identity!.Name!, cancellationToken));
+
+    /// <summary>Sin gerencia, siempre el espacio propio (nunca leer catálogos de otra persona).</summary>
+    private async Task<string?> ResolverEspacioConsultaAsync(string? codigoArea, CancellationToken cancellationToken)
+    {
+        if (EsGerencia) return codigoArea;
+        return (await service.ObtenerMiEspacioAsync(User.Identity!.Name!, cancellationToken)).Codigo;
+    }
 
     [HttpGet("etiquetas")]
     public async Task<ActionResult<IReadOnlyList<object>>> Etiquetas([FromQuery] string? codigoArea, CancellationToken cancellationToken)
     {
+        codigoArea = await ResolverEspacioConsultaAsync(codigoArea, cancellationToken);
         var query = db.EtiquetasPlanificacion.Where(e => e.Activo);
         if (!string.IsNullOrWhiteSpace(codigoArea))
             query = query.Where(e => e.CodigoArea == codigoArea);
@@ -152,12 +174,15 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     /// <summary>Combo editable real -- ver <see cref="IPlanificacionService.ObtenerOCrearEtiquetaAsync"/>.</summary>
     [HttpPost("etiquetas/obtener-o-crear")]
     public async Task<ActionResult<EtiquetaDto>> ObtenerOCrearEtiqueta(ObtenerOCrearEtiquetaBody body, CancellationToken cancellationToken)
-        => Ok(await service.ObtenerOCrearEtiquetaAsync(body.CodigoArea, body.Nombre, cancellationToken));
+    {
+        await service.ValidarDuenoEspacioAsync(body.CodigoArea, User.Identity!.Name!, cancellationToken);
+        return Ok(await service.ObtenerOCrearEtiquetaAsync(body.CodigoArea, body.Nombre, cancellationToken));
+    }
 
     public record ActualizarEtiquetaBody(string Nombre, string ColorHex);
 
     /// <summary>Renombrar/recolorear una etiqueta real desde el propio combo -- ver <see cref="IPlanificacionService.ActualizarEtiquetaAsync"/>.</summary>
     [HttpPut("etiquetas/{codigo}")]
     public async Task<ActionResult<EtiquetaDto>> ActualizarEtiqueta(string codigo, ActualizarEtiquetaBody body, CancellationToken cancellationToken)
-        => Ok(await service.ActualizarEtiquetaAsync(codigo, body.Nombre, body.ColorHex, cancellationToken));
+        => Ok(await service.ActualizarEtiquetaAsync(codigo, body.Nombre, body.ColorHex, User.Identity!.Name!, cancellationToken));
 }

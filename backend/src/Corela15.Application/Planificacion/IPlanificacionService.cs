@@ -28,6 +28,25 @@ namespace Corela15.Application.Planificacion;
 public interface IPlanificacionService
 {
     /// <summary>
+    /// Espacio de planificación personal del usuario actual -- se crea solo
+    /// la primera vez (nunca hace falta que un administrador lo asigne). La
+    /// planificación es por persona, no por departamento (decisión explícita
+    /// del usuario, oct-2026): el "área" de las demás operaciones es este
+    /// espacio personal.
+    /// </summary>
+    Task<EspacioPlanificacionDto> ObtenerMiEspacioAsync(string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sin gerencia: solo el espacio propio. Con gerencia: el de cada
+    /// persona que tiene acceso real al módulo (crea los que falten), para
+    /// filtrar el historial y asignar disposiciones por persona.
+    /// </summary>
+    Task<IReadOnlyList<EspacioPlanificacionDto>> ListarEspaciosAsync(bool esGerencia, string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>Rechaza (422) si el espacio no es el del usuario actual -- etiquetas y KPIs solo los crea/edita el dueño.</summary>
+    Task ValidarDuenoEspacioAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Crea o actualiza (upsert real, por Área+Semana) el plan completo de
     /// una semana -- reemplaza todos los bloques existentes por los que
     /// vengan en el request. Rechazado si el plan ya está bloqueado (ver
@@ -105,8 +124,10 @@ public interface IPlanificacionService
     /// creación sobre la marcha. Rechaza dejarla con el mismo nombre que
     /// otra etiqueta ya real de la misma área.
     /// </summary>
-    Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, CancellationToken cancellationToken = default);
+    Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, string usuarioActual, CancellationToken cancellationToken = default);
 }
+
+public record EspacioPlanificacionDto(string Codigo, string Nombre, string NombreUsuario);
 
 public record EtiquetaDto(string Codigo, string Nombre, string ColorHex);
 
@@ -161,13 +182,13 @@ public record PlanSemanalListItemDto(
     DateTimeOffset CreadoEn, string CreadoPor);
 
 public class AreaPlanificacionInvalidaException(string codigo)
-    : ReglaDeNegocioException($"El área '{codigo}' no existe o no está activa");
+    : ReglaDeNegocioException($"La planificación '{codigo}' no existe o no está activa");
 
 public class EtiquetaPlanificacionInvalidaException(string codigo)
     : ReglaDeNegocioException($"La etiqueta '{codigo}' no existe o no está activa");
 
 public class NombreEtiquetaDuplicadoException(string nombre)
-    : ReglaDeNegocioException($"Ya existe una etiqueta llamada '{nombre}' en esta área");
+    : ReglaDeNegocioException($"Ya tenés una etiqueta llamada '{nombre}'");
 
 public class BloqueHorarioInvalidoException(string detalle)
     : SolicitudInvalidaException(detalle);
@@ -176,7 +197,7 @@ public class PlanSemanalNoExisteException(Guid id)
     : ReglaDeNegocioException($"El plan semanal {id} no existe");
 
 public class PlanSemanalAjenoException()
-    : ReglaDeNegocioException("Solo podés ver/editar la planificación de tu propia área");
+    : ReglaDeNegocioException("Solo podés ver/editar tu propia planificación");
 
 public class PlanSemanalBloqueadoException()
     : ReglaDeNegocioException("Ya pasó el horario límite de envío (viernes 5:00 pm) y esta semana ya fue enviada -- no se puede modificar");
@@ -185,25 +206,25 @@ public class PlanSemanalConNotaGerenciaException()
     : ReglaDeNegocioException("Esta semana ya tiene comentarios de gerencia sobre bloques puntuales -- coordiná con gerencia antes de reconstruir la planificación completa");
 
 public class UsuarioSinAreaPlanificacionException()
-    : ReglaDeNegocioException("Tu usuario no tiene un área de planificación asignada -- pedile a un administrador que te la configure en Usuarios y roles");
+    : ReglaDeNegocioException("Tu usuario no tiene una planificación personal todavía -- volvé a abrir el módulo de Planificación");
 
 public class IndicadorPlanificacionInvalidoException(int idIndicador)
-    : ReglaDeNegocioException($"El indicador {idIndicador} no existe, no está activo, o no pertenece a esta área");
+    : ReglaDeNegocioException($"El indicador {idIndicador} no existe, no está activo, o no es tuyo");
 
 public class PlanSemanalNoEnviadoException()
-    : ReglaDeNegocioException("Gerencia solo puede aprobar u observar un plan que el área ya envió");
+    : ReglaDeNegocioException("Gerencia solo puede aprobar u observar un plan que ya fue enviado");
 
 public class ComentarioObligatorioException()
     : SolicitudInvalidaException("El comentario es obligatorio para solicitar cambios");
 
 public class DisposicionGerenciaInvalidaException(Guid id)
-    : ReglaDeNegocioException($"La disposición {id} no existe, está cerrada, o no está asignada a esta área");
+    : ReglaDeNegocioException($"La disposición {id} no existe, está cerrada, o no está asignada a esta persona");
 
 public class DisposicionSinAreasException()
-    : SolicitudInvalidaException("Una disposición de gerencia necesita al menos un área destinataria");
+    : SolicitudInvalidaException("Una disposición de gerencia necesita al menos una persona destinataria");
 
 public class DisposicionAreaInvalidaException()
-    : ReglaDeNegocioException("Esta disposición no está asignada a esa área");
+    : ReglaDeNegocioException("Esta disposición no está asignada a esa persona");
 
 public class CumplimientoInvalidoException(string valor)
     : SolicitudInvalidaException($"'{valor}' no es un valor válido de cumplimiento (Cumplio/NoCumplio/SinEvaluar)");

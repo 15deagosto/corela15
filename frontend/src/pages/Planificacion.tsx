@@ -324,7 +324,7 @@ function EtiquetaCombo({
         }}
         className={`${INPUT_CLASS} w-48`}
         placeholder="Categoría — elegí o escribí una nueva"
-        title="Elegí una existente del listado o escribí una categoría nueva: se registra sola para esta área"
+        title="Elegí una existente del listado o escribí una categoría nueva: se guarda sola en tus categorías"
       />
       {abierto && !disabled && pos && createPortal(
         <div
@@ -343,7 +343,7 @@ function EtiquetaCombo({
             </button>
           )}
           {opciones.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-graphite-600">Sin categorías todavía para esta área — escribí la primera.</p>
+            <p className="px-3 py-2 text-xs text-graphite-600">Todavía no tenés categorías — escribí la primera.</p>
           ) : (
             opciones.map((o) =>
               editandoCodigo === o.codigo ? (
@@ -515,7 +515,7 @@ function IndicadorCombo({
             </button>
           )}
           {opciones.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-graphite-600">Sin KPIs todavía para esta área — escribí el primero.</p>
+            <p className="px-3 py-2 text-xs text-graphite-600">Todavía no tenés KPIs — escribí el primero.</p>
           ) : (
             opciones.map((o) => (
               <button
@@ -627,8 +627,8 @@ export function Planificacion() {
         title="Planificación"
         subtitle={
           esGerencia
-            ? 'Planificación semanal por área — tenés visibilidad de gerencia sobre todas las áreas'
-            : 'Planificación semanal de tu área — solo vos ves y editás lo que reportás acá'
+            ? 'Planificación semanal por persona — como gerencia ves, revisás y calificás la planificación de todo el equipo'
+            : 'Tu planificación semanal personal — solo vos (y gerencia) la ven'
         }
       />
 
@@ -647,7 +647,7 @@ export function Planificacion() {
         ))}
       </div>
 
-      {tab === 'editor' && <SeccionEditor areas={areas ?? []} />}
+      {tab === 'editor' && <SeccionEditor />}
       {tab === 'historial' && <SeccionHistorial areas={areas ?? []} esGerencia={esGerencia} />}
       {tab === 'disposiciones' && esGerencia && <SeccionDisposiciones areas={areas ?? []} />}
     </div>
@@ -775,8 +775,8 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
       <div className="glass-card rounded-xl p-4">
         <h3 className="mb-1 font-medium text-graphite-100">Nueva disposición</h3>
         <p className="mb-3 text-xs text-graphite-600">
-          Cada área asignada va a poder elegir, desde su propia planificación semanal, qué bloques de tiempo le dedica
-          — las horas reales dedicadas por todas las áreas se suman automáticamente acá abajo, sin que nadie lo reporte aparte.
+          Cada persona asignada va a poder elegir, desde su propia planificación semanal, qué bloques de tiempo le dedica
+          — las horas reales dedicadas por cada persona se suman automáticamente acá abajo, sin que nadie lo reporte aparte.
         </p>
         <form
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
@@ -799,7 +799,7 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
             <input required type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} className={INPUT_CLASS} />
           </label>
           <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase text-graphite-600">Áreas destinatarias</span>
+            <span className="text-xs font-medium uppercase text-graphite-600">Personas responsables</span>
             <div className="flex flex-wrap gap-1.5">
               {areas.map((a) => (
                 <button
@@ -861,7 +861,7 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
                 {d.descripcion && <p className="mb-2 text-xs text-graphite-600">{d.descripcion}</p>}
                 <p className="mb-2 text-xs text-graphite-500">
                   Plazo: {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  {' — '}Horas dedicadas (todas las áreas): <span className="font-medium text-gold-600">{d.horasDedicadas.toFixed(1)}h</span>
+                  {' — '}Horas dedicadas (todo el equipo): <span className="font-medium text-gold-600">{d.horasDedicadas.toFixed(1)}h</span>
                 </p>
                 <div className="space-y-1.5 border-t border-black/[0.04] pt-2">
                   {d.areas.map((a) => (
@@ -1163,9 +1163,15 @@ function IndicadoresEditor({
   )
 }
 
-function SeccionEditor({ areas }: { areas: Catalogo[] }) {
+function SeccionEditor() {
   const queryClient = useQueryClient()
-  const [codigoArea, setCodigoArea] = useState('')
+  // La planificación es personal: el espacio propio se resuelve (y se crea
+  // la primera vez) en el backend -- nadie elige un "área" a mano.
+  const { data: miEspacio, isError: errorEspacio } = useQuery<{ codigo: string; nombre: string }>({
+    queryKey: ['planificacion-mi-espacio'],
+    queryFn: async () => (await api.get(`${BASE}/mi-espacio`)).data,
+  })
+  const codigoArea = miEspacio?.codigo ?? ''
   const [fechaInicioSemana, setFechaInicioSemana] = useState(lunesDeEstaSemana())
   const [nombreResponsable, setNombreResponsable] = useState('')
   const [cargoResponsable, setCargoResponsable] = useState('')
@@ -1216,11 +1222,11 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
       setResultado(null)
       setBloques([])
       setIndicadores([])
-      setNombreResponsable('')
+      setNombreResponsable(miEspacio?.nombre ?? '')
       setCargoResponsable('')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codigoArea, fechaInicioSemana])
+  }, [codigoArea, fechaInicioSemana, idPlanExistente])
 
   // Etiquetas reales de la etiqueta elegida -- cada área tiene su propio
   // set, no uno global compartido. Se recarga al cambiar de área.
@@ -1410,17 +1416,12 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
       )}
 
       <div className="glass-card grid grid-cols-1 gap-3 rounded-xl p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-graphite-600">Área</span>
-          <select value={codigoArea} onChange={(e) => setCodigoArea(e.target.value)} className={INPUT_CLASS}>
-            <option value="">Seleccionar…</option>
-            {areas.map((a) => (
-              <option key={a.codigo} value={a.codigo}>
-                {a.nombre}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-graphite-600">Planificación de</span>
+          <p className="rounded-lg border border-black/[0.06] bg-black/[0.015] px-3 py-2 font-medium text-graphite-100">
+            {miEspacio?.nombre ?? 'Cargando…'}
+          </p>
+        </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-graphite-600">Semana (lunes)</span>
           <input type="date" value={fechaInicioSemana} onChange={(e) => setFechaInicioSemana(e.target.value)} className={INPUT_CLASS} />
@@ -1491,7 +1492,7 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
               </button>
             )}
             <BotonesExportarPlan
-              area={areas.find((a) => a.codigo === codigoArea)?.nombre ?? ''}
+              area={miEspacio?.nombre ?? ''}
               fechaInicioSemana={fechaInicioSemana}
               nombreResponsable={nombreResponsable}
               cargoResponsable={cargoResponsable}
@@ -1501,7 +1502,9 @@ function SeccionEditor({ areas }: { areas: Catalogo[] }) {
         </div>
 
         {!codigoArea ? (
-          <p className="py-12 text-center text-sm text-graphite-600">Elegí un área arriba para empezar a armar la planificación.</p>
+          <p className="py-12 text-center text-sm text-graphite-600">
+            {errorEspacio ? 'No se pudo cargar tu planificación — recargá la página.' : 'Cargando tu planificación…'}
+          </p>
         ) : (
           <GrillaSemanal
             bloques={previewBloques}
@@ -1547,10 +1550,10 @@ function EstadoEnvioBanner({ plan }: { plan: PlanSemanal }) {
 
   if (plan.bloqueada) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+      <div className="flex items-center gap-2 rounded-lg border border-black/[0.08] bg-black/[0.02] p-3 text-sm text-graphite-600">
         <Lock size={16} />
         <span>
-          Esta semana ya fue enviada y pasó el horario límite ({limite}) — quedó bloqueada, ya no se puede modificar.
+          Esta semana ya fue enviada y pasó el horario límite ({limite}) — quedó cerrada, ya no se puede modificar.
         </span>
       </div>
     )
@@ -1585,10 +1588,9 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
 
   const columnasHistorial: ColumnaExportable<PlanListItem>[] = [
     { header: 'Semana', accessor: (p) => new Date(p.fechaInicioSemana).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }) },
-    { header: 'Área', accessor: (p) => p.area },
-    { header: 'Responsable', accessor: (p) => p.nombreResponsable },
+    { header: 'Persona', accessor: (p) => p.area },
     { header: 'Bloques', accessor: (p) => p.cantidadBloques },
-    { header: 'Estado', accessor: (p) => (p.bloqueada ? 'Bloqueada' : p.enviada ? (p.enviadaFueraDeTiempo ? 'Enviada tarde' : 'Enviada') : 'Borrador') },
+    { header: 'Estado', accessor: (p) => (p.bloqueada ? 'Cerrada' : p.enviada ? (p.enviadaFueraDeTiempo ? 'Enviada tarde' : 'Enviada') : 'Borrador') },
     { header: 'Revisión', accessor: (p) => p.estadoAprobacion },
     { header: 'Reportado por', accessor: (p) => p.creadoPor },
   ]
@@ -1597,20 +1599,22 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${INPUT_CLASS} w-auto`}>
-            <option value="">Todas las áreas</option>
-            {areas.map((a) => (
-              <option key={a.codigo} value={a.codigo}>
-                {a.nombre}
-              </option>
-            ))}
-          </select>
-          {esGerencia && <Badge variant="exito">Vista de gerencia — todas las áreas</Badge>}
+          {esGerencia && (
+            <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${INPUT_CLASS} w-auto`}>
+              <option value="">Todas las personas</option>
+              {areas.map((a) => (
+                <option key={a.codigo} value={a.codigo}>
+                  {a.nombre}
+                </option>
+              ))}
+            </select>
+          )}
+          {esGerencia && <Badge variant="exito">Vista de gerencia — todo el equipo</Badge>}
         </div>
         <BotonesExportar
           nombreArchivo="planificacion-historial"
           titulo="Historial de planificación semanal"
-          subtitulo={filtroArea ? areas.find((a) => a.codigo === filtroArea)?.nombre : 'Todas las áreas'}
+          subtitulo={filtroArea ? areas.find((a) => a.codigo === filtroArea)?.nombre : 'Todas las personas'}
           columnas={columnasHistorial}
           filas={planes ?? []}
         />
@@ -1620,8 +1624,7 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
         <thead>
           <tr>
             <Th>Semana</Th>
-            <Th>Área</Th>
-            <Th>Responsable</Th>
+            <Th>Persona</Th>
             <Th>Bloques</Th>
             <Th>Estado</Th>
             <Th>Revisión</Th>
@@ -1636,14 +1639,18 @@ function SeccionHistorial({ areas, esGerencia }: { areas: Catalogo[]; esGerencia
             <EmptyState>Sin planificaciones registradas todavía.</EmptyState>
           ) : (
             planes.map((p) => (
-              <tr key={p.id} className="border-t border-black/[0.04] hover:bg-black/[0.015]">
+              <tr
+                key={p.id}
+                onDoubleClick={() => setPlanAbierto(p.id)}
+                title="Doble clic para abrir"
+                className="cursor-pointer border-t border-black/[0.04] hover:bg-black/[0.015]"
+              >
                 <Td>{new Date(p.fechaInicioSemana).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}</Td>
                 <Td>{p.area}</Td>
-                <Td>{p.nombreResponsable}</Td>
                 <Td>{p.cantidadBloques}</Td>
                 <Td>
                   {p.bloqueada ? (
-                    <Badge variant="peligro">Bloqueada</Badge>
+                    <Badge variant="neutral" title="Enviada y ya pasó el corte del viernes 5pm — quedó cerrada">Cerrada</Badge>
                   ) : p.enviada ? (
                     <Badge variant={p.enviadaFueraDeTiempo ? 'alerta' : 'exito'}>{p.enviadaFueraDeTiempo ? 'Enviada tarde' : 'Enviada'}</Badge>
                   ) : (
@@ -1956,7 +1963,7 @@ function NotaBloqueModal({
           value={nota}
           onChange={(e) => setNota(e.target.value)}
           className={`${INPUT_CLASS} min-h-[90px] w-full`}
-          placeholder="Comentario para el responsable del área…"
+          placeholder="Comentario para el responsable…"
         />
         <div className="mt-3 flex items-center justify-end gap-2">
           {bloque.notaGerencia && (
