@@ -127,7 +127,8 @@ public interface IPlanificacionService
     Task<EtiquetaDto> ActualizarEtiquetaAsync(string codigo, string nombre, string colorHex, string usuarioActual, CancellationToken cancellationToken = default);
 }
 
-public record EspacioPlanificacionDto(string Codigo, string Nombre, string NombreUsuario);
+/// <summary>TieneAcceso=false: la persona todavía no tiene el menú Planificación -- no puede ver lo que se le asigne hasta que se lo otorguen.</summary>
+public record EspacioPlanificacionDto(string Codigo, string Nombre, string NombreUsuario, bool TieneAcceso);
 
 public record EtiquetaDto(string Codigo, string Nombre, string ColorHex);
 

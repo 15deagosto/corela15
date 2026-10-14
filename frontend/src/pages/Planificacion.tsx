@@ -29,6 +29,8 @@ interface Catalogo {
   codigo: string
   nombre: string
   colorHex?: string
+  /** Solo en la lista de personas de gerencia: false = todavía no tiene el módulo Planificación. */
+  tieneAcceso?: boolean
 }
 
 interface EtiquetaDto {
@@ -744,6 +746,9 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
   const [descripcion, setDescripcion] = useState('')
   const [fechaLimite, setFechaLimite] = useState('')
   const [codigosArea, setCodigosArea] = useState<string[]>([])
+  const [filtroPersona, setFiltroPersona] = useState('')
+  const personasFiltradas = areas.filter((a) => !filtroPersona.trim() || a.nombre.toLowerCase().includes(filtroPersona.trim().toLowerCase()))
+  const seleccionadasSinAcceso = areas.filter((a) => codigosArea.includes(a.codigo) && a.tieneAcceso === false)
 
   const { data: disposiciones, isLoading } = useQuery<DisposicionGerencia[]>({
     queryKey: ['planificacion-disposiciones-gerencia'],
@@ -799,9 +804,18 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
             <input required type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} className={INPUT_CLASS} />
           </label>
           <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase text-graphite-600">Personas responsables</span>
-            <div className="flex flex-wrap gap-1.5">
-              {areas.map((a) => (
+            <span className="text-xs font-medium uppercase text-graphite-600">
+              Personas responsables{codigosArea.length > 0 && ` (${codigosArea.length} elegida${codigosArea.length === 1 ? '' : 's'})`}
+            </span>
+            <input
+              value={filtroPersona}
+              onChange={(e) => setFiltroPersona(e.target.value)}
+              className={INPUT_CLASS}
+              placeholder="Buscar por nombre…"
+            />
+            <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
+              {personasFiltradas.length === 0 && <span className="text-xs text-graphite-500">Nadie coincide con la búsqueda.</span>}
+              {personasFiltradas.map((a) => (
                 <button
                   key={a.codigo}
                   type="button"
@@ -811,11 +825,19 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
                       ? 'border-gold-500 bg-gold-500/10 text-gold-300'
                       : 'border-black/[0.08] text-graphite-600 hover:bg-black/[0.02]'
                   }`}
+                  title={a.tieneAcceso === false ? 'Todavía no tiene acceso al módulo Planificación: no podrá ver la disposición hasta que se lo den (Usuarios y roles).' : undefined}
                 >
                   {a.nombre}
+                  {a.tieneAcceso === false && <span className="ml-1 text-[10px] text-graphite-400">(sin acceso)</span>}
                 </button>
               ))}
             </div>
+            {seleccionadasSinAcceso.length > 0 && (
+              <p className="text-[11px] text-amber-700">
+                {seleccionadasSinAcceso.map((a) => a.nombre).join(', ')} todavía no tiene{seleccionadasSinAcceso.length === 1 ? '' : 'n'} acceso
+                a Planificación — dáselo en Usuarios y roles para que pueda ver y trabajar la disposición.
+              </p>
+            )}
           </div>
           {crear.isError && <div className="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700 sm:col-span-2">{mensajeError(crear.error)}</div>}
           <div className="sm:col-span-2">

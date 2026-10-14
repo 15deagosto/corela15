@@ -38,7 +38,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             ?? throw new UsuarioSinAreaPlanificacionException();
         var espacio = await AsegurarEspacioPersonalAsync(usuario, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return new EspacioPlanificacionDto(espacio.Codigo, espacio.Nombre, usuario.NombreUsuario);
+        return new EspacioPlanificacionDto(espacio.Codigo, espacio.Nombre, usuario.NombreUsuario, true);
     }
 
     public async Task<IReadOnlyList<EspacioPlanificacionDto>> ListarEspaciosAsync(bool esGerencia, string usuarioActual, CancellationToken cancellationToken = default)
@@ -46,33 +46,48 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         if (!esGerencia)
             return [await ObtenerMiEspacioAsync(usuarioActual, cancellationToken)];
 
-        // Personas con acceso real al módulo: por rol permanente, rol
-        // temporal vigente u otorgamiento directo -- nunca alguien con el
-        // menú excluido. Mismo criterio de unión que AuthService. La cuenta
-        // genérica "admin" no es una persona real (mismo criterio que la
-        // lista de agentes de Mesa de Servicio): solo aparece si ya armó su
-        // propia planificación.
+        // Gerencia ve a TODAS las personas registradas y habilitadas (pedido
+        // explícito del usuario: poder asignar disposiciones a cualquiera por
+        // nombre, no solo a quien ya tiene el módulo). La cuenta genérica
+        // "admin" no es una persona real (mismo criterio que la lista de
+        // agentes de Mesa de Servicio). Se marca quién tiene acceso real al
+        // menú (rol permanente, rol temporal vigente u otorgamiento directo,
+        // sin exclusión -- mismo criterio de unión que AuthService), porque
+        // sin acceso esa persona todavía no puede ver lo que se le asigna.
         var ahora = DateTimeOffset.UtcNow;
         var idsRol = db.RolesMenu
             .Where(rm => rm.Activo && rm.Menu.Activo && rm.Menu.Codigo == CodigoMenuPlanificacion)
             .Select(rm => rm.IdRol);
-        var elegibles = await db.Usuarios.Include(u => u.Persona)
-            .Where(u => u.Activo && u.NombreUsuario != "admin")
+        var personas = await db.Usuarios.Include(u => u.Persona)
+            .Where(u => u.Activo && u.PuedeIngresarSistema && u.NombreUsuario != "admin")
+            .ToListAsync(cancellationToken);
+        var idsConAcceso = (await db.Usuarios
+            .Where(u => u.Activo)
             .Where(u => !db.UsuariosMenu.Any(um => um.IdUsuario == u.Id && um.Excluido && um.Menu.Codigo == CodigoMenuPlanificacion))
             .Where(u => u.UsuarioRoles.Any(ur => ur.Activo && idsRol.Contains(ur.IdRol))
                 || db.UsuariosRolTemporal.Any(t => t.IdUsuario == u.Id && t.Activo && t.FechaCaducidad > ahora && idsRol.Contains(t.IdRol))
                 || db.UsuariosMenu.Any(um => um.IdUsuario == u.Id && um.Activo && !um.Excluido && um.Menu.Codigo == CodigoMenuPlanificacion))
-            .ToListAsync(cancellationToken);
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
 
-        foreach (var u in elegibles)
+        foreach (var u in personas)
             await AsegurarEspacioPersonalAsync(u, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        return await db.AreasPlanificacion
-            .Where(a => a.Activo && a.IdUsuario != null)
+        var espacios = await db.AreasPlanificacion
+            .Where(a => a.Activo && a.IdUsuario != null && a.Usuario!.Activo)
             .OrderBy(a => a.Nombre)
-            .Select(a => new EspacioPlanificacionDto(a.Codigo, a.Nombre, a.Usuario!.NombreUsuario))
+            .Select(a => new { a.Codigo, a.Nombre, a.Usuario!.NombreUsuario, IdUsuario = a.IdUsuario!.Value })
             .ToListAsync(cancellationToken);
+        // Dos personas reales con el mismo nombre (pasa en los datos
+        // importados de Softbank) se distinguen con su usuario.
+        var repetidos = espacios.GroupBy(e => e.Nombre.Trim().ToUpperInvariant()).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        return espacios
+            .Select(e => new EspacioPlanificacionDto(
+                e.Codigo,
+                repetidos.Contains(e.Nombre.Trim().ToUpperInvariant()) ? $"{e.Nombre} ({e.NombreUsuario})" : e.Nombre,
+                e.NombreUsuario, idsConAcceso.Contains(e.IdUsuario)))
+            .ToList();
     }
 
     public async Task ValidarDuenoEspacioAsync(string codigoArea, string usuarioActual, CancellationToken cancellationToken = default)
