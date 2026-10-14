@@ -8,19 +8,105 @@ namespace Corela15.Infrastructure.Services;
 /// <summary>Ver <see cref="ICarpetaService"/> — árbol real de carpetas de la Biblioteca de Documentos.</summary>
 public class CarpetaService(Corela15DbContext db) : ICarpetaService
 {
-    public async Task<IReadOnlyList<CarpetaItem>> ListarAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CarpetaItem>> ListarAsync(ContextoAccesoDocumental contexto, Guid idUsuarioActual, string nombreUsuarioActual, CancellationToken cancellationToken = default)
     {
         var carpetas = await db.Carpetas.Where(c => c.Activa).ToListAsync(cancellationToken);
+        var origen = await ResolverOrigenCompartidoAsync(carpetas, idUsuarioActual, nombreUsuarioActual, cancellationToken);
+
+        CarpetaItem Item(Carpeta c, string nivel, bool escribe)
+        {
+            var (compartida, por) = origen.TryGetValue(c.Id, out var o) ? o : (false, null);
+            return new CarpetaItem(c.Id, c.Nombre, c.IdCarpetaPadre, c.Activa, nivel, escribe, escribe, compartida, por);
+        }
 
         if (contexto.VeTodo)
-            return carpetas.Select(c => new CarpetaItem(c.Id, c.Nombre, c.IdCarpetaPadre, c.Activa, "Escritura", true, true)).ToList();
+            return carpetas.Select(c => Item(c, "Escritura", true)).ToList();
 
         var resultado = new List<CarpetaItem>();
         foreach (var c in carpetas)
         {
             if (!contexto.AccesoPorCarpeta.TryGetValue(c.Id, out var nivel)) continue;
-            var puedeEscribir = nivel == "Escritura";
-            resultado.Add(new CarpetaItem(c.Id, c.Nombre, c.IdCarpetaPadre, c.Activa, nivel, puedeEscribir, puedeEscribir));
+            resultado.Add(Item(c, nivel, nivel == "Escritura"));
+        }
+        return resultado;
+    }
+
+    /// <summary>
+    /// Marca qué carpetas le compartió OTRA persona al usuario actual (pedido
+    /// explícito: "que se identifique que es una carpeta que le compartieron
+    /// y quién se la compartió"). El dueño real de un árbol es el dueño de
+    /// su carpeta raíz: la primera fila de ACL que se creó en ella (la de su
+    /// carpeta personal, ver <see cref="AsegurarCarpetaPersonalAsync"/>).
+    /// Quien la compartió es el que creó la fila de acceso del usuario en la
+    /// carpeta que hoy define su acceso; si esa fila la creó él mismo o una
+    /// migración, se muestra al dueño del árbol.
+    /// </summary>
+    private async Task<Dictionary<Guid, (bool Compartida, string? Por)>> ResolverOrigenCompartidoAsync(
+        List<Carpeta> carpetas, Guid idUsuarioActual, string nombreUsuarioActual, CancellationToken cancellationToken)
+    {
+        var accesos = await db.CarpetaAccesos
+            .Select(a => new { a.IdCarpeta, a.IdUsuario, a.CreadoEn, a.CreadoPor })
+            .ToListAsync(cancellationToken);
+        var porCarpeta = accesos.GroupBy(a => a.IdCarpeta).ToDictionary(g => g.Key, g => g.ToList());
+        var padrePorId = carpetas.ToDictionary(c => c.Id, c => c.IdCarpetaPadre);
+
+        var usuarios = await db.Usuarios
+            .Select(u => new { u.Id, u.NombreUsuario, Nombre = u.Persona != null ? u.Persona.Nombre : u.NombreCompleto })
+            .ToListAsync(cancellationToken);
+        var nombrePorId = usuarios.ToDictionary(u => u.Id, u => u.Nombre ?? u.NombreUsuario);
+        var nombrePorUsuario = usuarios
+            .GroupBy(u => u.NombreUsuario, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Nombre ?? g.First().NombreUsuario, StringComparer.OrdinalIgnoreCase);
+
+        Guid Raiz(Guid id)
+        {
+            var visitados = new HashSet<Guid>();
+            while (padrePorId.TryGetValue(id, out var padre) && padre is Guid p && padrePorId.ContainsKey(p) && visitados.Add(id))
+                id = p;
+            return id;
+        }
+
+        Guid? Autoritativa(Guid id)
+        {
+            Guid? actual = id;
+            var visitados = new HashSet<Guid>();
+            while (actual is Guid a && visitados.Add(a))
+            {
+                if (porCarpeta.ContainsKey(a)) return a;
+                actual = padrePorId.TryGetValue(a, out var p) ? p : null;
+            }
+            return null;
+        }
+
+        var resultado = new Dictionary<Guid, (bool, string?)>();
+        foreach (var c in carpetas)
+        {
+            var raiz = Raiz(c.Id);
+            Guid? dueno = porCarpeta.TryGetValue(raiz, out var aclRaiz)
+                ? aclRaiz.OrderBy(a => a.CreadoEn).First().IdUsuario
+                : null;
+
+            var aut = Autoritativa(c.Id);
+            var miFila = aut is Guid idAut ? porCarpeta[idAut].FirstOrDefault(a => a.IdUsuario == idUsuarioActual) : null;
+            var otorgante = miFila?.CreadoPor;
+            var otorganteValido = otorgante is not null
+                && !string.Equals(otorgante, nombreUsuarioActual, StringComparison.OrdinalIgnoreCase)
+                && nombrePorUsuario.ContainsKey(otorgante);
+
+            var compartida = dueno is Guid d ? d != idUsuarioActual : otorganteValido;
+            if (!compartida) continue;
+
+            // Sin una fila propia (ej. gerencia documental que ve todo) se
+            // muestra solo al dueño -- nunca se inventa un otorgante.
+            string? por = dueno is Guid idDueno ? nombrePorId.GetValueOrDefault(idDueno) : null;
+            if (otorganteValido)
+            {
+                var nombreOtorgante = nombrePorUsuario[otorgante!];
+                // Si el que otorgó es distinto del dueño (ej. alguien con
+                // escritura volvió a compartir), se muestran ambos.
+                por = por is null || por == nombreOtorgante ? nombreOtorgante : $"{nombreOtorgante} (carpeta de {por})";
+            }
+            resultado[c.Id] = (true, por);
         }
         return resultado;
     }

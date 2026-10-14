@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Library, Plus, X, Download, UploadCloud, Ban, Grid3x3, Lock, Trash2,
-  Folder, FolderPlus, ChevronRight, ChevronDown, Users, Eye,
+  Folder, FolderPlus, FolderSymlink, ChevronRight, ChevronDown, Users, Eye,
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -26,6 +26,9 @@ interface CarpetaItem {
   nivelAcceso: string
   puedeEscribir: boolean
   puedeAdministrarAcceso: boolean
+  /** Otra persona le compartió esta carpeta al usuario actual. */
+  compartidaConmigo: boolean
+  compartidaPor: string | null
 }
 
 interface DocumentoItem {
@@ -182,8 +185,15 @@ function FolderTree({
             type="button"
             onClick={() => onSeleccionar(c.id)}
             style={{ paddingLeft: `${8 + nivel * 16}px` }}
+            title={c.compartidaConmigo ? `Compartida contigo${c.compartidaPor ? ` por ${c.compartidaPor}` : ''}` : undefined}
             className={`flex w-full items-center gap-1.5 rounded-lg py-1.5 pr-2 text-left text-xs transition-colors ${
-              seleccionada === c.id ? 'bg-gold-500/10 font-medium text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
+              seleccionada === c.id
+                ? c.compartidaConmigo
+                  ? 'bg-sky-500/10 font-medium text-sky-700'
+                  : 'bg-gold-500/10 font-medium text-gold-300'
+                : c.compartidaConmigo
+                  ? 'text-sky-700 hover:bg-sky-500/5'
+                  : 'text-graphite-600 hover:bg-black/[0.02]'
             }`}
           >
             {tieneHijos ? (
@@ -204,8 +214,17 @@ function FolderTree({
             ) : (
               <span className="w-[13px] flex-shrink-0" />
             )}
-            <Folder size={13} className="flex-shrink-0" />
-            <span className="truncate">{c.nombre}</span>
+            {c.compartidaConmigo ? (
+              <FolderSymlink size={13} className="flex-shrink-0 text-sky-600" />
+            ) : (
+              <Folder size={13} className="flex-shrink-0" />
+            )}
+            <span className="min-w-0 truncate">
+              {c.nombre}
+              {c.compartidaConmigo && c.compartidaPor && nivel === 0 && (
+                <span className="block truncate text-[10px] font-normal text-sky-600/80">de {c.compartidaPor}</span>
+              )}
+            </span>
             {c.nivelAcceso === 'Lectura' && <Lock size={10} className="ml-auto flex-shrink-0 text-graphite-400" />}
           </button>
           {!colapsada && renderizar(c.id, nivel + 1)}
@@ -1290,6 +1309,15 @@ export function BibliotecaDocumentos() {
               </div>
             ) : (
               <>
+                {carpetaActual.compartidaConmigo && (
+                  <p className="mb-3 flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                    <FolderSymlink size={13} />
+                    Carpeta compartida contigo
+                    {carpetaActual.compartidaPor ? <> por <strong>{carpetaActual.compartidaPor}</strong></> : null}
+                    {' — '}
+                    {carpetaActual.nivelAcceso === 'Escritura' ? 'puedes ver y modificar su contenido.' : 'solo puedes verla.'}
+                  </p>
+                )}
                 {carpetaActual.nivelAcceso === 'Lectura' && (
                   <p className="mb-3 flex items-center gap-1.5 text-xs text-graphite-500">
                     <Lock size={12} /> Solo lectura en "{carpetaActual.nombre}" — no tenés acceso de escritura acá.

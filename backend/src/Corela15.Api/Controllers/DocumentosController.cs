@@ -94,7 +94,7 @@ public class DocumentosController(IDocumentoService service, ICarpetaService car
     public async Task<ActionResult<IReadOnlyList<CarpetaItem>>> ListarCarpetas(CancellationToken cancellationToken)
     {
         var contexto = await ResolverContextoAsync(cancellationToken);
-        return Ok(await carpetaService.ListarAsync(contexto, cancellationToken));
+        return Ok(await carpetaService.ListarAsync(contexto, IdUsuarioActual, User.Identity!.Name!, cancellationToken));
     }
 
     [HttpPost("carpetas")]

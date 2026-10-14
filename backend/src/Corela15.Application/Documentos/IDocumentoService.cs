@@ -27,7 +27,7 @@ public interface IDocumentoService
 public interface ICarpetaService
 {
     /// <summary>Solo las carpetas donde el usuario tiene al menos Lectura efectiva (o todas, si VeTodo).</summary>
-    Task<IReadOnlyList<CarpetaItem>> ListarAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CarpetaItem>> ListarAsync(ContextoAccesoDocumental contexto, Guid idUsuarioActual, string nombreUsuarioActual, CancellationToken cancellationToken = default);
 
     /// <summary>Crear una carpeta raíz exige VeTodo; crear una subcarpeta exige Escritura sobre la carpeta padre.</summary>
     Task<Guid> CrearAsync(CrearCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);

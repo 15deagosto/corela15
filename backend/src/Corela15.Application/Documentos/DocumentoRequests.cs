@@ -50,7 +50,8 @@ public record RenombrarCarpetaRequest(string Nombre, string ModificadoPor);
 
 public record CarpetaItem(
     Guid Id, string Nombre, Guid? IdCarpetaPadre, bool Activa,
-    string NivelAcceso, bool PuedeEscribir, bool PuedeAdministrarAcceso);
+    string NivelAcceso, bool PuedeEscribir, bool PuedeAdministrarAcceso,
+    bool CompartidaConmigo = false, string? CompartidaPor = null);
 
 public record CarpetaAccesoItem(Guid Id, Guid IdUsuario, string NombreUsuario, Guid IdCarpeta, string NombreCarpeta, string NivelAcceso, DateTimeOffset CreadoEn, string CreadoPor);
 
