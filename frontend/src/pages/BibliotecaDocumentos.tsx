@@ -430,6 +430,25 @@ function AccesosCarpetaModal({ carpeta, onClose }: { carpeta: CarpetaItem; onClo
   )
 }
 
+const EXTENSIONES_PERMITIDAS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'ppt', 'pptx']
+const TAMANO_MAXIMO = 20 * 1024 * 1024
+
+interface ArchivoPorSubir {
+  id: string
+  file: File
+  titulo: string
+  estado: 'pendiente' | 'subiendo' | 'ok' | 'error'
+  error?: string
+}
+
+/** Valida en el navegador lo mismo que valida el backend, para avisar antes de subir. */
+function errorLocalArchivo(f: File): string | undefined {
+  const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+  if (!EXTENSIONES_PERMITIDAS.includes(ext)) return `Tipo .${ext} no permitido`
+  if (f.size > TAMANO_MAXIMO) return 'Supera 20MB'
+  return undefined
+}
+
 function NuevoDocumentoModal({
   carpeta,
   areas,
@@ -442,7 +461,6 @@ function NuevoDocumentoModal({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const [titulo, setTitulo] = useState('')
   const [area, setArea] = useState('')
   const [tipo, setTipo] = useState('')
   const [version, setVersion] = useState('1.0')
@@ -451,60 +469,168 @@ function NuevoDocumentoModal({
   const [fechaAprobacion, setFechaAprobacion] = useState('')
   const [proximaRevision, setProximaRevision] = useState('')
   const [notas, setNotas] = useState('')
-  const [archivo, setArchivo] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<ArchivoPorSubir[]>([])
+  const [subiendo, setSubiendo] = useState(false)
+  const [arrastrando, setArrastrando] = useState(false)
 
-  const crear = useMutation({
-    mutationFn: async () => {
-      const form = new FormData()
-      form.append('Titulo', titulo)
-      form.append('IdCarpeta', carpeta.id)
-      form.append('Area', area)
-      form.append('Tipo', tipo)
-      form.append('Version', version)
-      if (instanciaAprobacion) form.append('InstanciaAprobacion', instanciaAprobacion)
-      if (instanciaRevision) form.append('InstanciaRevision', instanciaRevision)
-      if (fechaAprobacion) form.append('FechaAprobacion', fechaAprobacion)
-      if (proximaRevision) form.append('ProximaRevision', proximaRevision)
-      if (notas) form.append('Notas', notas)
-      form.append('Archivo', archivo as File)
-      return api.post('/api/biblioteca-documentos', form, {
-        headers: { 'Idempotency-Key': idempotencyKey() },
-      })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos'] })
-      queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-matriz'] })
-      onClose()
-    },
-  })
+  const agregarArchivos = (lista: FileList | null) => {
+    if (!lista) return
+    const nuevos = Array.from(lista).map((f) => {
+      const error = errorLocalArchivo(f)
+      return {
+        id: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`,
+        file: f,
+        // Título real desde el nombre del archivo -- editable antes de subir.
+        titulo: tituloDesdeNombreArchivo(f.name),
+        estado: error ? 'error' : 'pendiente',
+        error,
+      } as ArchivoPorSubir
+    })
+    setArchivos((prev) => [...prev, ...nuevos])
+  }
+
+  const actualizar = (id: string, cambios: Partial<ArchivoPorSubir>) =>
+    setArchivos((prev) => prev.map((a) => (a.id === id ? { ...a, ...cambios } : a)))
+
+  const porSubir = archivos.filter((a) => a.estado === 'pendiente' || (a.estado === 'error' && !errorLocalArchivo(a.file)))
+  const subidos = archivos.filter((a) => a.estado === 'ok').length
+
+  // Se suben de a uno (cada uno con su propia clave de idempotencia): si
+  // uno falla, los demás igual quedan guardados, y el que falló se puede
+  // reintentar sin volver a subir los que ya entraron.
+  const subirTodos = async () => {
+    if (!area || !tipo || porSubir.length === 0) return
+    setSubiendo(true)
+    let fallas = 0
+    for (const a of porSubir) {
+      if (!a.titulo.trim()) {
+        actualizar(a.id, { estado: 'error', error: 'Falta el título' })
+        fallas++
+        continue
+      }
+      actualizar(a.id, { estado: 'subiendo', error: undefined })
+      try {
+        const form = new FormData()
+        form.append('Titulo', a.titulo.trim())
+        form.append('IdCarpeta', carpeta.id)
+        form.append('Area', area)
+        form.append('Tipo', tipo)
+        form.append('Version', version)
+        if (instanciaAprobacion) form.append('InstanciaAprobacion', instanciaAprobacion)
+        if (instanciaRevision) form.append('InstanciaRevision', instanciaRevision)
+        if (fechaAprobacion) form.append('FechaAprobacion', fechaAprobacion)
+        if (proximaRevision) form.append('ProximaRevision', proximaRevision)
+        if (notas) form.append('Notas', notas)
+        form.append('Archivo', a.file)
+        await api.post('/api/biblioteca-documentos', form, { headers: { 'Idempotency-Key': idempotencyKey() } })
+        actualizar(a.id, { estado: 'ok' })
+      } catch (err) {
+        fallas++
+        actualizar(a.id, { estado: 'error', error: mensajeError(err, 'No se pudo subir') })
+      }
+    }
+    setSubiendo(false)
+    queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos'] })
+    queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos-matriz'] })
+    if (fallas === 0) onClose()
+  }
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={subiendo ? undefined : onClose}>
         <div
           className="glass-card flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-xl p-5"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-medium text-graphite-100">Nuevo documento en "{carpeta.nombre}"</h3>
-            <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100">
+            <h3 className="font-medium text-graphite-100">Subir documentos a "{carpeta.nombre}"</h3>
+            <button type="button" onClick={onClose} disabled={subiendo} className="text-graphite-600 hover:text-graphite-100 disabled:opacity-40">
               <X size={18} />
             </button>
           </div>
-          <p className="mb-4 text-xs text-graphite-500">Se sube directo a la carpeta seleccionada — movelo después si hace falta.</p>
+          <p className="mb-4 text-xs text-graphite-500">
+            Podés subir uno o varios a la vez. Los datos de abajo (área, tipo, versión…) se aplican a todos; el título de cada uno se puede editar.
+          </p>
 
           <form
             className="grid grid-cols-1 gap-4 sm:grid-cols-2"
             onSubmit={(e) => {
               e.preventDefault()
-              if (!titulo || !area || !tipo || !archivo) return
-              crear.mutate()
+              void subirTodos()
             }}
           >
-            <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-              <span className="text-graphite-600">Título</span>
-              <input required type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)} className={inputClase} />
-            </label>
+            <div className="sm:col-span-2">
+              <label
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setArrastrando(true)
+                }}
+                onDragLeave={() => setArrastrando(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setArrastrando(false)
+                  agregarArchivos(e.dataTransfer.files)
+                }}
+                className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition-colors ${
+                  arrastrando ? 'border-gold-500 bg-gold-500/5' : 'border-black/[0.12] hover:border-gold-500/60'
+                }`}
+              >
+                <UploadCloud size={24} className="text-gold-600" />
+                <span className="font-medium text-graphite-100">Arrastrá los archivos acá o hacé clic para elegirlos</span>
+                <span className="text-xs text-graphite-500">pdf, doc, docx, xls, xlsx, txt, ppt, pptx — máx. 20MB cada uno</span>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx"
+                  className="hidden"
+                  onChange={(e) => {
+                    agregarArchivos(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+
+            {archivos.length > 0 && (
+              <div className="sm:col-span-2 space-y-1.5">
+                <p className="text-xs font-medium text-graphite-600">
+                  {archivos.length} archivo{archivos.length === 1 ? '' : 's'}
+                  {subidos > 0 && ` — ${subidos} subido${subidos === 1 ? '' : 's'}`}
+                </p>
+                {archivos.map((a) => (
+                  <div key={a.id} className="flex items-center gap-2 rounded-lg border border-black/[0.06] px-2.5 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      <input
+                        type="text"
+                        value={a.titulo}
+                        disabled={a.estado === 'ok' || a.estado === 'subiendo'}
+                        onChange={(e) => actualizar(a.id, { titulo: e.target.value })}
+                        className={`${inputClase} py-1 text-sm`}
+                        placeholder="Título"
+                      />
+                      <p className="mt-0.5 truncate text-[11px] text-graphite-500" title={a.file.name}>
+                        {a.file.name} · {(a.file.size / 1024 / 1024).toFixed(2)} MB
+                        {a.error && <span className="ml-1 text-red-700">— {a.error}</span>}
+                      </p>
+                    </div>
+                    {a.estado === 'ok' && <Badge variant="exito">Subido</Badge>}
+                    {a.estado === 'subiendo' && <Badge variant="neutral">Subiendo…</Badge>}
+                    {a.estado === 'error' && <Badge variant="peligro">Error</Badge>}
+                    {a.estado !== 'ok' && a.estado !== 'subiendo' && (
+                      <button
+                        type="button"
+                        disabled={subiendo}
+                        onClick={() => setArchivos((prev) => prev.filter((x) => x.id !== a.id))}
+                        className="text-graphite-500 hover:text-red-700 disabled:opacity-40"
+                        title="Quitar de la lista"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-graphite-600">Área (clasificación, no controla acceso)</span>
@@ -536,25 +662,6 @@ function NuevoDocumentoModal({
             </label>
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-graphite-600">Archivo (pdf, doc, docx, xls, xlsx, txt, ppt, pptx — máx. 20MB)</span>
-              <input
-                required
-                type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null
-                  setArchivo(f)
-                  // Autocompleta el título real desde el nombre del archivo
-                  // -- solo si el campo sigue vacío, nunca pisa un título
-                  // que el usuario ya haya escrito a mano. Sigue siendo
-                  // editable después, es solo el punto de partida.
-                  if (f && !titulo.trim()) setTitulo(tituloDesdeNombreArchivo(f.name))
-                }}
-                className="text-xs text-graphite-600"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm">
               <span className="text-graphite-600">Instancia de aprobación (opcional)</span>
               <input type="text" value={instanciaAprobacion} onChange={(e) => setInstanciaAprobacion(e.target.value)} className={inputClase} placeholder="Ej. Consejo de Administración" />
             </label>
@@ -579,19 +686,25 @@ function NuevoDocumentoModal({
               <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} className={inputClase} />
             </label>
 
-            <div className="sm:col-span-2">
+            <div className="flex items-center gap-3 sm:col-span-2">
               <button
                 type="submit"
-                disabled={crear.isPending}
+                disabled={subiendo || porSubir.length === 0 || !area || !tipo}
                 className="btn-hover rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
-                {crear.isPending ? 'Subiendo…' : 'Guardar documento'}
+                {subiendo
+                  ? 'Subiendo…'
+                  : porSubir.length > 1
+                    ? `Subir ${porSubir.length} documentos`
+                    : 'Guardar documento'}
               </button>
+              {!subiendo && subidos > 0 && porSubir.length === 0 && (
+                <button type="button" onClick={onClose} className="text-sm text-graphite-600 hover:underline">
+                  Cerrar
+                </button>
+              )}
+              {archivos.length === 0 && <span className="text-xs text-graphite-500">Elegí al menos un archivo.</span>}
             </div>
-
-            {crear.isError && (
-              <p className="sm:col-span-2 text-sm text-red-700">{mensajeError(crear.error, 'No se pudo guardar el documento.')}</p>
-            )}
           </form>
         </div>
       </div>
