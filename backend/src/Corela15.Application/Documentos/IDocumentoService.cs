@@ -50,6 +50,14 @@ public interface ICarpetaService
     /// request real de un usuario navegando la biblioteca.
     /// </summary>
     Task<Guid> AsegurarCarpetaPersonalAsync(Guid idUsuario, string nombreVisible, string creadoPor, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Si el usuario no tiene ninguna carpeta raíz propia (Escritura), le crea
+    /// su carpeta personal. La Biblioteca es universal: cualquiera puede
+    /// entrar, aunque su usuario no se haya creado desde la pantalla de
+    /// usuarios (ej. creado por migración o importado).
+    /// </summary>
+    Task AsegurarCarpetaPersonalSiFaltaAsync(Guid idUsuario, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Administra el ACL real por carpeta — ver CarpetaAcceso.cs. Otorgar/quitar/listar accesos de una carpeta exige Escritura efectiva sobre esa carpeta (o VeTodo) — el dueño de una carpeta puede compartirla, mismo criterio que una carpeta de red.</summary>

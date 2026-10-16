@@ -172,14 +172,59 @@ public class CarpetaService(Corela15DbContext db) : ICarpetaService
         return carpeta;
     }
 
+    public async Task AsegurarCarpetaPersonalSiFaltaAsync(Guid idUsuario, CancellationToken cancellationToken = default)
+    {
+        var tieneRaizPropia = await db.CarpetaAccesos.AnyAsync(
+            a => a.IdUsuario == idUsuario && a.NivelAcceso == NivelAccesoDocumental.Escritura
+                 && a.Carpeta.Activa && a.Carpeta.IdCarpetaPadre == null,
+            cancellationToken);
+        if (tieneRaizPropia) return;
+
+        var usuario = await db.Usuarios
+            .Where(u => u.Id == idUsuario && u.Activo)
+            .Select(u => new { u.NombreUsuario, Nombre = u.Persona != null ? u.Persona.Nombre : u.NombreCompleto })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (usuario is null) return;
+
+        // Siempre una carpeta NUEVA, nunca buscar una existente por nombre:
+        // dos personas con el mismo nombre no pueden terminar compartiendo
+        // la carpeta personal de otra.
+        var carpeta = new Carpeta
+        {
+            Id = Guid.NewGuid(),
+            Nombre = string.IsNullOrWhiteSpace(usuario.Nombre) ? usuario.NombreUsuario : usuario.Nombre,
+            IdCarpetaPadre = null,
+            Activa = true,
+            CreadoEn = DateTimeOffset.UtcNow,
+            CreadoPor = "sistema:carpeta-personal",
+        };
+        db.Carpetas.Add(carpeta);
+        db.CarpetaAccesos.Add(new CarpetaAcceso
+        {
+            Id = Guid.NewGuid(),
+            IdCarpeta = carpeta.Id,
+            IdUsuario = idUsuario,
+            NivelAcceso = NivelAccesoDocumental.Escritura,
+            CreadoEn = DateTimeOffset.UtcNow,
+            CreadoPor = usuario.NombreUsuario,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<Guid> AsegurarCarpetaPersonalAsync(Guid idUsuario, string nombreVisible, string creadoPor, CancellationToken cancellationToken = default)
     {
         // Carpeta personal real como raíz propia (sin agrupador -- se
         // simplificó a pedido explícito del usuario: nada de un catálogo
         // fijo compartido por defecto, cada quien ve solo la suya, y la
         // comparte él mismo si quiere, mismo mecanismo de siempre).
-        var personal = await db.Carpetas.FirstOrDefaultAsync(
-            c => c.Activa && c.IdCarpetaPadre == null && c.Nombre == nombreVisible, cancellationToken);
+        // Idempotente por el acceso del PROPIO usuario, nunca por nombre: con
+        // búsqueda por nombre, dos personas homónimas terminaban compartiendo
+        // la carpeta personal de la otra (encontrado y corregido oct-2026).
+        var personal = await db.CarpetaAccesos
+            .Where(a => a.IdUsuario == idUsuario && a.NivelAcceso == NivelAccesoDocumental.Escritura
+                        && a.Carpeta.Activa && a.Carpeta.IdCarpetaPadre == null)
+            .Select(a => a.Carpeta)
+            .FirstOrDefaultAsync(cancellationToken);
         if (personal is null)
         {
             personal = new Carpeta

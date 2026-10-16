@@ -94,6 +94,9 @@ public class DocumentosController(IDocumentoService service, ICarpetaService car
     [HttpGet("carpetas")]
     public async Task<ActionResult<IReadOnlyList<CarpetaItem>>> ListarCarpetas(CancellationToken cancellationToken)
     {
+        // Módulo universal: la primera vez que alguien entra sin carpeta
+        // personal (usuario creado por migración/importación), se le crea.
+        await carpetaService.AsegurarCarpetaPersonalSiFaltaAsync(IdUsuarioActual, cancellationToken);
         var contexto = await ResolverContextoAsync(cancellationToken);
         return Ok(await carpetaService.ListarAsync(contexto, IdUsuarioActual, User.Identity!.Name!, cancellationToken));
     }

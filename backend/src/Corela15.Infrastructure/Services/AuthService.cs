@@ -158,6 +158,12 @@ public class AuthService(Corela15DbContext db, IConfiguration configuration) : I
         // (incluye a GENERADOR OF01 y a los usuarios reales importados de
         // Softbank sin ningún rol asignado).
         if (!menus.Contains("comunicacion-interna")) menus.Add("comunicacion-interna");
+        // Biblioteca de Documentos también es universal -- pedido explícito
+        // del usuario (oct-2026): "debe ser público, los permisos de acceso
+        // los maneja cada quien dentro del módulo". Entrar al módulo no da
+        // acceso a nada ajeno: cada quien ve su carpeta personal y lo que
+        // otros le compartan (ACL por carpeta/documento, ver CarpetaAcceso).
+        if (!menus.Contains("biblioteca-documentos")) menus.Add("biblioteca-documentos");
 
         var estructurasPorRol = await db.RolesTipoEstructura
             .Where(re => re.Activo && re.TipoEstructura.Activo && idsRolEfectivos.Contains(re.IdRol))
