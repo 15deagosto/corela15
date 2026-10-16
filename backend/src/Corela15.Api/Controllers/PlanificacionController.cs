@@ -1,3 +1,4 @@
+using Corela15.Api.Idempotencia;
 using Corela15.Application.Planificacion;
 using Corela15.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -104,14 +105,22 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
         return Ok(await service.ObtenerOCrearIndicadorAsync(body.CodigoArea, body.Nombre, body.Unidad, cancellationToken));
     }
 
-    public record CrearDisposicionBody(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea);
+    /// <summary>HoraLimite como texto ("10:00" o "10:00:00"): el input de hora del navegador manda "HH:mm" y TimeOnly de System.Text.Json solo acepta "HH:mm:ss".</summary>
+    public record CrearDisposicionBody(string Titulo, string? Descripcion, DateOnly FechaLimite, string? HoraLimite, IReadOnlyList<string> CodigosArea);
+
+    private static TimeOnly? ParsearHora(string? hora)
+    {
+        if (string.IsNullOrWhiteSpace(hora)) return null;
+        if (TimeOnly.TryParse(hora, System.Globalization.CultureInfo.InvariantCulture, out var valor)) return valor;
+        throw new BloqueHorarioInvalidoException($"La hora límite '{hora}' no es válida (usa HH:mm)");
+    }
 
     /// <summary>Solo gerencia -- crea una disposición real con plazo, asignada a una o más áreas.</summary>
     [HttpPost("disposiciones")]
     [Authorize(Policy = "Menu:planificacion-gerencia")]
     public async Task<ActionResult<DisposicionGerenciaDto>> CrearDisposicion(CrearDisposicionBody body, CancellationToken cancellationToken)
         => Ok(await service.CrearDisposicionAsync(
-            new CrearDisposicionRequest(body.Titulo, body.Descripcion, body.FechaLimite, body.CodigosArea, User.Identity!.Name!),
+            new CrearDisposicionRequest(body.Titulo, body.Descripcion, body.FechaLimite, ParsearHora(body.HoraLimite), body.CodigosArea, User.Identity!.Name!),
             cancellationToken));
 
     /// <summary>Solo gerencia -- cierra una disposición.</summary>
@@ -135,6 +144,38 @@ public class PlanificacionController(IPlanificacionService service, Corela15DbCo
     [Authorize(Policy = "Menu:planificacion-gerencia")]
     public async Task<ActionResult<DisposicionGerenciaDto>> CalificarCumplimiento(Guid id, string codigoArea, CalificarCumplimientoBody body, CancellationToken cancellationToken)
         => Ok(await service.CalificarCumplimientoAsync(id, codigoArea, body.Cumplimiento, body.Comentario, User.Identity!.Name!, cancellationToken));
+
+    public class SubirEntregableBody
+    {
+        public IFormFile Archivo { get; set; } = null!;
+        public string? Comentario { get; set; }
+    }
+
+    /// <summary>La persona asignada sube un entregable de la disposición (multipart: archivo + comentario opcional).</summary>
+    [HttpPost("disposiciones/{id:guid}/areas/{codigoArea}/entregables")]
+    [RequireIdempotencyKey]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<ActionResult<DisposicionGerenciaDto>> SubirEntregable(Guid id, string codigoArea, [FromForm] SubirEntregableBody body, CancellationToken cancellationToken)
+    {
+        if (body.Archivo is null) throw new ArchivoEntregableInvalidoException("Falta el archivo");
+        await using var contenido = body.Archivo.OpenReadStream();
+        return Ok(await service.SubirEntregableAsync(id, codigoArea,
+            new EntregableArchivoEntrada(contenido, body.Archivo.FileName, body.Archivo.ContentType, body.Archivo.Length),
+            body.Comentario, User.Identity!.Name!, cancellationToken));
+    }
+
+    /// <summary>Descarga/vista previa -- gerencia (y asistente de gerencia) cualquiera; la persona asignada, solo los suyos.</summary>
+    [HttpGet("entregables/{idEntregable:guid}")]
+    public async Task<IActionResult> DescargarEntregable(Guid idEntregable, CancellationToken cancellationToken)
+    {
+        var archivo = await service.DescargarEntregableAsync(idEntregable, User.Identity!.Name!, EsGerencia, cancellationToken);
+        return File(archivo.Contenido, string.IsNullOrWhiteSpace(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType, archivo.NombreArchivo);
+    }
+
+    /// <summary>La persona asignada quita un entregable suyo (queda inactivo, no se borra).</summary>
+    [HttpDelete("entregables/{idEntregable:guid}")]
+    public async Task<ActionResult<DisposicionGerenciaDto>> QuitarEntregable(Guid idEntregable, CancellationToken cancellationToken)
+        => Ok(await service.QuitarEntregableAsync(idEntregable, User.Identity!.Name!, cancellationToken));
 
     /// <summary>
     /// Personas con planificación -- sin gerencia, solo la propia; con

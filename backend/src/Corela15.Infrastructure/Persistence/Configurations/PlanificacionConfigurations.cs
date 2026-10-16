@@ -114,6 +114,22 @@ public class DisposicionGerenciaAreaConfiguration : IEntityTypeConfiguration<Dis
     }
 }
 
+public class EntregableDisposicionConfiguration : IEntityTypeConfiguration<EntregableDisposicion>
+{
+    public void Configure(EntityTypeBuilder<EntregableDisposicion> b)
+    {
+        b.ToTable("disposicion_entregable", "planificacion");
+        b.HasKey(x => x.Id);
+        b.HasOne(x => x.DisposicionArea).WithMany(x => x.Entregables).HasForeignKey(x => x.IdDisposicionArea).OnDelete(DeleteBehavior.Restrict);
+        b.Property(x => x.Comentario).HasMaxLength(1000);
+        b.Property(x => x.RutaArchivo).HasMaxLength(500).IsRequired();
+        b.Property(x => x.NombreArchivo).HasMaxLength(255).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(150);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+        b.HasIndex(x => x.IdDisposicionArea);
+    }
+}
+
 public class PlanSemanalIndicadorConfiguration : IEntityTypeConfiguration<PlanSemanalIndicador>
 {
     public void Configure(EntityTypeBuilder<PlanSemanalIndicador> b)

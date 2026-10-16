@@ -1,3 +1,4 @@
+using Corela15.Application.Documentos;
 using Corela15.Application.Planificacion;
 using Corela15.Domain.Planificacion;
 using Corela15.Infrastructure.Persistence;
@@ -5,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Corela15.Infrastructure.Services;
 
-public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
+public class PlanificacionService(Corela15DbContext db, IDocumentoStorageService storage) : IPlanificacionService
 {
     // Paleta rotativa real para etiquetas creadas "sobre la marcha" --
     // colores distintos y con buen contraste, ciclando según cuántas
@@ -503,6 +504,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             Titulo = request.Titulo.Trim(),
             Descripcion = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim(),
             FechaLimite = request.FechaLimite,
+            HoraLimite = request.HoraLimite,
             Estado = EstadoDisposicionGerencia.Abierta,
             CreadoEn = DateTimeOffset.UtcNow,
             CreadoPor = request.CreadoPor,
@@ -542,6 +544,91 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
         return await MapearDisposicionDtoAsync(idDisposicion, cancellationToken);
     }
 
+    private const int MaxMbEntregable = 20;
+    private static readonly HashSet<string> ExtensionesEntregable =
+        new(StringComparer.OrdinalIgnoreCase) { "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "jpg", "jpeg", "png" };
+
+    public async Task<DisposicionGerenciaDto> SubirEntregableAsync(Guid idDisposicion, string codigoArea, EntregableArchivoEntrada archivo, string? comentario, string usuarioActual, CancellationToken cancellationToken = default)
+    {
+        var extension = Path.GetExtension(archivo.NombreOriginal).TrimStart('.');
+        if (!ExtensionesEntregable.Contains(extension))
+            throw new ArchivoEntregableInvalidoException($"Tipo de archivo .{extension} no permitido. Se aceptan: {string.Join(", ", ExtensionesEntregable)}");
+        if (archivo.TamanoBytes <= 0)
+            throw new ArchivoEntregableInvalidoException("El archivo está vacío");
+        if (archivo.TamanoBytes > MaxMbEntregable * 1024L * 1024L)
+            throw new ArchivoEntregableInvalidoException($"El archivo supera {MaxMbEntregable} MB");
+
+        // Solo la persona dueña de ese espacio entrega lo suyo.
+        await ValidarPerteneceAlAreaAsync(codigoArea, usuarioActual, cancellationToken);
+
+        var asignacion = await db.DisposicionesGerenciaArea
+            .Include(a => a.Disposicion)
+            .FirstOrDefaultAsync(a => a.IdDisposicion == idDisposicion && a.CodigoArea == codigoArea, cancellationToken)
+            ?? throw new DisposicionAreaInvalidaException();
+        if (asignacion.Disposicion.Estado != EstadoDisposicionGerencia.Abierta)
+            throw new EntregableNoPermitidoException("La disposición ya está cerrada -- no se pueden subir más entregables");
+        if (asignacion.Cumplimiento != CumplimientoDisposicion.SinEvaluar)
+            throw new EntregableNoPermitidoException("Gerencia ya calificó tu cumplimiento de esta disposición -- no se pueden subir más entregables");
+
+        var ruta = await storage.GuardarAsync(archivo.Contenido, archivo.NombreOriginal, cancellationToken);
+        db.EntregablesDisposicion.Add(new EntregableDisposicion
+        {
+            Id = Guid.NewGuid(),
+            IdDisposicionArea = asignacion.Id,
+            Comentario = string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim(),
+            RutaArchivo = ruta,
+            NombreArchivo = Path.GetFileName(archivo.NombreOriginal),
+            ContentType = archivo.ContentType,
+            TamanoBytes = archivo.TamanoBytes,
+            Activo = true,
+            CreadoEn = DateTimeOffset.UtcNow,
+            CreadoPor = usuarioActual,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return await MapearDisposicionDtoAsync(idDisposicion, cancellationToken);
+    }
+
+    public async Task<EntregableDescarga> DescargarEntregableAsync(Guid idEntregable, string usuarioActual, bool esGerencia, CancellationToken cancellationToken = default)
+    {
+        var entregable = await db.EntregablesDisposicion
+            .Include(e => e.DisposicionArea).ThenInclude(a => a.Area).ThenInclude(a => a.Usuario)
+            .FirstOrDefaultAsync(e => e.Id == idEntregable && e.Activo, cancellationToken)
+            ?? throw new EntregableNoPermitidoException("El entregable no existe");
+
+        // Sin permiso de gerencia: solo quien participa en ESA disposición
+        // (la persona dueña, o un compañero asignado a la misma disposición
+        // compartida) ve el entregable. Cualquier otro lo ve igual que uno
+        // inexistente -- nunca se filtran disposiciones de otras personas.
+        if (!esGerencia)
+        {
+            var participa = await db.DisposicionesGerenciaArea.AnyAsync(a =>
+                a.IdDisposicion == entregable.DisposicionArea.IdDisposicion
+                && a.Area.Usuario != null && a.Area.Usuario.NombreUsuario == usuarioActual, cancellationToken);
+            if (!participa)
+                throw new EntregableNoPermitidoException("El entregable no existe");
+        }
+
+        var contenido = await storage.AbrirAsync(entregable.RutaArchivo, cancellationToken);
+        return new EntregableDescarga(contenido, entregable.NombreArchivo, entregable.ContentType);
+    }
+
+    public async Task<DisposicionGerenciaDto> QuitarEntregableAsync(Guid idEntregable, string usuarioActual, CancellationToken cancellationToken = default)
+    {
+        var entregable = await db.EntregablesDisposicion
+            .Include(e => e.DisposicionArea).ThenInclude(a => a.Disposicion)
+            .FirstOrDefaultAsync(e => e.Id == idEntregable && e.Activo, cancellationToken)
+            ?? throw new EntregableNoPermitidoException("El entregable no existe");
+
+        await ValidarPerteneceAlAreaAsync(entregable.DisposicionArea.CodigoArea, usuarioActual, cancellationToken);
+        if (entregable.DisposicionArea.Disposicion.Estado != EstadoDisposicionGerencia.Abierta
+            || entregable.DisposicionArea.Cumplimiento != CumplimientoDisposicion.SinEvaluar)
+            throw new EntregableNoPermitidoException("Ya no se puede quitar: la disposición está cerrada o gerencia ya calificó tu cumplimiento");
+
+        entregable.Activo = false;
+        await db.SaveChangesAsync(cancellationToken);
+        return await MapearDisposicionDtoAsync(entregable.DisposicionArea.IdDisposicion, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DisposicionGerenciaDto>> ListarDisposicionesAsync(bool esGerencia, string? codigoArea, CancellationToken cancellationToken = default)
     {
         var query = db.DisposicionesGerencia.Include(d => d.Areas).AsQueryable();
@@ -565,7 +652,7 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             query = query.Where(d => d.Areas.Any(a => a.CodigoArea == codigoArea));
         }
 
-        var ids = await query.OrderByDescending(d => d.FechaLimite).Select(d => d.Id).ToListAsync(cancellationToken);
+        var ids = await query.OrderByDescending(d => d.FechaLimite).ThenByDescending(d => d.HoraLimite).Select(d => d.Id).ToListAsync(cancellationToken);
         var resultado = new List<DisposicionGerenciaDto>();
         foreach (var id in ids)
             resultado.Add(await MapearDisposicionDtoAsync(id, cancellationToken));
@@ -590,11 +677,22 @@ public class PlanificacionService(Corela15DbContext db) : IPlanificacionService
             .GroupBy(b => b.CodigoArea)
             .ToDictionary(g => g.Key, g => g.Sum(b => (decimal)(b.HoraFin.ToTimeSpan() - b.HoraInicio.ToTimeSpan()).TotalHours));
 
+        var idsAsignacion = d.Areas.Select(a => a.Id).ToList();
+        var entregables = (await db.EntregablesDisposicion
+            .Where(e => idsAsignacion.Contains(e.IdDisposicionArea) && e.Activo)
+            .OrderBy(e => e.CreadoEn)
+            .ToListAsync(cancellationToken))
+            .GroupBy(e => e.IdDisposicionArea)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<EntregableDto>)g
+                .Select(e => new EntregableDto(e.Id, e.NombreArchivo, e.ContentType, e.TamanoBytes, e.Comentario, e.CreadoEn, e.CreadoPor))
+                .ToList());
+
         var areas = d.Areas.Select(a => new DisposicionAreaDto(
             a.CodigoArea, a.Area.Nombre, a.Cumplimiento.ToString(), a.ComentarioCumplimiento,
-            a.CalificadoPor, a.FechaCalificacion, horasPorArea.GetValueOrDefault(a.CodigoArea, 0m))).ToList();
+            a.CalificadoPor, a.FechaCalificacion, horasPorArea.GetValueOrDefault(a.CodigoArea, 0m),
+            entregables.GetValueOrDefault(a.Id, []))).ToList();
 
-        return new DisposicionGerenciaDto(d.Id, d.Titulo, d.Descripcion, d.FechaLimite, d.Estado.ToString(),
+        return new DisposicionGerenciaDto(d.Id, d.Titulo, d.Descripcion, d.FechaLimite, d.HoraLimite, d.Estado.ToString(),
             areas, areas.Sum(a => a.HorasDedicadas), d.CreadoEn, d.CreadoPor);
     }
 

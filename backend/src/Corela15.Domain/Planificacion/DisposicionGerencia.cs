@@ -22,6 +22,8 @@ public class DisposicionGerencia
     public string Titulo { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
     public DateOnly FechaLimite { get; set; }
+    /// <summary>Hora real del plazo (hora Ecuador), ej. 29/10 a las 10:00. Null en disposiciones anteriores = hasta el final del día.</summary>
+    public TimeOnly? HoraLimite { get; set; }
     public EstadoDisposicionGerencia Estado { get; set; } = EstadoDisposicionGerencia.Abierta;
 
     public ICollection<DisposicionGerenciaArea> Areas { get; set; } = new List<DisposicionGerenciaArea>();
@@ -59,4 +61,30 @@ public class DisposicionGerenciaArea
     public string? ComentarioCumplimiento { get; set; }
     public DateTimeOffset? FechaCalificacion { get; set; }
     public string? CalificadoPor { get; set; }
+
+    public ICollection<EntregableDisposicion> Entregables { get; set; } = new List<EntregableDisposicion>();
+}
+
+/// <summary>
+/// Entregable real de una disposición -- pedido explícito del usuario: cada
+/// persona asignada sube lo que gerencia le pidió (informe, documento,
+/// Excel, lo que sea) y gerencia lo ve, previsualiza y descarga. Cuelga de
+/// la asignación de esa persona (<see cref="DisposicionGerenciaArea"/>),
+/// no de la disposición completa, porque cada persona entrega lo suyo. El
+/// archivo vive en el mismo almacenamiento real de Biblioteca de Documentos
+/// (NAS). Nunca se borra físico: quitarlo solo lo marca inactivo.
+/// </summary>
+public class EntregableDisposicion
+{
+    public Guid Id { get; set; }
+    public Guid IdDisposicionArea { get; set; }
+    public DisposicionGerenciaArea DisposicionArea { get; set; } = null!;
+    public string? Comentario { get; set; }
+    public string RutaArchivo { get; set; } = string.Empty;
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
+    public long TamanoBytes { get; set; }
+    public bool Activo { get; set; } = true;
+    public DateTimeOffset CreadoEn { get; set; }
+    public string CreadoPor { get; set; } = string.Empty;
 }

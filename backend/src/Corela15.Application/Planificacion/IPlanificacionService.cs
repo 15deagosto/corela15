@@ -109,6 +109,19 @@ public interface IPlanificacionService
     Task<DisposicionGerenciaDto> CalificarCumplimientoAsync(Guid idDisposicion, string codigoArea, string cumplimiento, string? comentario, string calificadoPor, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// La persona asignada sube un entregable (informe, documento, Excel...)
+    /// a su parte de la disposición. Solo el dueño de ese espacio, solo
+    /// mientras la disposición esté abierta y todavía no calificada.
+    /// </summary>
+    Task<DisposicionGerenciaDto> SubirEntregableAsync(Guid idDisposicion, string codigoArea, EntregableArchivoEntrada archivo, string? comentario, string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>Gerencia (y la asistente de gerencia) descarga cualquier entregable; la persona asignada, solo los suyos.</summary>
+    Task<EntregableDescarga> DescargarEntregableAsync(Guid idEntregable, string usuarioActual, bool esGerencia, CancellationToken cancellationToken = default);
+
+    /// <summary>La persona asignada quita un entregable suyo (queda inactivo, nunca se borra) mientras la disposición siga abierta y sin calificar.</summary>
+    Task<DisposicionGerenciaDto> QuitarEntregableAsync(Guid idEntregable, string usuarioActual, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Combo editable real: si ya existe una etiqueta con ese nombre en
     /// esa área, la devuelve tal cual (mismo color de siempre). Si no
     /// existe, la crea en el momento -- código autogenerado real, color
@@ -155,11 +168,17 @@ public record ListarPlanesFiltro(string? CodigoArea, DateOnly? Desde, DateOnly? 
 
 public record BloqueDto(Guid Id, int DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, string CodigoEtiqueta, string Etiqueta, string ColorHex, string Descripcion, string? NotaGerencia, Guid? IdDisposicion, string? TituloDisposicion);
 
-public record CrearDisposicionRequest(string Titulo, string? Descripcion, DateOnly FechaLimite, IReadOnlyList<string> CodigosArea, string CreadoPor);
+public record CrearDisposicionRequest(string Titulo, string? Descripcion, DateOnly FechaLimite, TimeOnly? HoraLimite, IReadOnlyList<string> CodigosArea, string CreadoPor);
 
-public record DisposicionAreaDto(string CodigoArea, string NombreArea, string Cumplimiento, string? ComentarioCumplimiento, string? CalificadoPor, DateTimeOffset? FechaCalificacion, decimal HorasDedicadas);
+public record EntregableDto(Guid Id, string NombreArchivo, string? ContentType, long TamanoBytes, string? Comentario, DateTimeOffset CreadoEn, string CreadoPor);
 
-public record DisposicionGerenciaDto(Guid Id, string Titulo, string? Descripcion, DateOnly FechaLimite, string Estado, IReadOnlyList<DisposicionAreaDto> Areas, decimal HorasDedicadas, DateTimeOffset CreadoEn, string CreadoPor);
+public record EntregableArchivoEntrada(Stream Contenido, string NombreOriginal, string? ContentType, long TamanoBytes);
+
+public record EntregableDescarga(Stream Contenido, string NombreArchivo, string? ContentType);
+
+public record DisposicionAreaDto(string CodigoArea, string NombreArea, string Cumplimiento, string? ComentarioCumplimiento, string? CalificadoPor, DateTimeOffset? FechaCalificacion, decimal HorasDedicadas, IReadOnlyList<EntregableDto> Entregables);
+
+public record DisposicionGerenciaDto(Guid Id, string Titulo, string? Descripcion, DateOnly FechaLimite, TimeOnly? HoraLimite, string Estado, IReadOnlyList<DisposicionAreaDto> Areas, decimal HorasDedicadas, DateTimeOffset CreadoEn, string CreadoPor);
 
 public record IndicadorDto(int Id, string CodigoArea, string Nombre, string? Unidad);
 
@@ -226,6 +245,12 @@ public class DisposicionSinAreasException()
 
 public class DisposicionAreaInvalidaException()
     : ReglaDeNegocioException("Esta disposición no está asignada a esa persona");
+
+public class EntregableNoPermitidoException(string detalle)
+    : ReglaDeNegocioException(detalle);
+
+public class ArchivoEntregableInvalidoException(string detalle)
+    : SolicitudInvalidaException(detalle);
 
 public class CumplimientoInvalidoException(string valor)
     : SolicitudInvalidaException($"'{valor}' no es un valor válido de cumplimiento (Cumplio/NoCumplio/SinEvaluar)");

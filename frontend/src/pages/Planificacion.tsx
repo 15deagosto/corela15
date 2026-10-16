@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare, Pencil, Check, FileSpreadsheet, FileText, FileDown, Flag, ClipboardList } from 'lucide-react'
+import { CalendarRange, Plus, Trash2, Eye, X, Send, Lock, MessageSquare, Pencil, Check, FileSpreadsheet, FileText, FileDown, Flag, ClipboardList, Download, Upload } from 'lucide-react'
 import { api } from '../lib/api'
+import { idempotencyKey } from '../lib/idempotencyKey'
 import { useAuth } from '../lib/AuthContext'
 import { PageHeader } from '../components/PageHeader'
 import { TableContainer, Th, Td, EmptyState } from '../components/Table'
@@ -85,6 +86,16 @@ interface BloqueEditor {
   idDisposicion: string | null
 }
 
+interface Entregable {
+  id: string
+  nombreArchivo: string
+  contentType: string | null
+  tamanoBytes: number
+  comentario: string | null
+  creadoEn: string
+  creadoPor: string
+}
+
 interface DisposicionArea {
   codigoArea: string
   nombreArea: string
@@ -93,6 +104,7 @@ interface DisposicionArea {
   calificadoPor: string | null
   fechaCalificacion: string | null
   horasDedicadas: number
+  entregables: Entregable[]
 }
 
 interface DisposicionGerencia {
@@ -100,6 +112,7 @@ interface DisposicionGerencia {
   titulo: string
   descripcion: string | null
   fechaLimite: string
+  horaLimite: string | null
   estado: 'Abierta' | 'Cerrada'
   areas: DisposicionArea[]
   horasDedicadas: number
@@ -153,6 +166,23 @@ function lunesDeEstaSemana(): string {
   const lunes = new Date(hoy)
   lunes.setDate(hoy.getDate() + diff)
   return lunes.toISOString().slice(0, 10)
+}
+
+/**
+ * Plazo real de una disposición como fecha/hora local. La fecha llega como
+ * "aaaa-mm-dd" (sin zona) -- se arma en hora local a propósito: `new
+ * Date("2026-10-29")` la interpreta en UTC y en Ecuador mostraba un día
+ * antes. Sin hora (disposiciones anteriores) = hasta el final del día.
+ */
+function plazoDe(d: { fechaLimite: string; horaLimite: string | null }): Date {
+  const [a, m, dia] = d.fechaLimite.slice(0, 10).split('-').map(Number)
+  const [h, min] = (d.horaLimite ?? '23:59').split(':').map(Number)
+  return new Date(a, m - 1, dia, h, min)
+}
+
+function formatoPlazo(d: { fechaLimite: string; horaLimite: string | null }, conAnio = true): string {
+  const fecha = plazoDe(d).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', ...(conAnio ? { year: 'numeric' } : {}) })
+  return d.horaLimite ? `${fecha}, ${d.horaLimite.slice(0, 5)}` : fecha
 }
 
 function mensajeError(e: unknown): string {
@@ -612,15 +642,22 @@ function BotonesExportarPlan({
 export function Planificacion() {
   const { tieneMenu } = useAuth()
   const esGerencia = tieneMenu('planificacion-gerencia')
-  const [tab, setTab] = useState<'editor' | 'historial' | 'disposiciones'>('editor')
+  const [tab, setTab] = useState<'editor' | 'historial' | 'mis-disposiciones' | 'disposiciones'>('editor')
 
   const { data: areas } = useQuery<Catalogo[]>({
     queryKey: ['planificacion-areas'],
     queryFn: async () => (await api.get(`${BASE}/areas`)).data,
   })
 
-  const tabs = esGerencia ? (['editor', 'historial', 'disposiciones'] as const) : (['editor', 'historial'] as const)
-  const etiquetaTab = { editor: 'Nueva / editar semana', historial: 'Historial', disposiciones: 'Disposiciones de gerencia' }
+  const tabs = esGerencia
+    ? (['editor', 'historial', 'mis-disposiciones', 'disposiciones'] as const)
+    : (['editor', 'historial', 'mis-disposiciones'] as const)
+  const etiquetaTab = {
+    editor: 'Nueva / editar semana',
+    historial: 'Historial',
+    'mis-disposiciones': 'Mis disposiciones',
+    disposiciones: 'Disposiciones de gerencia',
+  }
 
   return (
     <div className="animate-fade-in">
@@ -651,6 +688,7 @@ export function Planificacion() {
 
       {tab === 'editor' && <SeccionEditor />}
       {tab === 'historial' && <SeccionHistorial areas={areas ?? []} esGerencia={esGerencia} />}
+      {tab === 'mis-disposiciones' && <SeccionMisDisposiciones />}
       {tab === 'disposiciones' && esGerencia && <SeccionDisposiciones areas={areas ?? []} />}
     </div>
   )
@@ -740,11 +778,339 @@ function CalificarCumplimiento({
   )
 }
 
+const EXTENSIONES_ENTREGABLE = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'jpg', 'jpeg', 'png']
+
+function extensionDe(nombre: string): string {
+  return nombre.split('.').pop()?.toLowerCase() ?? ''
+}
+
+function tamanoLegible(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function descargarEntregable(e: Entregable) {
+  const respuesta = await api.get(`${BASE}/entregables/${e.id}`, { responseType: 'blob' })
+  const url = window.URL.createObjectURL(respuesta.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = e.nombreArchivo
+  a.click()
+  window.URL.revokeObjectURL(url)
+}
+
+/**
+ * Vista previa real de un entregable: PDF, imágenes y texto los muestra
+ * el navegador; Word (.docx) se dibuja con docx-preview (mismo criterio que
+ * Biblioteca de Documentos). Excel/PowerPoint/.doc: solo descarga.
+ */
+function VistaPreviaEntregable({ entregable, onClose }: { entregable: Entregable; onClose: () => void }) {
+  const ext = extensionDe(entregable.nombreArchivo)
+  const tipo: 'pdf' | 'imagen' | 'texto' | 'docx' | 'otro' =
+    ext === 'pdf' ? 'pdf' : ['jpg', 'jpeg', 'png'].includes(ext) ? 'imagen' : ['txt', 'csv'].includes(ext) ? 'texto' : ext === 'docx' ? 'docx' : 'otro'
+  const [url, setUrl] = useState<string | null>(null)
+  const [texto, setTexto] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const contenedorDocx = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (tipo === 'otro') return
+    let cancelado = false
+    let urlCreada: string | null = null
+    api
+      .get(`${BASE}/entregables/${entregable.id}`, { responseType: 'blob' })
+      .then(async (r) => {
+        if (cancelado) return
+        const blob = r.data as Blob
+        if (tipo === 'texto') setTexto(await blob.text())
+        else if (tipo === 'docx') {
+          const { renderAsync } = await import('docx-preview')
+          if (!cancelado && contenedorDocx.current) {
+            contenedorDocx.current.innerHTML = ''
+            await renderAsync(blob, contenedorDocx.current, undefined, { className: 'docx-previa', inWrapper: true, ignoreLastRenderedPageBreak: true })
+          }
+        } else {
+          const tipado = blob.type ? blob : new Blob([blob], { type: tipo === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}` })
+          urlCreada = window.URL.createObjectURL(tipado)
+          setUrl(urlCreada)
+        }
+      })
+      .catch(() => !cancelado && setError('No se pudo abrir el archivo — descárgalo para verlo.'))
+    return () => {
+      cancelado = true
+      if (urlCreada) window.URL.revokeObjectURL(urlCreada)
+    }
+  }, [entregable.id, tipo, ext])
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="glass-card flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-3 border-b border-black/[0.06] px-4 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-graphite-100">{entregable.nombreArchivo}</p>
+              <p className="text-[11px] text-graphite-500">
+                Subido por {entregable.creadoPor} el {new Date(entregable.creadoEn).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })} · {tamanoLegible(entregable.tamanoBytes)}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => descargarEntregable(entregable)}
+                className="flex items-center gap-1 rounded-lg border border-black/[0.08] px-3 py-1.5 text-xs font-medium text-graphite-600 hover:bg-black/[0.03]"
+              >
+                <Download size={13} /> Descargar
+              </button>
+              <button type="button" onClick={onClose} className="text-graphite-600 hover:text-graphite-100" aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          {entregable.comentario && <p className="border-b border-black/[0.04] px-4 py-2 text-xs text-graphite-600">"{entregable.comentario}"</p>}
+          <div className="min-h-[60vh] flex-1 overflow-auto bg-graphite-50 p-3">
+            {error ? (
+              <p className="p-6 text-center text-sm text-graphite-600">{error}</p>
+            ) : tipo === 'otro' ? (
+              <p className="p-6 text-center text-sm text-graphite-600">
+                No hay vista previa para archivos .{ext} — dentro del sistema se pueden ver PDF, Word (.docx), imágenes y texto. Usa "Descargar".
+              </p>
+            ) : tipo === 'docx' ? (
+              <div ref={contenedorDocx} />
+            ) : tipo === 'texto' ? (
+              texto === null ? <p className="text-sm text-graphite-600">Cargando…</p> : <pre className="whitespace-pre-wrap text-xs text-graphite-100">{texto}</pre>
+            ) : !url ? (
+              <p className="text-sm text-graphite-600">Cargando…</p>
+            ) : tipo === 'pdf' ? (
+              <iframe src={url} title={entregable.nombreArchivo} className="h-[70vh] w-full rounded-lg border border-black/[0.06]" />
+            ) : (
+              <img src={url} alt={entregable.nombreArchivo} className="mx-auto max-h-[70vh] rounded-lg" />
+            )}
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
+/**
+ * Entregables de UNA persona en una disposición. Gerencia (y la asistente
+ * de gerencia) los ve y descarga; la propia persona además los sube y quita
+ * mientras la disposición esté abierta y sin calificar.
+ */
+function EntregablesDeAsignacion({
+  idDisposicion, area, puedeSubir, plazo, onCambio,
+}: {
+  idDisposicion: string
+  area: DisposicionArea
+  puedeSubir: boolean
+  /** Plazo real de la disposición -- un entregable subido después se marca "Entregado tarde". */
+  plazo: Date
+  onCambio: () => void
+}) {
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [comentario, setComentario] = useState('')
+  const [viendo, setViendo] = useState<Entregable | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const subir = useMutation({
+    mutationFn: async () => {
+      const form = new FormData()
+      form.append('Archivo', archivo!)
+      if (comentario.trim()) form.append('Comentario', comentario.trim())
+      return api.post(`${BASE}/disposiciones/${idDisposicion}/areas/${area.codigoArea}/entregables`, form, {
+        headers: { 'Idempotency-Key': idempotencyKey() },
+      })
+    },
+    onSuccess: () => {
+      setArchivo(null)
+      setComentario('')
+      if (inputRef.current) inputRef.current.value = ''
+      onCambio()
+    },
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (id: string) => api.delete(`${BASE}/entregables/${id}`),
+    onSuccess: () => onCambio(),
+  })
+
+  const extensionInvalida = archivo && !EXTENSIONES_ENTREGABLE.includes(extensionDe(archivo.name))
+  const muyGrande = archivo && archivo.size > 20 * 1024 * 1024
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {area.entregables.length === 0 ? (
+        <p className="text-[11px] text-graphite-500">{puedeSubir ? 'Todavía no subiste entregables.' : 'Sin entregables todavía.'}</p>
+      ) : (
+        <ul className="space-y-1">
+          {area.entregables.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-black/[0.06] bg-white px-2.5 py-1.5">
+              <FileText size={14} className="flex-shrink-0 text-gold-600" />
+              <button type="button" onClick={() => setViendo(e)} className="min-w-0 truncate text-left text-xs font-medium text-graphite-100 hover:underline" title="Ver">
+                {e.nombreArchivo}
+              </button>
+              <span className="text-[11px] text-graphite-500">
+                {tamanoLegible(e.tamanoBytes)} · {new Date(e.creadoEn).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </span>
+              {new Date(e.creadoEn) > plazo && <Badge variant="alerta">Entregado tarde</Badge>}
+              {e.comentario && <span className="w-full truncate text-[11px] italic text-graphite-600" title={e.comentario}>"{e.comentario}"</span>}
+              <div className="ml-auto flex items-center gap-2">
+                <button type="button" onClick={() => setViendo(e)} className="flex items-center gap-1 text-[11px] font-medium text-gold-600 hover:underline">
+                  <Eye size={12} /> Ver
+                </button>
+                <button type="button" onClick={() => descargarEntregable(e)} className="flex items-center gap-1 text-[11px] font-medium text-graphite-600 hover:underline">
+                  <Download size={12} /> Descargar
+                </button>
+                {puedeSubir && (
+                  <button
+                    type="button"
+                    disabled={quitar.isPending}
+                    onClick={() => quitar.mutate(e.id)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-graphite-500 hover:text-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 size={12} /> Quitar
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {quitar.isError && <p className="text-[11px] text-red-700">{mensajeError(quitar.error)}</p>}
+
+      {puedeSubir && (
+        <div className="rounded-lg border border-dashed border-black/[0.12] p-2.5">
+          <p className="mb-1.5 text-[11px] font-medium uppercase text-graphite-600">Subir entregable</p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              ref={inputRef}
+              type="file"
+              accept={EXTENSIONES_ENTREGABLE.map((x) => `.${x}`).join(',')}
+              onChange={(ev) => setArchivo(ev.target.files?.[0] ?? null)}
+              className="text-xs"
+            />
+            <input
+              value={comentario}
+              onChange={(ev) => setComentario(ev.target.value)}
+              className={`${INPUT_CLASS} flex-1 text-xs`}
+              placeholder="Comentario para gerencia (opcional)"
+            />
+            <button
+              type="button"
+              disabled={!archivo || !!extensionInvalida || !!muyGrande || subir.isPending}
+              onClick={() => subir.mutate()}
+              className="btn-hover flex items-center justify-center gap-1 rounded-lg bg-gold-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            >
+              <Upload size={13} /> {subir.isPending ? 'Subiendo…' : 'Subir'}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-graphite-500">PDF, Word, Excel, PowerPoint, texto o imagen — máx. 20 MB.</p>
+          {extensionInvalida && <p className="mt-1 text-[11px] text-red-700">Ese tipo de archivo no está permitido.</p>}
+          {muyGrande && <p className="mt-1 text-[11px] text-red-700">El archivo supera 20 MB.</p>}
+          {subir.isError && <p className="mt-1 text-[11px] text-red-700">{mensajeError(subir.error)}</p>}
+        </div>
+      )}
+
+      {viendo && <VistaPreviaEntregable entregable={viendo} onClose={() => setViendo(null)} />}
+    </div>
+  )
+}
+
+/**
+ * Lo que gerencia le asignó a la persona actual, con su plazo, su
+ * calificación y sus entregables -- donde se suben los archivos que
+ * gerencia pidió. Disponible para todos (también para quien tiene permisos
+ * de gerencia, porque puede tener disposiciones asignadas a sí mismo).
+ */
+function SeccionMisDisposiciones() {
+  const queryClient = useQueryClient()
+  const { data: miEspacio } = useQuery<Catalogo>({
+    queryKey: ['planificacion-mi-espacio'],
+    queryFn: async () => (await api.get(`${BASE}/mi-espacio`)).data,
+  })
+  const { data: disposiciones, isLoading } = useQuery<DisposicionGerencia[]>({
+    queryKey: ['planificacion-mis-disposiciones', miEspacio?.codigo],
+    enabled: !!miEspacio,
+    queryFn: async () => (await api.get(`${BASE}/disposiciones`, { params: { codigoArea: miEspacio!.codigo } })).data,
+  })
+  const refrescar = () => {
+    queryClient.invalidateQueries({ queryKey: ['planificacion-mis-disposiciones'] })
+    queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })
+  }
+  const ahora = new Date()
+
+  if (isLoading || !miEspacio) return <p className="text-sm text-graphite-600">Cargando…</p>
+  if (!disposiciones || disposiciones.length === 0)
+    return (
+      <div className="glass-card rounded-xl p-6 text-center text-sm text-graphite-600">
+        No tienes disposiciones de gerencia abiertas asignadas.
+      </div>
+    )
+
+  return (
+    <div className="space-y-3">
+      {disposiciones.map((d) => {
+        const mia = d.areas.find((a) => a.codigoArea === miEspacio.codigo)
+        if (!mia) return null
+        const plazo = plazoDe(d)
+        const vencida = d.estado === 'Abierta' && ahora > plazo
+        const puedeSubir = d.estado === 'Abierta' && mia.cumplimiento === 'SinEvaluar'
+        const companeros = d.areas.filter((a) => a.codigoArea !== miEspacio.codigo)
+        return (
+          <div key={d.id} className="glass-card rounded-xl p-4">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-graphite-100">
+                <Flag size={13} /> {d.titulo}
+              </p>
+              <div className="flex items-center gap-2">
+                {vencida && <Badge variant="peligro">Plazo vencido</Badge>}
+                <Badge variant={d.estado === 'Abierta' ? 'exito' : 'neutral'}>{d.estado}</Badge>
+                <CumplimientoBadge cumplimiento={mia.cumplimiento} />
+              </div>
+            </div>
+            {d.descripcion && <p className="mb-1 text-xs text-graphite-600">{d.descripcion}</p>}
+            <p className="mb-2 text-xs text-graphite-500">
+              Plazo: <span className="font-medium text-graphite-100">{formatoPlazo(d)}</span> · Asignada por {d.creadoPor} ·{' '}
+              Tiempo que le dedicaste: <span className="font-medium text-gold-600">{mia.horasDedicadas.toFixed(1)}h</span>
+            </p>
+            {mia.cumplimiento !== 'SinEvaluar' && mia.comentarioCumplimiento && (
+              <p className="mb-2 text-[11px] text-graphite-600">Comentario de gerencia: "{mia.comentarioCumplimiento}"</p>
+            )}
+            <div className="border-t border-black/[0.04] pt-2">
+              <p className="text-xs font-medium text-graphite-100">Mis entregables</p>
+              <EntregablesDeAsignacion idDisposicion={d.id} area={mia} puedeSubir={puedeSubir} plazo={plazo} onCambio={refrescar} />
+            </div>
+            {companeros.length > 0 && (
+              <div className="mt-3 border-t border-black/[0.04] pt-2">
+                <p className="text-xs font-medium text-graphite-100">Compañeros en esta disposición</p>
+                <p className="mb-1 text-[11px] text-graphite-500">Disposición compartida: ves lo que entregó cada persona asignada a esta misma disposición.</p>
+                <div className="space-y-2">
+                  {companeros.map((c) => (
+                    <div key={c.codigoArea} className="rounded-lg bg-black/[0.015] p-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-graphite-100">{c.nombreArea}</span>
+                        <CumplimientoBadge cumplimiento={c.cumplimiento} />
+                      </div>
+                      <EntregablesDeAsignacion idDisposicion={d.id} area={c} puedeSubir={false} plazo={plazo} onCambio={refrescar} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
   const queryClient = useQueryClient()
   const [titulo, setTitulo] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [fechaLimite, setFechaLimite] = useState('')
+  const [horaLimite, setHoraLimite] = useState('17:00')
   const [codigosArea, setCodigosArea] = useState<string[]>([])
   const [filtroPersona, setFiltroPersona] = useState('')
   const personasFiltradas = areas.filter((a) => !filtroPersona.trim() || a.nombre.toLowerCase().includes(filtroPersona.trim().toLowerCase()))
@@ -757,12 +1123,13 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
 
   const crear = useMutation({
     mutationFn: async () =>
-      (await api.post(`${BASE}/disposiciones`, { titulo, descripcion: descripcion || null, fechaLimite, codigosArea })).data,
+      (await api.post(`${BASE}/disposiciones`, { titulo, descripcion: descripcion || null, fechaLimite, horaLimite: horaLimite || null, codigosArea })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })
       setTitulo('')
       setDescripcion('')
       setFechaLimite('')
+      setHoraLimite('17:00')
       setCodigosArea([])
     },
   })
@@ -787,7 +1154,7 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
-            if (!titulo.trim() || !fechaLimite || codigosArea.length === 0) return
+            if (!titulo.trim() || !fechaLimite || !horaLimite || codigosArea.length === 0) return
             crear.mutate()
           }}
         >
@@ -799,10 +1166,13 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
             <span className="text-xs font-medium uppercase text-graphite-600">Descripción (opcional)</span>
             <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={`${INPUT_CLASS} min-h-[60px]`} />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase text-graphite-600">Plazo (fecha límite)</span>
-            <input required type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} className={INPUT_CLASS} />
-          </label>
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium uppercase text-graphite-600">Plazo (fecha y hora límite)</span>
+            <div className="flex gap-2">
+              <input required type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} className={INPUT_CLASS} />
+              <input required type="time" value={horaLimite} onChange={(e) => setHoraLimite(e.target.value)} className={`${INPUT_CLASS} max-w-[8.5rem]`} aria-label="Hora límite" />
+            </div>
+          </div>
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-xs font-medium uppercase text-graphite-600">
               Personas responsables{codigosArea.length > 0 && ` (${codigosArea.length} elegida${codigosArea.length === 1 ? '' : 's'})`}
@@ -843,7 +1213,7 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
           <div className="sm:col-span-2">
             <button
               type="submit"
-              disabled={!titulo.trim() || !fechaLimite || codigosArea.length === 0 || crear.isPending}
+              disabled={!titulo.trim() || !fechaLimite || !horaLimite || codigosArea.length === 0 || crear.isPending}
               className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               <ClipboardList size={14} /> {crear.isPending ? 'Creando…' : 'Crear disposición'}
@@ -882,17 +1252,26 @@ function SeccionDisposiciones({ areas }: { areas: Catalogo[] }) {
                 </div>
                 {d.descripcion && <p className="mb-2 text-xs text-graphite-600">{d.descripcion}</p>}
                 <p className="mb-2 text-xs text-graphite-500">
-                  Plazo: {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  Plazo: <span className="font-medium text-graphite-100">{formatoPlazo(d)}</span>
+                  {d.estado === 'Abierta' && new Date() > plazoDe(d) && <span className="ml-1 font-medium text-red-700">(vencido)</span>}
                   {' — '}Horas dedicadas (todo el equipo): <span className="font-medium text-gold-600">{d.horasDedicadas.toFixed(1)}h</span>
                 </p>
-                <div className="space-y-1.5 border-t border-black/[0.04] pt-2">
+                <div className="space-y-2.5 border-t border-black/[0.04] pt-2">
                   {d.areas.map((a) => (
-                    <CalificarCumplimiento
-                      key={a.codigoArea}
-                      idDisposicion={d.id}
-                      area={a}
-                      onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })}
-                    />
+                    <div key={a.codigoArea}>
+                      <CalificarCumplimiento
+                        idDisposicion={d.id}
+                        area={a}
+                        onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })}
+                      />
+                      <EntregablesDeAsignacion
+                        idDisposicion={d.id}
+                        area={a}
+                        puedeSubir={false}
+                        plazo={plazoDe(d)}
+                        onCambio={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-gerencia'] })}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1052,7 +1431,7 @@ function BloqueModal({
                 <option value="">— Ninguna —</option>
                 {disposiciones.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.titulo} — vence {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+                    {d.titulo} — vence {formatoPlazo(d, false)}
                   </option>
                 ))}
               </select>
@@ -1889,7 +2268,7 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
                       <div key={d.id} className="rounded-lg border border-black/[0.06] p-2.5">
                         <p className="mb-1 text-xs text-graphite-600">
                           <span className="font-medium text-graphite-100">{d.titulo}</span> — plazo{' '}
-                          {new Date(d.fechaLimite).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+                          {formatoPlazo(d, false)}
                           {d.estado === 'Cerrada' && <span className="ml-1 text-graphite-400">(cerrada)</span>}
                         </p>
                         <BloquesDeDisposicion bloques={plan.bloques.filter((b) => b.idDisposicion === d.id)} />
@@ -1897,6 +2276,13 @@ function DetallePlanModal({ id, onClose, esGerencia }: { id: string; onClose: ()
                           idDisposicion={d.id}
                           area={areaEntry}
                           onCalificado={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-plan', plan.codigoArea] })}
+                        />
+                        <EntregablesDeAsignacion
+                          idDisposicion={d.id}
+                          area={areaEntry}
+                          puedeSubir={false}
+                          plazo={plazoDe(d)}
+                          onCambio={() => queryClient.invalidateQueries({ queryKey: ['planificacion-disposiciones-plan', plan.codigoArea] })}
                         />
                       </div>
                     )
