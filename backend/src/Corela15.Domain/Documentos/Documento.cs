@@ -102,10 +102,16 @@ public class Documento : AuditableEntity
     public bool Activo { get; set; } = true;
 }
 
+/// <summary>
+/// SoloVer: ve el documento dentro del sistema (vista previa) pero no puede
+/// descargar el archivo -- pedido explícito del usuario. Lectura: ve y
+/// descarga. Escritura: además edita, sube versiones y comparte.
+/// </summary>
 public enum NivelAccesoDocumental
 {
     Lectura = 1,
     Escritura = 2,
+    SoloVer = 3,
 }
 
 /// <summary>
@@ -154,6 +160,28 @@ public class CarpetaAcceso
     public Guid Id { get; set; }
     public Guid IdCarpeta { get; set; }
     public Carpeta Carpeta { get; set; } = null!;
+    public Guid IdUsuario { get; set; }
+    public Usuario Usuario { get; set; } = null!;
+    public NivelAccesoDocumental NivelAcceso { get; set; }
+    public DateTimeOffset CreadoEn { get; set; }
+    public string CreadoPor { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// ACL real por documento -- pedido explícito del usuario ("permiso por
+/// documento, ya no solo por carpeta"). Mismo criterio de herencia que las
+/// subcarpetas: un documento SIN filas propias usa el acceso efectivo de su
+/// carpeta; en cuanto tiene al menos una fila propia, esas son las únicas
+/// que aplican para ese documento (al otorgar la primera se copian los
+/// accesos que venía heredando, para que nadie pierda el acceso sin
+/// querer). Permite compartir un solo documento con alguien que no ve la
+/// carpeta, o restringir un documento puntual a pocas personas.
+/// </summary>
+public class DocumentoAcceso
+{
+    public Guid Id { get; set; }
+    public Guid IdDocumento { get; set; }
+    public Documento Documento { get; set; } = null!;
     public Guid IdUsuario { get; set; }
     public Usuario Usuario { get; set; } = null!;
     public NivelAccesoDocumental NivelAcceso { get; set; }

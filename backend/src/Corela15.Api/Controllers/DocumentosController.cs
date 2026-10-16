@@ -71,7 +71,8 @@ public class DocumentosController(IDocumentoService service, ICarpetaService car
     {
         if (VeTodo) return new ContextoAccesoDocumental(true, new Dictionary<Guid, string>());
         var accesoPorCarpeta = await accesoService.ResolverAccesoEfectivoAsync(IdUsuarioActual, cancellationToken);
-        return new ContextoAccesoDocumental(false, accesoPorCarpeta);
+        var documentos = await accesoService.ResolverAccesoDocumentosAsync(IdUsuarioActual, cancellationToken);
+        return new ContextoAccesoDocumental(false, accesoPorCarpeta, documentos.DocumentosConAccesoPropio, documentos.AccesoPorDocumento);
     }
 
     /// <summary>
@@ -162,11 +163,11 @@ public class DocumentosController(IDocumentoService service, ICarpetaService car
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<DocumentoListItem>>> Listar(
         [FromQuery] Guid? idCarpeta, [FromQuery] string? area, [FromQuery] string? tipo,
-        [FromQuery] string? estado, [FromQuery] string? q,
+        [FromQuery] string? estado, [FromQuery] string? q, [FromQuery] bool compartidosConmigo,
         CancellationToken cancellationToken)
     {
         var contexto = await ResolverContextoAsync(cancellationToken);
-        var resultado = await service.ListarAsync(new ListarDocumentosFiltro(idCarpeta, area, tipo, estado, q), contexto, cancellationToken);
+        var resultado = await service.ListarAsync(new ListarDocumentosFiltro(idCarpeta, area, tipo, estado, q, compartidosConmigo), contexto, cancellationToken);
         return Ok(resultado);
     }
 
@@ -233,6 +234,56 @@ public class DocumentosController(IDocumentoService service, ICarpetaService car
         var contexto = await ResolverContextoAsync(cancellationToken);
         var resultado = await service.DescargarAsync(id, contexto, cancellationToken);
         return File(resultado.Contenido, string.IsNullOrWhiteSpace(resultado.ContentType) ? "application/octet-stream" : resultado.ContentType, resultado.NombreArchivo);
+    }
+
+    /// <summary>
+    /// Contenido para mostrar en pantalla (también con permiso "Solo ver").
+    /// Sin nombre de archivo (inline) y sin caché -- el frontend lo dibuja
+    /// sin ofrecer descarga. Límite real: quien ve un documento en pantalla
+    /// siempre puede fotografiarlo; esto impide la descarga del archivo,
+    /// no la captura de pantalla.
+    /// </summary>
+    [HttpGet("{id:guid}/vista-previa")]
+    public async Task<IActionResult> VistaPrevia(Guid id, CancellationToken cancellationToken)
+    {
+        var contexto = await ResolverContextoAsync(cancellationToken);
+        var resultado = await service.VisualizarAsync(id, contexto, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.ContentDisposition = "inline";
+        return File(resultado.Contenido, string.IsNullOrWhiteSpace(resultado.ContentType) ? "application/octet-stream" : resultado.ContentType);
+    }
+
+    // --- Permisos por documento (exigen Escritura efectiva sobre el documento) ---
+
+    [HttpGet("{id:guid}/accesos")]
+    public async Task<ActionResult<DocumentoAccesosResult>> ListarAccesosDocumento(Guid id, CancellationToken cancellationToken)
+    {
+        var contexto = await ResolverContextoAsync(cancellationToken);
+        return Ok(await accesoService.ListarDocumentoAsync(id, contexto, cancellationToken));
+    }
+
+    [HttpPost("{id:guid}/accesos")]
+    public async Task<IActionResult> OtorgarAccesoDocumento(Guid id, [FromBody] OtorgarAccesoBody body, CancellationToken cancellationToken)
+    {
+        var contexto = await ResolverContextoAsync(cancellationToken);
+        await accesoService.OtorgarDocumentoAsync(id, new OtorgarAccesoCarpetaRequest(body.IdUsuario, body.NivelAcceso, User.Identity!.Name!), contexto, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpDelete("accesos-documento/{idAcceso:guid}")]
+    public async Task<IActionResult> QuitarAccesoDocumento(Guid idAcceso, CancellationToken cancellationToken)
+    {
+        var contexto = await ResolverContextoAsync(cancellationToken);
+        await accesoService.QuitarDocumentoAsync(idAcceso, contexto, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/accesos/restablecer-herencia")]
+    public async Task<IActionResult> RestablecerHerenciaDocumento(Guid id, CancellationToken cancellationToken)
+    {
+        var contexto = await ResolverContextoAsync(cancellationToken);
+        await accesoService.RestablecerHerenciaDocumentoAsync(id, contexto, cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("matriz")]

@@ -17,7 +17,11 @@ public interface IDocumentoService
 
     Task<DocumentoListItem?> ObtenerAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
+    /// <summary>Exige Lectura o Escritura -- con SoloVer se rechaza (422).</summary>
     Task<DescargaDocumentoResult> DescargarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    /// <summary>Contenido para la vista previa dentro del sistema (pdf/txt/docx) -- basta con poder ver el documento, incluido SoloVer.</summary>
+    Task<DescargaDocumentoResult> VisualizarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 
     /// <summary>Cobertura documental real: por cada área, cuántos documentos vigentes/total tiene de cada tipo — reservado a quien ve todas las carpetas (expone info de toda la biblioteca a la vez).</summary>
     Task<MatrizDocumentalResult> ObtenerMatrizAsync(ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
@@ -61,6 +65,20 @@ public interface IAccesoDocumentalService
 
     /// <summary>Resuelve el ACL efectivo real de un usuario (con herencia por carpeta, ver CarpetaAcceso) — usado por el controller para armar el ContextoAccesoDocumental de cada request.</summary>
     Task<IReadOnlyDictionary<Guid, string>> ResolverAccesoEfectivoAsync(Guid idUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>Qué documentos tienen permisos propios y el nivel del usuario en cada uno (ver DocumentoAcceso).</summary>
+    Task<AccesoDocumentosUsuario> ResolverAccesoDocumentosAsync(Guid idUsuario, CancellationToken cancellationToken = default);
+
+    // --- Permisos por documento: administrarlos exige Escritura efectiva sobre el documento ---
+
+    Task<DocumentoAccesosResult> ListarDocumentoAsync(Guid idDocumento, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    Task OtorgarDocumentoAsync(Guid idDocumento, OtorgarAccesoCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    Task QuitarDocumentoAsync(Guid idAcceso, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
+
+    /// <summary>Borra los permisos propios del documento -- vuelve a heredar los de su carpeta.</summary>
+    Task RestablecerHerenciaDocumentoAsync(Guid idDocumento, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default);
 }
 
 public class DocumentoInvalidoException()
@@ -103,4 +121,15 @@ public class UsuarioAccesoInvalidoException()
     : ReglaDeNegocioException("El usuario no existe o está inactivo");
 
 public class NivelAccesoInvalidoException(string valor)
-    : SolicitudInvalidaExceptionGenerica($"'{valor}' no es un nivel de acceso válido — use Lectura o Escritura");
+    : SolicitudInvalidaExceptionGenerica($"'{valor}' no es un nivel de acceso válido — use SoloVer, Lectura o Escritura");
+
+/// <summary>Sin Escritura efectiva sobre el documento puntual (editar, versión, desactivar, compartir).</summary>
+public class AccesoDocumentoDenegadoException(string titulo)
+    : ReglaDeNegocioException($"No tenés acceso de escritura sobre el documento '{titulo}'");
+
+/// <summary>El usuario tiene permiso "Solo ver" -- puede verlo en pantalla pero no descargarlo.</summary>
+public class DescargaDocumentoNoPermitidaException()
+    : ReglaDeNegocioException("Solo tenés permiso para visualizar este documento, no para descargarlo");
+
+public class VistaPreviaNoDisponibleException(string nombreArchivo)
+    : ReglaDeNegocioException($"\"{nombreArchivo}\" no tiene vista previa dentro del sistema (solo PDF, Word .docx y texto)");

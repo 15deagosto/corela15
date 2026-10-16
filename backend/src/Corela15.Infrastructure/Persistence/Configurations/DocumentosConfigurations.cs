@@ -70,3 +70,21 @@ public class CarpetaAccesoConfiguration : IEntityTypeConfiguration<CarpetaAcceso
         b.HasIndex(x => new { x.IdCarpeta, x.IdUsuario }).IsUnique();
     }
 }
+
+public class DocumentoAccesoConfiguration : IEntityTypeConfiguration<DocumentoAcceso>
+{
+    public void Configure(EntityTypeBuilder<DocumentoAcceso> b)
+    {
+        b.ToTable("documento_acceso", "documentos");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.NivelAcceso).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.CreadoPor).HasMaxLength(100).IsRequired();
+
+        b.HasOne(x => x.Documento).WithMany().HasForeignKey(x => x.IdDocumento).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Usuario).WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Cascade);
+
+        // Única por documento+usuario -- cambiar el nivel edita la fila, nunca duplica.
+        b.HasIndex(x => new { x.IdDocumento, x.IdUsuario }).IsUnique();
+        b.HasIndex(x => x.IdUsuario);
+    }
+}

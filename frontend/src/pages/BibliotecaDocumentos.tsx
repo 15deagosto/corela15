@@ -50,7 +50,47 @@ interface DocumentoItem {
   creadoPor: string
   creadoEn: string
   modificadoEn: string | null
+  /** Nivel efectivo del usuario sobre ESTE documento: SoloVer / Lectura / Escritura. */
+  nivelAcceso: string
+  puedeDescargar: boolean
+  puedeEditar: boolean
+  /** true = el documento tiene permisos propios (ya no hereda los de su carpeta). */
+  accesosPropios: boolean
 }
+
+interface DocumentoAccesoItem {
+  id: string
+  idUsuario: string
+  nombreUsuario: string
+  nivelAcceso: string
+  heredado: boolean
+  creadoEn: string
+  creadoPor: string
+}
+
+interface DocumentoAccesos {
+  accesosPropios: boolean
+  nombreCarpeta: string
+  accesos: DocumentoAccesoItem[]
+}
+
+/** Nombre visible de cada nivel de acceso. */
+function nombreNivel(nivel: string) {
+  return nivel === 'SoloVer' ? 'Solo ver' : nivel
+}
+
+function varianteNivel(nivel: string): 'alerta' | 'neutral' {
+  return nivel === 'Escritura' ? 'alerta' : 'neutral'
+}
+
+const OPCIONES_NIVEL = [
+  { valor: 'SoloVer', texto: 'Solo ver (sin descargar)' },
+  { valor: 'Lectura', texto: 'Lectura (ver y descargar)' },
+  { valor: 'Escritura', texto: 'Escritura (editar y compartir)' },
+]
+
+/** Clave especial del árbol para la sección "Compartidos conmigo" (documentos sueltos). */
+const COMPARTIDOS = '__compartidos__'
 
 interface MatrizCelda {
   total: number
@@ -226,6 +266,7 @@ function FolderTree({
               )}
             </span>
             {c.nivelAcceso === 'Lectura' && <Lock size={10} className="ml-auto flex-shrink-0 text-graphite-400" />}
+            {c.nivelAcceso === 'SoloVer' && <Eye size={10} className="ml-auto flex-shrink-0 text-graphite-400" />}
           </button>
           {!colapsada && renderizar(c.id, nivel + 1)}
         </div>
@@ -369,9 +410,11 @@ function AccesosCarpetaModal({ carpeta, onClose }: { carpeta: CarpetaItem; onClo
             </button>
           </div>
           <p className="mb-4 text-xs text-graphite-500">
-            Mismo modelo que una carpeta compartida de red: se busca un usuario y se le da acceso de Lectura o de
-            Escritura a esta carpeta puntual. Una subcarpeta sin accesos propios hereda estos; en cuanto una
-            subcarpeta tiene sus propios accesos, esos son los únicos que aplican ahí (no se suman a los de acá).
+            Mismo modelo que una carpeta compartida de red: se busca un usuario y se le da acceso a esta carpeta
+            puntual — <strong>Solo ver</strong> (ve los documentos en pantalla, no puede descargarlos),{' '}
+            <strong>Lectura</strong> (ve y descarga) o <strong>Escritura</strong> (además edita y comparte). Una
+            subcarpeta o un documento sin accesos propios hereda estos; en cuanto tiene sus propios accesos, esos son
+            los únicos que aplican ahí (no se suman a los de acá).
           </p>
 
           <div className="mb-4 rounded-xl border border-black/[0.06] p-3">
@@ -392,8 +435,9 @@ function AccesosCarpetaModal({ carpeta, onClose }: { carpeta: CarpetaItem; onClo
               <label className="flex flex-col gap-1 text-xs">
                 <span className="text-graphite-600">Nivel</span>
                 <select value={nivelOtorgar} onChange={(e) => setNivelOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
-                  <option value="Lectura">Lectura</option>
-                  <option value="Escritura">Escritura</option>
+                  {OPCIONES_NIVEL.map((o) => (
+                    <option key={o.valor} value={o.valor}>{o.texto}</option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -424,7 +468,7 @@ function AccesosCarpetaModal({ carpeta, onClose }: { carpeta: CarpetaItem; onClo
                 <tr key={a.id} className="border-b border-black/[0.04] last:border-0">
                   <Td className="font-medium">{a.nombreUsuario}</Td>
                   <Td>
-                    <Badge variant={a.nivelAcceso === 'Escritura' ? 'alerta' : 'neutral'}>{a.nivelAcceso}</Badge>
+                    <Badge variant={varianteNivel(a.nivelAcceso)}>{nombreNivel(a.nivelAcceso)}</Badge>
                   </Td>
                   <Td>{a.creadoPor}</Td>
                   <Td>
@@ -731,9 +775,165 @@ function NuevoDocumentoModal({
   )
 }
 
-type TabGestion = 'metadatos' | 'version' | 'vista-previa'
+type TabGestion = 'metadatos' | 'version' | 'vista-previa' | 'accesos'
 
 /** Nombre de archivo -> título real legible: sin extensión, guiones/guiones bajos como espacio, espacios dobles colapsados. Punto de partida editable, nunca se fuerza. */
+/**
+ * Permisos propios de un documento: sin permisos propios hereda los de su
+ * carpeta (se muestran solo como referencia). Al dar el primer acceso
+ * propio, el backend copia los heredados para que nadie pierda el acceso
+ * sin querer; desde ahí solo cuentan los de esta lista.
+ */
+function AccesosDocumento({ documento }: { documento: DocumentoItem }) {
+  const queryClient = useQueryClient()
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<{ id: string; nombreUsuario: string } | null>(null)
+  const [nivelOtorgar, setNivelOtorgar] = useState('SoloVer')
+  const clave = ['biblioteca-documentos-accesos-documento', documento.id]
+
+  const { data, isLoading } = useQuery<DocumentoAccesos>({
+    queryKey: clave,
+    queryFn: async () => (await api.get(`/api/biblioteca-documentos/${documento.id}/accesos`)).data,
+  })
+
+  const refrescar = () => {
+    queryClient.invalidateQueries({ queryKey: clave })
+    queryClient.invalidateQueries({ queryKey: ['biblioteca-documentos'] })
+  }
+
+  const otorgar = useMutation({
+    mutationFn: async () =>
+      api.post(`/api/biblioteca-documentos/${documento.id}/accesos`, { idUsuario: usuarioSeleccionado!.id, nivelAcceso: nivelOtorgar }),
+    onSuccess: () => {
+      refrescar()
+      setUsuarioSeleccionado(null)
+    },
+  })
+
+  const quitar = useMutation({
+    mutationFn: async (id: string) => api.delete(`/api/biblioteca-documentos/accesos-documento/${id}`),
+    onSuccess: refrescar,
+  })
+
+  const restablecer = useMutation({
+    mutationFn: async () => api.post(`/api/biblioteca-documentos/${documento.id}/accesos/restablecer-herencia`),
+    onSuccess: refrescar,
+  })
+
+  return (
+    <div className="flex flex-col gap-4">
+      {data && (
+        <p
+          className={`rounded-lg border px-3 py-2 text-xs ${
+            data.accesosPropios ? 'border-gold-500/30 bg-gold-500/5 text-graphite-600' : 'border-black/[0.06] bg-black/[0.015] text-graphite-600'
+          }`}
+        >
+          {data.accesosPropios ? (
+            <>
+              Este documento tiene <strong>permisos propios</strong>: solo las personas de esta lista lo ven, aunque
+              tengan acceso a la carpeta "{data.nombreCarpeta}".
+            </>
+          ) : (
+            <>
+              Este documento <strong>hereda los permisos</strong> de la carpeta "{data.nombreCarpeta}" (abajo, solo
+              referencia). Al compartirlo con alguien pasa a tener permisos propios: se copian los actuales y luego
+              podés ajustarlos solo para este documento.
+            </>
+          )}
+        </p>
+      )}
+
+      <div className="rounded-xl border border-black/[0.06] p-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+          <div className="flex flex-col gap-1 text-xs sm:col-span-2">
+            <span className="text-graphite-600">Compartir con</span>
+            {usuarioSeleccionado ? (
+              <div className="flex items-center justify-between rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm">
+                {usuarioSeleccionado.nombreUsuario}
+                <button type="button" onClick={() => setUsuarioSeleccionado(null)} className="text-graphite-500 hover:text-red-700">
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <BuscarUsuarioAcceso onSeleccionar={setUsuarioSeleccionado} />
+            )}
+          </div>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-graphite-600">Permiso</span>
+            <select value={nivelOtorgar} onChange={(e) => setNivelOtorgar(e.target.value)} className={`${inputClase} py-1.5`}>
+              {OPCIONES_NIVEL.map((o) => (
+                <option key={o.valor} value={o.valor}>{o.texto}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <button
+          type="button"
+          disabled={!usuarioSeleccionado || otorgar.isPending}
+          onClick={() => otorgar.mutate()}
+          className="btn-hover mt-3 rounded-lg bg-gold-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {otorgar.isPending ? 'Compartiendo…' : 'Compartir documento'}
+        </button>
+        {otorgar.isError && <p className="mt-2 text-sm text-red-700">{mensajeError(otorgar.error, 'No se pudo compartir.')}</p>}
+      </div>
+
+      <TableContainer>
+        <thead>
+          <tr>
+            <Th>Usuario</Th>
+            <Th>Permiso</Th>
+            <Th>{data?.accesosPropios ? 'Otorgado por' : 'Origen'}</Th>
+            <Th></Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && <EmptyState>Cargando…</EmptyState>}
+          {!isLoading && (data?.accesos.length ?? 0) === 0 && <EmptyState>Sin accesos</EmptyState>}
+          {data?.accesos.map((a) => (
+            <tr key={a.id} className="border-b border-black/[0.04] last:border-0">
+              <Td className="font-medium">{a.nombreUsuario}</Td>
+              <Td>
+                <Badge variant={varianteNivel(a.nivelAcceso)}>{nombreNivel(a.nivelAcceso)}</Badge>
+              </Td>
+              <Td>{a.heredado ? `Carpeta "${data.nombreCarpeta}"` : a.creadoPor}</Td>
+              <Td>
+                {!a.heredado && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`¿Quitar el acceso de ${a.nombreUsuario} a "${documento.titulo}"?`)) quitar.mutate(a.id)
+                    }}
+                    className="text-red-700 hover:underline"
+                    title="Quitar acceso"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableContainer>
+      {quitar.isError && <p className="text-sm text-red-700">{mensajeError(quitar.error, 'No se pudo quitar el acceso.')}</p>}
+
+      {data?.accesosPropios && (
+        <div>
+          <button
+            type="button"
+            disabled={restablecer.isPending}
+            onClick={() => {
+              if (confirm('¿Volver a usar los permisos de la carpeta? Se borran los permisos propios de este documento.')) restablecer.mutate()
+            }}
+            className="rounded-lg border border-black/[0.08] px-3 py-2 text-xs font-medium text-graphite-100 hover:bg-black/[0.02] disabled:opacity-50"
+          >
+            Volver a heredar los permisos de la carpeta
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function tituloDesdeNombreArchivo(nombreArchivo: string): string {
   const sinExtension = nombreArchivo.replace(/\.[^./]+$/, '')
   return sinExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -835,7 +1035,9 @@ function GestionarDocumentoModal({
     },
   })
 
+  const puedeDescargar = documento.puedeDescargar
   const descargar = async () => {
+    if (!puedeDescargar) return
     const respuesta = await api.get(`/api/biblioteca-documentos/${documento.id}/descargar`, { responseType: 'blob' })
     const url = window.URL.createObjectURL(new Blob([respuesta.data]))
     const enlace = document.createElement('a')
@@ -865,7 +1067,9 @@ function GestionarDocumentoModal({
     let cancelado = false
     setPreviaCargando(true)
     setPreviaError(null)
-    api.get(`/api/biblioteca-documentos/${documento.id}/descargar`, { responseType: 'blob' })
+    // La vista previa usa su propio endpoint: sirve también con "Solo ver"
+    // (la descarga del archivo, no).
+    api.get(`/api/biblioteca-documentos/${documento.id}/vista-previa`, { responseType: 'blob' })
       .then((respuesta) => {
         if (cancelado) return
         if (esTexto) {
@@ -947,10 +1151,27 @@ function GestionarDocumentoModal({
                   Nueva versión
                 </button>
               )}
-              <div className="mt-2 border-t border-black/[0.06] pt-2">
-                <button type="button" onClick={descargar} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-petrol-700 hover:bg-black/[0.02]">
-                  <Download size={13} /> Descargar
+              {puedeEditar && (
+                <button
+                  type="button"
+                  onClick={() => setTab('accesos')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
+                    tab === 'accesos' ? 'bg-gold-500/10 text-gold-300' : 'text-graphite-600 hover:bg-black/[0.02]'
+                  }`}
+                >
+                  <Users size={13} /> Accesos
                 </button>
+              )}
+              <div className="mt-2 border-t border-black/[0.06] pt-2">
+                {puedeDescargar ? (
+                  <button type="button" onClick={descargar} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-petrol-700 hover:bg-black/[0.02]">
+                    <Download size={13} /> Descargar
+                  </button>
+                ) : (
+                  <p className="flex items-start gap-1.5 px-3 py-2 text-[11px] text-graphite-500">
+                    <Eye size={12} className="mt-0.5 flex-shrink-0" /> Solo ver: podés verlo en pantalla, no descargarlo.
+                  </p>
+                )}
                 {puedeEditar && (
                   <button
                     type="button"
@@ -966,22 +1187,36 @@ function GestionarDocumentoModal({
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
+              {tab === 'accesos' && puedeEditar && <AccesosDocumento documento={documento} />}
               {tab === 'vista-previa' && (
-                <div className="flex h-full flex-col">
+                <div
+                  className={`flex h-full flex-col ${puedeDescargar ? '' : 'select-none'}`}
+                  onContextMenu={puedeDescargar ? undefined : (e) => e.preventDefault()}
+                >
                   {!previaDisponible ? (
                     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                       <Library size={32} className="text-graphite-300" />
-                      <p className="text-sm text-graphite-600">
-                        No hay vista previa para "{documento.nombreArchivoOriginal}" — dentro del sistema se pueden ver
-                        PDF, Word (.docx) y texto. Para Excel, PowerPoint o Word antiguo (.doc), descargalo.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={descargar}
-                        className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-xs font-medium text-white"
-                      >
-                        <Download size={13} /> Descargar
-                      </button>
+                      {puedeDescargar ? (
+                        <>
+                          <p className="text-sm text-graphite-600">
+                            No hay vista previa para "{documento.nombreArchivoOriginal}" — dentro del sistema se pueden ver
+                            PDF, Word (.docx) y texto. Para Excel, PowerPoint o Word antiguo (.doc), descargalo.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={descargar}
+                            className="btn-hover flex items-center gap-1.5 rounded-lg bg-gold-500 px-4 py-2 text-xs font-medium text-white"
+                          >
+                            <Download size={13} /> Descargar
+                          </button>
+                        </>
+                      ) : (
+                        <p className="max-w-md text-sm text-graphite-600">
+                          Tenés permiso de <strong>solo ver</strong> y "{documento.nombreArchivoOriginal}" no se puede
+                          mostrar dentro del sistema (solo PDF, Word .docx y texto). Pedile a quien lo compartió acceso de
+                          Lectura, o que lo suba en PDF.
+                        </p>
+                      )}
                     </div>
                   ) : previaCargando ? (
                     <p className="p-4 text-center text-sm text-graphite-600">Cargando vista previa…</p>
@@ -994,14 +1229,19 @@ function GestionarDocumentoModal({
                   ) : previaDocx ? (
                     <div ref={contenedorDocx} className="min-h-[60vh] flex-1 overflow-auto rounded-lg border border-black/[0.06] bg-graphite-50" />
                   ) : previaUrl ? (
-                    <iframe src={previaUrl} title={documento.titulo} className="min-h-[60vh] flex-1 rounded-lg border border-black/[0.06]" />
+                    // Con "Solo ver" se oculta la barra del visor de PDF del navegador (botones de descargar/imprimir).
+                    <iframe
+                      src={puedeDescargar ? previaUrl : `${previaUrl}#toolbar=0&navpanes=0`}
+                      title={documento.titulo}
+                      className="min-h-[60vh] flex-1 rounded-lg border border-black/[0.06]"
+                    />
                   ) : null}
                 </div>
               )}
               {tab === 'metadatos' && (
                 <fieldset disabled={!puedeEditar}>
                   {!puedeEditar && (
-                    <p className="mb-3 text-xs text-graphite-500">No tenés acceso de escritura sobre la carpeta de este documento — solo lectura.</p>
+                    <p className="mb-3 text-xs text-graphite-500">No tenés acceso de escritura sobre este documento — solo consulta.</p>
                   )}
                   <form
                     className="grid grid-cols-1 gap-4 sm:grid-cols-2"
@@ -1191,15 +1431,29 @@ export function BibliotecaDocumentos() {
   const [busqueda, setBusqueda] = useState('')
 
   const veTodo = miAcceso?.veTodo ?? false
+  const enCompartidos = carpetaSeleccionada === COMPARTIDOS
   const carpetaActual = carpetas?.find((c) => c.id === carpetaSeleccionada) ?? null
   const carpetasEscribibles = (carpetas ?? []).filter((c) => c.puedeEscribir)
+
+  // Documentos sueltos que alguien compartió conmigo en una carpeta que no veo.
+  const { data: compartidosConmigo } = useQuery<DocumentoItem[]>({
+    queryKey: ['biblioteca-documentos', 'compartidos-conmigo'],
+    queryFn: async () => (await api.get('/api/biblioteca-documentos', { params: { compartidosConmigo: true } })).data,
+    enabled: !!miAcceso && !veTodo,
+  })
 
   const { data: documentos, isLoading } = useQuery<DocumentoItem[]>({
     queryKey: ['biblioteca-documentos', carpetaSeleccionada, filtroTipo, filtroEstado, busqueda],
     queryFn: async () =>
       (
         await api.get('/api/biblioteca-documentos', {
-          params: { idCarpeta: carpetaSeleccionada || undefined, tipo: filtroTipo || undefined, estado: filtroEstado || undefined, q: busqueda || undefined },
+          params: {
+            idCarpeta: enCompartidos ? undefined : carpetaSeleccionada || undefined,
+            compartidosConmigo: enCompartidos || undefined,
+            tipo: filtroTipo || undefined,
+            estado: filtroEstado || undefined,
+            q: busqueda || undefined,
+          },
         })
       ).data,
     enabled: !!miAcceso && !!carpetaSeleccionada,
@@ -1294,6 +1548,19 @@ export function BibliotecaDocumentos() {
                 </button>
               )}
             </div>
+            {(compartidosConmigo?.length ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setCarpetaSeleccionada(COMPARTIDOS)}
+                className={`mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
+                  enCompartidos ? 'bg-sky-500/10 font-medium text-sky-700' : 'text-sky-700 hover:bg-sky-500/5'
+                }`}
+              >
+                <Users size={13} className="flex-shrink-0" />
+                <span className="truncate">Compartidos conmigo</span>
+                <span className="ml-auto text-[10px] text-sky-600/80">{compartidosConmigo?.length}</span>
+              </button>
+            )}
             {carpetas ? (
               <FolderTree carpetas={carpetas} seleccionada={carpetaSeleccionada} onSeleccionar={setCarpetaSeleccionada} />
             ) : (
@@ -1302,25 +1569,40 @@ export function BibliotecaDocumentos() {
           </div>
 
           <div>
-            {!carpetaActual ? (
+            {!carpetaActual && !enCompartidos ? (
               <div className="glass-card flex flex-col items-center justify-center gap-2 rounded-xl p-10 text-center">
                 <Folder size={28} className="text-graphite-300" />
                 <p className="text-sm text-graphite-500">Elegí una carpeta de la izquierda para ver sus documentos.</p>
               </div>
             ) : (
               <>
-                {carpetaActual.compartidaConmigo && (
+                {enCompartidos && (
+                  <p className="mb-3 flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                    <Users size={13} />
+                    Documentos que otras personas compartieron contigo, de carpetas a las que no tenés acceso.
+                  </p>
+                )}
+                {carpetaActual?.compartidaConmigo && (
                   <p className="mb-3 flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
                     <FolderSymlink size={13} />
                     Carpeta compartida contigo
                     {carpetaActual.compartidaPor ? <> por <strong>{carpetaActual.compartidaPor}</strong></> : null}
                     {' — '}
-                    {carpetaActual.nivelAcceso === 'Escritura' ? 'puedes ver y modificar su contenido.' : 'solo puedes verla.'}
+                    {carpetaActual.nivelAcceso === 'Escritura'
+                      ? 'puedes ver y modificar su contenido.'
+                      : carpetaActual.nivelAcceso === 'SoloVer'
+                        ? 'puedes ver sus documentos en pantalla, sin descargarlos.'
+                        : 'puedes ver y descargar sus documentos.'}
                   </p>
                 )}
-                {carpetaActual.nivelAcceso === 'Lectura' && (
+                {carpetaActual?.nivelAcceso === 'Lectura' && (
                   <p className="mb-3 flex items-center gap-1.5 text-xs text-graphite-500">
                     <Lock size={12} /> Solo lectura en "{carpetaActual.nombre}" — no tenés acceso de escritura acá.
+                  </p>
+                )}
+                {carpetaActual?.nivelAcceso === 'SoloVer' && (
+                  <p className="mb-3 flex items-center gap-1.5 text-xs text-graphite-500">
+                    <Eye size={12} /> Solo ver en "{carpetaActual.nombre}" — podés abrir los documentos en pantalla, no descargarlos.
                   </p>
                 )}
                 <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -1374,7 +1656,18 @@ export function BibliotecaDocumentos() {
                         title="Doble clic para gestionar"
                         className="cursor-pointer border-b border-black/[0.04] last:border-0 hover:bg-black/[0.015]"
                       >
-                        <Td className="font-medium">{d.titulo}</Td>
+                        <Td className="font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {d.titulo}
+                            {d.nivelAcceso === 'SoloVer' && (
+                              <span title="Solo ver: sin descarga"><Eye size={12} className="flex-shrink-0 text-graphite-400" /></span>
+                            )}
+                            {d.accesosPropios && (
+                              <span title="Tiene permisos propios (no hereda los de la carpeta)"><Users size={12} className="flex-shrink-0 text-sky-600" /></span>
+                            )}
+                          </span>
+                          {enCompartidos && <span className="block text-[10px] font-normal text-graphite-500">Carpeta: {d.nombreCarpeta}</span>}
+                        </Td>
                         <Td>{nombreCatalogo(areas, d.area)}</Td>
                         <Td>{nombreCatalogo(tipos, d.tipo)}</Td>
                         <Td>{d.version}</Td>
@@ -1423,7 +1716,7 @@ export function BibliotecaDocumentos() {
           tipos={tipos}
           estados={estados}
           carpetasEscribibles={carpetasEscribibles}
-          puedeEditar={veTodo || (miAcceso?.accesoPorCarpeta[seleccionado.idCarpeta] === 'Escritura')}
+          puedeEditar={seleccionado.puedeEditar}
           onClose={() => setSeleccionado(null)}
         />
       )}

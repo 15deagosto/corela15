@@ -55,6 +55,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<Documento> Documentos => Set<Documento>();
     public DbSet<Carpeta> Carpetas => Set<Carpeta>();
     public DbSet<CarpetaAcceso> CarpetaAccesos => Set<CarpetaAcceso>();
+    public DbSet<DocumentoAcceso> DocumentoAccesos => Set<DocumentoAcceso>();
 
     // SUJETO
     public DbSet<Persona> Personas => Set<Persona>();
@@ -291,6 +292,7 @@ public class Corela15DbContext(DbContextOptions<Corela15DbContext> options) : Db
     public DbSet<PlanSemanalIndicador> PlanesSemanalesIndicadores => Set<PlanSemanalIndicador>();
     public DbSet<DisposicionGerencia> DisposicionesGerencia => Set<DisposicionGerencia>();
     public DbSet<DisposicionGerenciaArea> DisposicionesGerenciaArea => Set<DisposicionGerenciaArea>();
+    public DbSet<EntregableDisposicion> EntregablesDisposicion => Set<EntregableDisposicion>();
     public DbSet<EstadoAvanceRiesgo> EstadosAvanceRiesgo => Set<EstadoAvanceRiesgo>();
     public DbSet<AvanceRiesgo> AvancesRiesgo => Set<AvanceRiesgo>();
     public DbSet<AvanceRiesgoDetalle> AvancesRiesgoDetalle => Set<AvanceRiesgoDetalle>();

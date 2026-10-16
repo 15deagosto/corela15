@@ -47,7 +47,7 @@ public class AccesoDocumentalService(Corela15DbContext db) : IAccesoDocumentalSe
             ?? throw new CarpetaInvalidaException();
         if (!contexto.TieneEscritura(carpeta.Id)) throw new AccesoDocumentalDenegadoException(carpeta.Nombre);
 
-        if (!Enum.TryParse<NivelAccesoDocumental>(request.NivelAcceso, ignoreCase: true, out var nivel))
+        if (!Enum.TryParse<NivelAccesoDocumental>(request.NivelAcceso, ignoreCase: true, out var nivel) || !Enum.IsDefined(nivel))
             throw new NivelAccesoInvalidoException(request.NivelAcceso);
 
         var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == request.IdUsuario && u.Activo, cancellationToken)
@@ -87,19 +87,27 @@ public class AccesoDocumentalService(Corela15DbContext db) : IAccesoDocumentalSe
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Filas de ACL de la primera carpeta con ACL propio subiendo desde
+    /// <paramref name="desde"/> (incluida) -- exactamente las que definen
+    /// el acceso efectivo heredado en ese punto del árbol.
+    /// </summary>
+    private async Task<List<CarpetaAcceso>> AclAutoritativoAsync(Guid? desde, CancellationToken cancellationToken)
+    {
+        var actual = desde;
+        var visitados = new HashSet<Guid>();
+        while (actual is Guid id && visitados.Add(id))
+        {
+            var filas = await db.CarpetaAccesos.Include(a => a.Usuario).Where(a => a.IdCarpeta == id).ToListAsync(cancellationToken);
+            if (filas.Count > 0) return filas;
+            actual = await db.Carpetas.Where(c => c.Id == id).Select(c => c.IdCarpetaPadre).FirstOrDefaultAsync(cancellationToken);
+        }
+        return [];
+    }
+
     private async Task CopiarPermisosHeredadosAsync(Carpeta carpeta, string registradoPor, CancellationToken cancellationToken)
     {
-        // Sube por el árbol hasta la primera carpeta con ACL propio -- es
-        // exactamente la que hoy define el acceso efectivo de esta.
-        var actual = carpeta.IdCarpetaPadre;
-        List<CarpetaAcceso> heredados = [];
-        var visitados = new HashSet<Guid>();
-        while (actual is Guid idPadre && visitados.Add(idPadre))
-        {
-            heredados = await db.CarpetaAccesos.Where(a => a.IdCarpeta == idPadre).ToListAsync(cancellationToken);
-            if (heredados.Count > 0) break;
-            actual = await db.Carpetas.Where(c => c.Id == idPadre).Select(c => c.IdCarpetaPadre).FirstOrDefaultAsync(cancellationToken);
-        }
+        var heredados = await AclAutoritativoAsync(carpeta.IdCarpetaPadre, cancellationToken);
 
         foreach (var h in heredados)
         {
@@ -163,6 +171,114 @@ public class AccesoDocumentalService(Corela15DbContext db) : IAccesoDocumentalSe
                 resultado[carpetaId] = nivel;
         }
         return resultado;
+    }
+
+    public async Task<AccesoDocumentosUsuario> ResolverAccesoDocumentosAsync(Guid idUsuario, CancellationToken cancellationToken = default)
+    {
+        var conAclPropio = (await db.DocumentoAccesos.Select(a => a.IdDocumento).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+        var mios = await db.DocumentoAccesos
+            .Where(a => a.IdUsuario == idUsuario)
+            .Select(a => new { a.IdDocumento, a.NivelAcceso })
+            .ToListAsync(cancellationToken);
+        return new AccesoDocumentosUsuario(conAclPropio, mios.ToDictionary(a => a.IdDocumento, a => a.NivelAcceso.ToString()));
+    }
+
+    // --- Permisos por documento ---
+
+    private async Task<Documento> DocumentoConEscrituraAsync(Guid idDocumento, ContextoAccesoDocumental contexto, CancellationToken cancellationToken)
+    {
+        var documento = await db.Documentos.Include(d => d.Carpeta).FirstOrDefaultAsync(d => d.Id == idDocumento && d.Activo, cancellationToken);
+        // Sin ver el documento se trata como inexistente (nunca se confirma que existe).
+        if (documento is null || !contexto.PuedeVerDocumento(documento.Id, documento.IdCarpeta)) throw new DocumentoInvalidoException();
+        if (!contexto.PuedeEditarDocumento(documento.Id, documento.IdCarpeta)) throw new AccesoDocumentoDenegadoException(documento.Titulo);
+        return documento;
+    }
+
+    public async Task<DocumentoAccesosResult> ListarDocumentoAsync(Guid idDocumento, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    {
+        var documento = await DocumentoConEscrituraAsync(idDocumento, contexto, cancellationToken);
+
+        var propios = await db.DocumentoAccesos.Include(a => a.Usuario)
+            .Where(a => a.IdDocumento == idDocumento)
+            .OrderBy(a => a.Usuario.NombreUsuario)
+            .ToListAsync(cancellationToken);
+        if (propios.Count > 0)
+            return new DocumentoAccesosResult(true, documento.Carpeta.Nombre,
+                propios.Select(a => new DocumentoAccesoItem(a.Id, a.IdUsuario, a.Usuario.NombreUsuario, a.NivelAcceso.ToString(), false, a.CreadoEn, a.CreadoPor)).ToList());
+
+        // Sin permisos propios: se muestran los que hereda de la carpeta (solo informativo).
+        var heredados = await AclAutoritativoAsync(documento.IdCarpeta, cancellationToken);
+        return new DocumentoAccesosResult(false, documento.Carpeta.Nombre,
+            heredados.OrderBy(a => a.Usuario.NombreUsuario)
+                .Select(a => new DocumentoAccesoItem(a.Id, a.IdUsuario, a.Usuario.NombreUsuario, a.NivelAcceso.ToString(), true, a.CreadoEn, a.CreadoPor)).ToList());
+    }
+
+    public async Task OtorgarDocumentoAsync(Guid idDocumento, OtorgarAccesoCarpetaRequest request, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    {
+        var documento = await DocumentoConEscrituraAsync(idDocumento, contexto, cancellationToken);
+
+        if (!Enum.TryParse<NivelAccesoDocumental>(request.NivelAcceso, ignoreCase: true, out var nivel) || !Enum.IsDefined(nivel))
+            throw new NivelAccesoInvalidoException(request.NivelAcceso);
+
+        var usuario = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == request.IdUsuario && u.Activo, cancellationToken)
+            ?? throw new UsuarioAccesoInvalidoException();
+
+        // Primer permiso propio: se copian los que venía heredando de la
+        // carpeta, así compartir un documento con alguien más nunca deja
+        // afuera al dueño ni a quienes ya lo veían.
+        if (!await db.DocumentoAccesos.AnyAsync(a => a.IdDocumento == idDocumento, cancellationToken))
+        {
+            foreach (var h in await AclAutoritativoAsync(documento.IdCarpeta, cancellationToken))
+            {
+                db.DocumentoAccesos.Add(new DocumentoAcceso
+                {
+                    Id = Guid.NewGuid(),
+                    IdDocumento = idDocumento,
+                    IdUsuario = h.IdUsuario,
+                    NivelAcceso = h.NivelAcceso,
+                    CreadoEn = DateTimeOffset.UtcNow,
+                    CreadoPor = request.RegistradoPor,
+                });
+            }
+        }
+
+        var existente = db.DocumentoAccesos.Local.FirstOrDefault(a => a.IdUsuario == usuario.Id && a.IdDocumento == idDocumento)
+            ?? await db.DocumentoAccesos.FirstOrDefaultAsync(a => a.IdUsuario == usuario.Id && a.IdDocumento == idDocumento, cancellationToken);
+
+        if (existente is not null)
+        {
+            existente.NivelAcceso = nivel;
+        }
+        else
+        {
+            db.DocumentoAccesos.Add(new DocumentoAcceso
+            {
+                Id = Guid.NewGuid(),
+                IdDocumento = idDocumento,
+                IdUsuario = usuario.Id,
+                NivelAcceso = nivel,
+                CreadoEn = DateTimeOffset.UtcNow,
+                CreadoPor = request.RegistradoPor,
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task QuitarDocumentoAsync(Guid idAcceso, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    {
+        var acceso = await db.DocumentoAccesos.FirstOrDefaultAsync(a => a.Id == idAcceso, cancellationToken);
+        if (acceso is null) return;
+        await DocumentoConEscrituraAsync(acceso.IdDocumento, contexto, cancellationToken);
+
+        db.DocumentoAccesos.Remove(acceso);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RestablecerHerenciaDocumentoAsync(Guid idDocumento, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    {
+        await DocumentoConEscrituraAsync(idDocumento, contexto, cancellationToken);
+        await db.DocumentoAccesos.Where(a => a.IdDocumento == idDocumento).ExecuteDeleteAsync(cancellationToken);
     }
 
     /// <summary>Resuelve recursivamente hacia la raíz, memoizando en el diccionario compartido para no recorrer la misma cadena dos veces.</summary>

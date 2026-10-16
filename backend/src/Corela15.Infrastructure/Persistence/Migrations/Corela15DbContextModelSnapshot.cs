@@ -4873,6 +4873,50 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.ToTable("documento", "documentos");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Documentos.DocumentoAcceso", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en");
+
+                    b.Property<string>("CreadoPor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("creado_por");
+
+                    b.Property<Guid>("IdDocumento")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_documento");
+
+                    b.Property<Guid>("IdUsuario")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_usuario");
+
+                    b.Property<string>("NivelAcceso")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("nivel_acceso");
+
+                    b.HasKey("Id")
+                        .HasName("pk_documento_acceso");
+
+                    b.HasIndex("IdUsuario")
+                        .HasDatabaseName("ix_documento_acceso_id_usuario");
+
+                    b.HasIndex("IdDocumento", "IdUsuario")
+                        .IsUnique()
+                        .HasDatabaseName("ix_documento_acceso_id_documento_id_usuario");
+
+                    b.ToTable("documento_acceso", "documentos");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Financiero.Cheque", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7646,6 +7690,10 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("fecha_limite");
 
+                    b.Property<TimeOnly?>("HoraLimite")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("hora_limite");
+
                     b.Property<string>("Titulo")
                         .IsRequired()
                         .HasMaxLength(250)
@@ -7705,6 +7753,66 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_disposicion_gerencia_area_id_disposicion_codigo_area");
 
                     b.ToTable("disposicion_gerencia_area", "planificacion");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Planificacion.EntregableDisposicion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Comentario")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("comentario");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en");
+
+                    b.Property<string>("CreadoPor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("creado_por");
+
+                    b.Property<Guid>("IdDisposicionArea")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_disposicion_area");
+
+                    b.Property<string>("NombreArchivo")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre_archivo");
+
+                    b.Property<string>("RutaArchivo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("ruta_archivo");
+
+                    b.Property<long>("TamanoBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano_bytes");
+
+                    b.HasKey("Id")
+                        .HasName("pk_disposicion_entregable");
+
+                    b.HasIndex("IdDisposicionArea")
+                        .HasDatabaseName("ix_disposicion_entregable_id_disposicion_area");
+
+                    b.ToTable("disposicion_entregable", "planificacion");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Planificacion.EtiquetaPlanificacion", b =>
@@ -12445,6 +12553,27 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("Carpeta");
                 });
 
+            modelBuilder.Entity("Corela15.Domain.Documentos.DocumentoAcceso", b =>
+                {
+                    b.HasOne("Corela15.Domain.Documentos.Documento", "Documento")
+                        .WithMany()
+                        .HasForeignKey("IdDocumento")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_documento_acceso_documentos_id_documento");
+
+                    b.HasOne("Corela15.Domain.Seguridad.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_documento_acceso_usuarios_id_usuario");
+
+                    b.Navigation("Documento");
+
+                    b.Navigation("Usuario");
+                });
+
             modelBuilder.Entity("Corela15.Domain.Financiero.Cheque", b =>
                 {
                     b.HasOne("Corela15.Domain.General.Agencia", "Agencia")
@@ -13117,6 +13246,18 @@ namespace Corela15.Infrastructure.Persistence.Migrations
                     b.Navigation("Area");
 
                     b.Navigation("Disposicion");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Planificacion.EntregableDisposicion", b =>
+                {
+                    b.HasOne("Corela15.Domain.Planificacion.DisposicionGerenciaArea", "DisposicionArea")
+                        .WithMany("Entregables")
+                        .HasForeignKey("IdDisposicionArea")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_disposicion_entregable_disposicion_gerencia_area_id_disposi");
+
+                    b.Navigation("DisposicionArea");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Planificacion.EtiquetaPlanificacion", b =>
@@ -14162,6 +14303,11 @@ namespace Corela15.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Corela15.Domain.Planificacion.DisposicionGerencia", b =>
                 {
                     b.Navigation("Areas");
+                });
+
+            modelBuilder.Entity("Corela15.Domain.Planificacion.DisposicionGerenciaArea", b =>
+                {
+                    b.Navigation("Entregables");
                 });
 
             modelBuilder.Entity("Corela15.Domain.Planificacion.PlanSemanal", b =>

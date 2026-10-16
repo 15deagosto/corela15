@@ -126,18 +126,22 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
 
     public async Task<IReadOnlyList<DocumentoListItem>> ListarAsync(ListarDocumentosFiltro filtro, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
-        // Si pide una carpeta puntual sin lectura ahí, no es un error --
-        // simplemente no hay nada visible para mostrar (mismo criterio
-        // "deny-by-default silencioso" que una carpeta compartida real).
-        if (filtro.IdCarpeta is Guid idCarpetaFiltro && !contexto.TieneLectura(idCarpetaFiltro))
-            return [];
-
         var query = db.Documentos.Include(d => d.Carpeta).Where(d => d.Activo).AsQueryable();
 
+        // Visibles = (de una carpeta que ve y sin permisos propios) o con
+        // permiso propio para este usuario. Un documento con permisos
+        // propios donde el usuario no figura queda oculto aunque vea la
+        // carpeta -- así se restringe un documento puntual.
+        var carpetasVisibles = contexto.AccesoPorCarpeta.Keys.ToList();
+        var conAclPropio = contexto.DocumentosConAclPropio.ToList();
+        var docsMios = contexto.AccesoDocumentos.Keys.ToList();
         if (!contexto.VeTodo)
+            query = query.Where(d => (carpetasVisibles.Contains(d.IdCarpeta) && !conAclPropio.Contains(d.Id)) || docsMios.Contains(d.Id));
+
+        if (filtro.CompartidosConmigo)
         {
-            var carpetasVisibles = contexto.AccesoPorCarpeta.Keys.ToList();
-            query = query.Where(d => carpetasVisibles.Contains(d.IdCarpeta));
+            // Compartidos directo conmigo, en carpetas que no veo.
+            query = query.Where(d => docsMios.Contains(d.Id) && !carpetasVisibles.Contains(d.IdCarpeta));
         }
 
         if (filtro.IdCarpeta is Guid idCarpeta)
@@ -166,23 +170,40 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
         }
 
         var lista = await query.OrderByDescending(d => d.ModificadoEn ?? d.CreadoEn).ToListAsync(cancellationToken);
-        return lista.Select(Proyectar).ToList();
+        return lista.Select(d => Proyectar(d, contexto)).ToList();
     }
 
     public async Task<DocumentoListItem?> ObtenerAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
         var documento = await db.Documentos.Include(d => d.Carpeta).FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
-        // Sin lectura sobre la carpeta -- se trata igual que "no existe", nunca
-        // se distingue (no hay que confirmarle a nadie que un documento
-        // ajeno existe).
-        if (documento is null || !contexto.TieneLectura(documento.IdCarpeta)) return null;
-        return Proyectar(documento);
+        // Sin acceso -- se trata igual que "no existe", nunca se distingue
+        // (no hay que confirmarle a nadie que un documento ajeno existe).
+        if (documento is null || !contexto.PuedeVerDocumento(documento.Id, documento.IdCarpeta)) return null;
+        return Proyectar(documento, contexto);
     }
 
     public async Task<DescargaDocumentoResult> DescargarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
     {
         var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
-        if (documento is null || !contexto.TieneLectura(documento.IdCarpeta)) throw new DocumentoInvalidoException();
+        if (documento is null || !contexto.PuedeVerDocumento(documento.Id, documento.IdCarpeta)) throw new DocumentoInvalidoException();
+        if (!contexto.PuedeDescargarDocumento(documento.Id, documento.IdCarpeta)) throw new DescargaDocumentoNoPermitidaException();
+
+        var contenido = await storage.AbrirAsync(documento.RutaAlmacenamiento, cancellationToken);
+        return new DescargaDocumentoResult(contenido, documento.NombreArchivoOriginal, documento.ContentType);
+    }
+
+    private static readonly HashSet<string> ExtensionesConVistaPrevia = new(StringComparer.OrdinalIgnoreCase) { "pdf", "txt", "docx" };
+
+    public async Task<DescargaDocumentoResult> VisualizarAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken = default)
+    {
+        var documento = await db.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
+        if (documento is null || !contexto.PuedeVerDocumento(documento.Id, documento.IdCarpeta)) throw new DocumentoInvalidoException();
+
+        // Solo los formatos que el sistema muestra en pantalla -- un Excel o
+        // PowerPoint por esta vía sería una descarga encubierta para quien
+        // tiene "Solo ver".
+        var extension = Path.GetExtension(documento.NombreArchivoOriginal).TrimStart('.');
+        if (!ExtensionesConVistaPrevia.Contains(extension)) throw new VistaPreviaNoDisponibleException(documento.NombreArchivoOriginal);
 
         var contenido = await storage.AbrirAsync(documento.RutaAlmacenamiento, cancellationToken);
         return new DescargaDocumentoResult(contenido, documento.NombreArchivoOriginal, documento.ContentType);
@@ -218,9 +239,9 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
 
     private async Task<Documento> BuscarConEscrituraAsync(Guid id, ContextoAccesoDocumental contexto, CancellationToken cancellationToken)
     {
-        var documento = await db.Documentos.Include(d => d.Carpeta).FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken)
-            ?? throw new DocumentoInvalidoException();
-        if (!contexto.TieneEscritura(documento.IdCarpeta)) throw new AccesoDocumentalDenegadoException(documento.Carpeta.Nombre);
+        var documento = await db.Documentos.Include(d => d.Carpeta).FirstOrDefaultAsync(d => d.Id == id && d.Activo, cancellationToken);
+        if (documento is null || !contexto.PuedeVerDocumento(documento.Id, documento.IdCarpeta)) throw new DocumentoInvalidoException();
+        if (!contexto.PuedeEditarDocumento(documento.Id, documento.IdCarpeta)) throw new AccesoDocumentoDenegadoException(documento.Titulo);
         return documento;
     }
 
@@ -239,9 +260,14 @@ public class DocumentoService(Corela15DbContext db, IDocumentoStorageService sto
             ? resultado
             : throw new ValorCatalogoDocumentoInvalidoException(campo, valor);
 
-    private static DocumentoListItem Proyectar(Documento d) => new(
-        d.Id, d.IdCarpeta, d.Carpeta.Nombre, d.Area.ToString(), d.Tipo.ToString(), d.Titulo, d.Version, d.Estado.ToString(),
-        d.NombreArchivoOriginal, d.TamanoBytes,
-        d.InstanciaAprobacion, d.InstanciaRevision, d.FechaAprobacion, d.ProximaRevision, d.Notas,
-        d.CreadoPor, d.CreadoEn, d.ModificadoEn);
+    private static DocumentoListItem Proyectar(Documento d, ContextoAccesoDocumental contexto)
+    {
+        var nivel = contexto.NivelDocumento(d.Id, d.IdCarpeta) ?? "SoloVer";
+        return new(
+            d.Id, d.IdCarpeta, d.Carpeta.Nombre, d.Area.ToString(), d.Tipo.ToString(), d.Titulo, d.Version, d.Estado.ToString(),
+            d.NombreArchivoOriginal, d.TamanoBytes,
+            d.InstanciaAprobacion, d.InstanciaRevision, d.FechaAprobacion, d.ProximaRevision, d.Notas,
+            d.CreadoPor, d.CreadoEn, d.ModificadoEn,
+            nivel, nivel is "Lectura" or "Escritura", nivel == "Escritura", contexto.DocumentosConAclPropio.Contains(d.Id));
+    }
 }
